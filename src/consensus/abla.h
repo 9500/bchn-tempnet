@@ -1,4 +1,4 @@
-// Copyright (c) 2023 The Bitcoin developers
+// Copyright (c) 2023-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -7,7 +7,7 @@
 #include <consensus/consensus.h>
 #include <serialize.h>
 
-#include <algorithm>
+#include <compare> // for comparison <=>
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -19,6 +19,13 @@
 ///
 /// Originally written by bitcoincashautist but adapted to C++ and to fit into the BCHN sources by Calin Culianu.
 namespace abla {
+
+// Base block interval, 10 minutes
+inline constexpr BlockTicks BASE_BLOCK_INTERVAL = legacy::POW_TARGET_SPACING_TICKS;
+// Maximum block interval, same as BASE_BLOCK_INTERVAL since we don't anticipate *increasing* the blocktime
+inline constexpr BlockTicks MAX_BLOCK_INTERVAL = BASE_BLOCK_INTERVAL;
+// Minimum block interval (ticks = seconds), 1 == 1 second
+inline constexpr BlockTicks MIN_BLOCK_INTERVAL{1u};
 
 /// Algorithm configuration -- this should be a part of a chain's consensus params.
 struct Config {
@@ -61,12 +68,13 @@ struct Config {
                               bool fixedSize = false);
 };
 
-/// Algorithm's internal state
+/// Algorithm's internal state -- this is what gets persisted to disk via CDiskBlockIndex
 ///
 /// Intended to be used such that this State is associated with block N, and the block size limit for block N is to
 /// be given by `state_N.GetBlockSizeLimit()`. Thus, when checking the limit for the next block N + 1, given the state
 /// for N, one must do: `state_N.NextBlockState().GetBlockSizeLimit()`
-class State {
+class StateBase {
+protected:
     /// Saved with the state -- the actual block size in bytes for this block
     uint64_t blockSize{};
 
@@ -75,44 +83,53 @@ class State {
     /// Elastic buffer function state
     uint64_t elasticBufferSize{};
 
-public:
-    State() = default;
+    constexpr StateBase() noexcept = default;
 
-    /// Construct a state using defaults from Config (suitable for all blocks before ABLA activation)
-    State(const Config &config, uint64_t blkSize)
-        : blockSize(blkSize), controlBlockSize(config.epsilon0), elasticBufferSize(config.beta0) {}
+    constexpr StateBase(uint64_t blockSizeIn, uint64_t cbsIn, uint64_t ebsIn) noexcept
+        : blockSize{blockSizeIn}, controlBlockSize{cbsIn}, elasticBufferSize{ebsIn}
+    {}
 
     /// Get the block size limit for this block -- note this is capped at MAX_CONSENSUS_BLOCK_SIZE == 2GB unless
     /// `disable2GBCap` is set to true.
-    uint64_t GetBlockSizeLimit(bool disable2GBCap = false) const {
-        if (disable2GBCap) {
-            return controlBlockSize + elasticBufferSize;
-        } else {
-            return std::min<uint64_t>(controlBlockSize + elasticBufferSize, MAX_CONSENSUS_BLOCK_SIZE);
-        }
-    }
-
-    /// Return the block size limit for the next block after this one. This is a utility method for consensus code
-    /// to quickly know the limit to apply to the next block, given the current tip's defined State.
-    uint64_t GetNextBlockSizeLimit(const Config &config, bool disable2GBCap = false) const {
-        return NextBlockState(config, 0).GetBlockSizeLimit(disable2GBCap);
-    }
+    uint64_t GetBlockSizeLimitBase(BlockTicks thisBlockInterval, bool disable2GBCap) const;
 
     /// Advance the algorithm's state to the next block (N + 1), given the next block (N + 1) block size,
     /// algorithm state for this block (N), and global algorithm configuration.
-    State NextBlockState(const Config &config, uint64_t nextBlockSize) const;
+    StateBase NextBlockStateBase(const Config &config, BlockTicks thisBlockInterval, uint64_t nextBlockSize) const;
 
-    /// Calculate algorithm's look-ahead block size limit, for a block N blocks ahead of current one. This is a
-    /// "worst-case" calculation for the block size limit N blocks ahead. In other words, this function
-    /// returns the limit for block with current+N height, assuming all blocks 100% full.
-    uint64_t CalcLookaheadBlockSizeLimit(const Config &config, size_t count, bool disable2GBCap = false) const;
-
+public:
     /// Query this block's size
-    uint64_t GetBlockSize() const { return blockSize; }
+    constexpr uint64_t GetBlockSize() const noexcept { return blockSize; }
     /// Query this state's "control block size"
-    uint64_t GetControlBlockSize() const { return controlBlockSize; }
+    constexpr uint64_t GetControlBlockSize() const noexcept { return controlBlockSize; }
     /// Query this state's "elastic buffer size"
-    uint64_t GetElasticBufferSize() const { return elasticBufferSize; }
+    constexpr uint64_t GetElasticBufferSize() const noexcept { return elasticBufferSize; }
+
+    /// Note we only serialize these three properties to the block index db; see CBlockIndex which fills-in the
+    /// `State::blockInterval` property at on-demand via the AblaStateMixin CRTP class.
+    SERIALIZE_METHODS(StateBase, obj) {
+        READWRITE(VARINT(obj.blockSize), VARINT(obj.controlBlockSize), VARINT(obj.elasticBufferSize));
+    }
+};
+
+/// In-memory ABLA state -- this is the working state that's constructed on-the-fly by CBlockIndex
+/// as client code works with ABLA to advance the state.
+class State : public StateBase {
+    BlockTicks blockInterval = BASE_BLOCK_INTERVAL; ///< In-memory only, not serialized, this block's pow target spacing
+
+    constexpr State(const StateBase &b, BlockTicks blkTicks) : StateBase(b), blockInterval{blkTicks} {}
+
+public:
+    /// Constructs an "invalid" state (used by tests)
+    constexpr State() noexcept = default;
+
+    /// Construct a state using defaults from Config (suitable for all blocks before ABLA activation)
+    constexpr State(const Config &config, uint64_t blkSize) noexcept
+        : StateBase(blkSize, config.epsilon0, config.beta0) {}
+
+    /// Convenience c'tor
+    constexpr State(uint64_t blockSizeIn, uint64_t cbsIn, uint64_t ebsIn, BlockTicks thisBlockInterval) noexcept
+        : StateBase(blockSizeIn, cbsIn, ebsIn), blockInterval{thisBlockInterval} {}
 
     /// Returns true if this state is valid relative to `config`. On false return, optional out `err` is set
     /// to point to a constant string explaining the reason that this state is invalid.
@@ -121,24 +138,51 @@ public:
     /// Used for debug purposes -- print all of this instance's variables to a string.
     std::string ToString() const;
 
-    SERIALIZE_METHODS(State, obj) {
-        READWRITE(VARINT(obj.blockSize), VARINT(obj.controlBlockSize), VARINT(obj.elasticBufferSize));
+    /// Get the block size limit for this block -- note this is capped at MAX_CONSENSUS_BLOCK_SIZE == 2GB unless
+    /// `disable2GBCap` is set to true.
+    uint64_t GetBlockSizeLimit(bool disable2GBCap = false) const {
+        return GetBlockSizeLimitBase(blockInterval, disable2GBCap);
     }
+
+    /// Return the block size limit for the next block after this one. This is a utility method for consensus code
+    /// to quickly know the limit to apply to the next block, given the current tip's defined State.
+    uint64_t GetNextBlockSizeLimit(const Config &config, BlockTicks nextBlockInterval, bool disable2GBCap = false) const {
+        return NextBlockState(config, nextBlockInterval, 0).GetBlockSizeLimit(disable2GBCap);
+    }
+
+    /// Advance the algorithm's state to the next block (N + 1), given the next block (N + 1) block size,
+    /// algorithm state for this block (N), and global algorithm configuration.
+    State NextBlockState(const Config &config, BlockTicks nextBlockInterval, uint64_t nextBlockSize) const {
+        return State{NextBlockStateBase(config, blockInterval, nextBlockSize), nextBlockInterval};
+    }
+
+    /// Calculate algorithm's look-ahead block size limit, for a block N blocks ahead of current one. This is a
+    /// "worst-case" calculation for the block size limit N blocks ahead. In other words, this function
+    /// returns the limit for block with current+N height, assuming all blocks 100% full.
+    ///
+    /// Also note that since this is a worst-case calculation, assumption is that all future blocks use
+    /// `paranoidWorseCaseBlockInterval` (default: BASE_BLOCK_INTERVAL = 10 mins) as their block time.
+    uint64_t CalcLookaheadBlockSizeLimitWorstCase(const Config &config, size_t count,
+                                                  BlockTicks paranoidWorseCaseBlockInterval = BASE_BLOCK_INTERVAL,
+                                                  bool disable2GBCap = false) const;
+
+    // -- Getter for this block's interval
+    constexpr BlockTicks GetBlockInterval() const noexcept { return blockInterval; }
 
     // -- To/From a tuple (mainly used by tests) --
 
-    auto ToTuple() const { return std::tuple(blockSize, controlBlockSize, elasticBufferSize); }
-    static State FromTuple(const std::tuple<uint64_t, uint64_t, uint64_t> &tup) {
-        State ret;
-        std::tie(ret.blockSize, ret.controlBlockSize, ret.elasticBufferSize) = tup;
-        return ret;
+    constexpr std::tuple<uint64_t, uint64_t, uint64_t, BlockTicks> ToTuple() const noexcept {
+        return std::tuple(blockSize, controlBlockSize, elasticBufferSize, blockInterval);
+    }
+    static constexpr State FromTuple(const std::tuple<uint64_t, uint64_t, uint64_t, BlockTicks> &tup) noexcept {
+        const auto & [bs, cbs, ebs, bi] = tup;
+        return State{bs, cbs, ebs, bi};
     }
 
-    // -- Minimal comparison ops --
+    // -- Comparison ops --
 
-    bool operator<(const State &o) const { return ToTuple() < o.ToTuple(); }
-    bool operator==(const State &o) const { return ToTuple() == o.ToTuple(); }
-    bool operator!=(const State &o) const { return ToTuple() != o.ToTuple(); }
+    constexpr auto operator<=>(const State &o) const noexcept { return ToTuple() <=> o.ToTuple(); }
+    constexpr bool operator==(const State &o) const noexcept { return ToTuple() == o.ToTuple(); }
 };
 
 // --- Some constants ---

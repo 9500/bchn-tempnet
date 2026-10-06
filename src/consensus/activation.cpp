@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2026 The Bitcoin developers
+// Copyright (c) 2018-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -168,8 +168,10 @@ bool IsUpgrade12Enabled(const Consensus::Params &params, const CBlockIndex *pind
 }
 
 // Upgrade 2027
+std::optional<int64_t> g_Upgrade2027TimeOverride;
+
 static bool IsUpgrade2027Enabled(const Consensus::Params &params, const int64_t nMedianTimePast) {
-    return nMedianTimePast >= gArgs.GetArg("-upgrade2027activationtime", params.upgrade2027ActivationTime);
+    return nMedianTimePast >= g_Upgrade2027TimeOverride.value_or(params.upgrade2027ActivationTime);
 }
 
 bool IsUpgrade2027Enabled(const Consensus::Params &params, const CBlockIndex *pindexPrev) {

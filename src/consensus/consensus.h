@@ -1,10 +1,12 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
-// Copyright (c) 2021-2023 The Bitcoin developers
+// Copyright (c) 2021-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #pragma once
+
+#include <consensus/blockticks.h>
 
 #include <cstdint>
 #include <limits>
@@ -40,11 +42,6 @@ inline constexpr uint64_t MAX_TX_SIGCHECKS = 3000;
  * SigChecks (executed signature check operations) in the block. (network rule).
  */
 inline constexpr int BLOCK_MAXBYTES_MAXSIGCHECKS_RATIO = 141;
-/**
- * Coinbase transaction outputs can only be spent after this number of new
- * blocks (network rule).
- */
-inline constexpr int COINBASE_MATURITY = 100;
 /** Coinbase scripts have their own script size limit. */
 inline constexpr int MAX_COINBASE_SCRIPTSIG_SIZE = 100;
 
@@ -67,3 +64,26 @@ inline constexpr uint64_t GetMaxBlockSigChecksCount(uint64_t maxBlockSize) {
 
 /** Whether to do extra (slow) checks at app startup related to ABLA state. */
 inline constexpr bool DEFAULT_ABLA_SLOW_CHECKS = false;
+
+namespace legacy {
+/** Legacy block time is 10 mins (600 seconds). Future upgrades may introduce new block times after a certain height. */
+inline constexpr int64_t POW_TARGET_SPACING_SECS = 10 * 60;
+inline constexpr BlockTicks POW_TARGET_SPACING_TICKS{static_cast<uint64_t>(POW_TARGET_SPACING_SECS)};
+/** Legacy DAA target timespan in seconds (2 weeks). */
+inline constexpr int64_t POW_TARGET_TIMESPAN_SECS = 14 * 24 * 60 * 60;
+/**
+ * Coinbase transaction outputs can only be spent after this number of 10-min blocks (network rule).
+ * To determine coinbase spends, use the BlockTicks system and the constant kCoinbaseMaturityTicks
+ * defined below.
+ */
+inline constexpr int COINBASE_MATURITY_10MIN_BLOCKS = 100;
+} // namespace legacy
+
+namespace upgrade2027 {
+/** Upgrade2027 set the block time to 1 min (60 seconds) */
+inline constexpr BlockTicks POW_TARGET_SPACING_TICKS{60};
+} // namespace upgrade2027
+
+/** The number of block ticks required to spend a coinbase txn; corresponds to 100 10-min blocks or 1000 1-min blocks */
+inline constexpr BlockTicks kCoinbaseMaturityTicks{  legacy::COINBASE_MATURITY_10MIN_BLOCKS
+                                                   * legacy::POW_TARGET_SPACING_TICKS};

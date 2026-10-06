@@ -5,7 +5,6 @@
 #include <config.h>
 
 #include <chainparams.h>
-#include <consensus/consensus.h> // DEFAULT_CONSENSUS_BLOCK_SIZE, MAX_CONSENSUS_BLOCK_SIZE
 #include <policy/policy.h> // MAX_INV_BROADCAST_*
 #include <util/overloaded.h>
 
@@ -19,43 +18,47 @@ GlobalConfig::GlobalConfig()
       varGeneratedBlockSizeParam(100.0),
       nMaxMemPoolSize(DEFAULT_CONSENSUS_BLOCK_SIZE * DEFAULT_MAX_MEMPOOL_SIZE_PER_MB) {}
 
-bool GlobalConfig::SetBlockSizeOverride(std::optional<uint64_t> optBlockSize) {
-    if (!optBlockSize) {
-        blockSizeOverride.reset();
+bool GlobalConfig::SetBlockSizeOverride(std::optional<uint64_t> optBlockSize10Mins) {
+    if (!optBlockSize10Mins) {
+        blockSize10MinsOverride.reset();
         return true;
     }
-    const uint64_t &blockSize = *optBlockSize;
+    const uint64_t &blockSize10Mins = *optBlockSize10Mins;
 
     // Do not allow maxBlockSize to be set below historic 1MB limit
     // It cannot be equal either because of the "must be big" UAHF rule.
-    if (blockSize <= LEGACY_MAX_BLOCK_SIZE) {
+    if (blockSize10Mins <= LEGACY_MAX_BLOCK_SIZE) {
         return false;
     }
 
     // We limit this block size parameter to what the machine can physically address on 32-bit (2GB)
-    if (blockSize > MAX_CONSENSUS_BLOCK_SIZE) {
+    if (blockSize10Mins > MAX_CONSENSUS_BLOCK_SIZE) {
         return false;
     }
 
-    blockSizeOverride = blockSize;
+    blockSize10MinsOverride = blockSize10Mins;
 
     return true;
 }
 
-void GlobalConfig::NotifyMaxBlockSizeLookAheadGuessChanged(uint64_t nSize) const {
-    nMaxBlockSizeWorstCaseGuess = nSize;
+void GlobalConfig::NotifyMaxBlockSizeLookAheadGuessChanged(uint64_t nSize10Mins) const {
+    nMaxBlockSizeWorstCaseGuess10Mins = nSize10Mins;
 }
 
 uint64_t GlobalConfig::GetMaxBlockSizeLookAheadGuess() const {
-    return std::clamp(nMaxBlockSizeWorstCaseGuess.load(), GetDefaultConsensusBlockSize(), MAX_CONSENSUS_BLOCK_SIZE);
+    return std::clamp(nMaxBlockSizeWorstCaseGuess10Mins.load(), GetDefaultConsensusBlockSize(), MAX_CONSENSUS_BLOCK_SIZE);
 }
 
-uint64_t GlobalConfig::GetDefaultConsensusBlockSize() const {
-    return blockSizeOverride.value_or(GetChainParams().GetConsensus().nDefaultConsensusBlockSize);
+uint64_t GlobalConfig::GetDefaultConsensusBlockSize(const BlockTicks blockInterval) const {
+    const uint64_t nSize10Mins = blockSize10MinsOverride.value_or(GetChainParams().GetConsensus()
+                                                                      .nDefaultConsensusBlockSize10Mins);
+    // Scale based on blockInterval
+    const uint64_t nSizeScaled = nSize10Mins * blockInterval / legacy::POW_TARGET_SPACING_TICKS;
+    return std::min(nSizeScaled, MAX_CONSENSUS_BLOCK_SIZE);
 }
 
-void  GlobalConfig::SetGeneratedBlockSizeBytes(uint64_t blockSize) {
-    varGeneratedBlockSizeParam = blockSize;
+void  GlobalConfig::SetGeneratedBlockSizeBytes(uint64_t blockSize10Mins) {
+    varGeneratedBlockSizeParam = blockSize10Mins;
 }
 
 bool GlobalConfig::SetGeneratedBlockSizePercent(double percent) {
@@ -79,23 +82,26 @@ bool GlobalConfig::SetInvBroadcastInterval(uint64_t interval) {
     return true;
 }
 
-uint64_t GlobalConfig::GetGeneratedBlockSize(const uint64_t maxBlockSize) const {
-    uint64_t blockSize;
+uint64_t GlobalConfig::GetGeneratedBlockSize(const BlockTicks blockInterval,
+                                             std::optional<uint64_t> currentMaxBlockSizeScaled) const {
+    uint64_t blockSizeScaled;
+    const uint64_t maxBlockSizeScaled = currentMaxBlockSizeScaled ? *currentMaxBlockSizeScaled
+                                                                  : GetDefaultConsensusBlockSize(blockInterval);
 
     std::visit(
         util::Overloaded{
-            [&blockSize](uint64_t val) {
-                blockSize = val;
+            [&blockSizeScaled, blockInterval](uint64_t val10Mins) {
+                blockSizeScaled = val10Mins * blockInterval / legacy::POW_TARGET_SPACING_TICKS;
             },
-            [&blockSize, maxBlockSize](double percent) {
-                blockSize = static_cast<uint64_t>(maxBlockSize * (percent / 100.0));
+            [&blockSizeScaled, maxBlockSizeScaled](double percent) {
+                blockSizeScaled = static_cast<uint64_t>(maxBlockSizeScaled * (percent / 100.0));
             }
         }, varGeneratedBlockSizeParam);
 
     // Maintain invariant: ensure that blockSize <= maxBlockSize
-    blockSize = std::min(maxBlockSize, blockSize);
+    blockSizeScaled = std::min(maxBlockSizeScaled, blockSizeScaled);
 
-    return blockSize;
+    return blockSizeScaled;
 }
 
 const CChainParams &GlobalConfig::GetChainParams() const {

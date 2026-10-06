@@ -491,19 +491,16 @@ void SetupServerArgs() {
         "Specify additional configuration file, relative to the -datadir path "
         "(only useable from configuration file, not command line)",
         ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    gArgs.AddArg("-maxreorgdepth=<n>",
-                 strprintf("Configure at what depth blocks are considered "
-                           "final (-1 to disable, default: %d)",
-                           DEFAULT_MAX_REORG_DEPTH),
+    gArgs.AddArg("-maxreorgticks=<n>",
+                 strprintf("Configure at what \"block tick\" depth blocks are considered final"
+                           " (-1 to disable, default: %d).", DEFAULT_MAX_REORG_TICKS.toSecs()),
                  ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     gArgs.AddArg("-finalizeheaders",
-                 strprintf("Whether to reject new headers below maxreorgdepth "
-                           "if a finalized block exists (default: %u)",
+                 strprintf("Whether to reject new headers below maxreorgticks if a finalized block exists (default: %u)",
                            DEFAULT_FINALIZE_HEADERS),
                  ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     gArgs.AddArg("-finalizeheaderspenalty=<n>",
-                 strprintf("Penalize peers sending headers below with DoS score <n> "
-                           "(default: %u)",
+                 strprintf("Penalize peers sending headers below finalization with DoS score <n> (default: %u)",
                            DEFAULT_FINALIZE_HEADERS_PENALTY),
                  ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     gArgs.AddArg("-loadblock=<file>",
@@ -511,11 +508,11 @@ void SetupServerArgs() {
                  ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     gArgs.AddArg("-maxmempool=<n>", strprintf("Keep the transaction memory pool below <n> "
                  "megabytes (default: %u, testnet: %u, testnet4: %u, scalenet: %u, chipnet: %u)",
-                 DEFAULT_MAX_MEMPOOL_SIZE_PER_MB * defaultChainParams->GetConsensus().nDefaultConsensusBlockSize / ONE_MEGABYTE,
-                 DEFAULT_MAX_MEMPOOL_SIZE_PER_MB * testnetChainParams->GetConsensus().nDefaultConsensusBlockSize / ONE_MEGABYTE,
-                 DEFAULT_MAX_MEMPOOL_SIZE_PER_MB * testnet4ChainParams->GetConsensus().nDefaultConsensusBlockSize / ONE_MEGABYTE,
-                 DEFAULT_MAX_MEMPOOL_SIZE_PER_MB * scalenetChainParams->GetConsensus().nDefaultConsensusBlockSize / ONE_MEGABYTE,
-                 DEFAULT_MAX_MEMPOOL_SIZE_PER_MB * chipnetChainParams->GetConsensus().nDefaultConsensusBlockSize / ONE_MEGABYTE),
+                 DEFAULT_MAX_MEMPOOL_SIZE_PER_MB * defaultChainParams->GetConsensus().nDefaultConsensusBlockSize10Mins / ONE_MEGABYTE,
+                 DEFAULT_MAX_MEMPOOL_SIZE_PER_MB * testnetChainParams->GetConsensus().nDefaultConsensusBlockSize10Mins / ONE_MEGABYTE,
+                 DEFAULT_MAX_MEMPOOL_SIZE_PER_MB * testnet4ChainParams->GetConsensus().nDefaultConsensusBlockSize10Mins / ONE_MEGABYTE,
+                 DEFAULT_MAX_MEMPOOL_SIZE_PER_MB * scalenetChainParams->GetConsensus().nDefaultConsensusBlockSize10Mins / ONE_MEGABYTE,
+                 DEFAULT_MAX_MEMPOOL_SIZE_PER_MB * chipnetChainParams->GetConsensus().nDefaultConsensusBlockSize10Mins / ONE_MEGABYTE),
                  ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     gArgs.AddArg("-maxorphantx=<n>",
                  strprintf("Keep at most <n> unconnectable transactions in "
@@ -1133,13 +1130,14 @@ void SetupServerArgs() {
 
     gArgs.AddArg("-blockmaxsize=<n>",
                  strprintf("Set maximum mined block size in bytes (default: %u, testnet: %u, testnet4: %u,"
-                           " scalenet: %u, chipnet: %u, regtest: %u)",
-                           defaultChainParams->GetConsensus().GetDefaultGeneratedBlockSizeBytes(),
-                           testnetChainParams->GetConsensus().GetDefaultGeneratedBlockSizeBytes(),
-                           testnet4ChainParams->GetConsensus().GetDefaultGeneratedBlockSizeBytes(),
-                           scalenetChainParams->GetConsensus().GetDefaultGeneratedBlockSizeBytes(),
-                           chipnetChainParams->GetConsensus().GetDefaultGeneratedBlockSizeBytes(),
-                           regtestChainParams->GetConsensus().GetDefaultGeneratedBlockSizeBytes()),
+                           " scalenet: %u, chipnet: %u, regtest: %u). Note that this size is in terms of 10-min blocks"
+                           " and for 1-min blocks, 1/10th the specified size will be used per block.",
+                           defaultChainParams->GetConsensus().GetDefaultGeneratedBlockSizeBytes10Mins(),
+                           testnetChainParams->GetConsensus().GetDefaultGeneratedBlockSizeBytes10Mins(),
+                           testnet4ChainParams->GetConsensus().GetDefaultGeneratedBlockSizeBytes10Mins(),
+                           scalenetChainParams->GetConsensus().GetDefaultGeneratedBlockSizeBytes10Mins(),
+                           chipnetChainParams->GetConsensus().GetDefaultGeneratedBlockSizeBytes10Mins(),
+                           regtestChainParams->GetConsensus().GetDefaultGeneratedBlockSizeBytes10Mins()),
                  ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
     gArgs.AddArg("-percentblockmaxsize=<percent>",
                  strprintf("Set maximum mined block size as a floating-point percentage of the current max block size."
@@ -2062,6 +2060,16 @@ bool AppInitParameterInteraction(Config &config) {
         }
         ::g_Upgrade12HeightOverride.emplace(static_cast<int32_t>(height));
         LogPrintf("Using upgrade 12 activation height override: %d\n", height);
+    }
+
+    // Process CLI/conf override for the upgrade2027 activation time
+    if (gArgs.IsArgSet("-upgrade2027activationtime")) {
+        const auto val = gArgs.GetArg("-upgrade2027activationtime", 0);
+        if (val < 0) {
+            return InitError("Invalid -upgrade2027activationtime, must be a positive integer");
+        }
+        ::g_Upgrade2027TimeOverride.emplace(val);
+        LogPrintf("Using upgrade 2027 activation time override: %d\n", val);
     }
 
     return true;

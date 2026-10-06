@@ -77,9 +77,6 @@ static constexpr int32_t MAX_OUTBOUND_PEERS_TO_PROTECT_FROM_DISCONNECT = 4;
  */
 // 20 minutes
 static constexpr int64_t CHAIN_SYNC_TIMEOUT = 20 * 60;
-/** How frequently to check for stale tips, in seconds */
-// 10 minutes
-static constexpr int64_t STALE_CHECK_INTERVAL = 10 * 60;
 /**
  * How frequently to check for extra outbound peers and disconnect, in seconds.
  */
@@ -609,21 +606,27 @@ static void MaybeSetPeerAsAnnouncingHeaderAndIDs(NodeId nodeid,
     });
 }
 
-static bool TipMayBeStale(const Consensus::Params &consensusParams)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+static BlockTicks GetCurrentPowSpacing(const CBlockIndex **ptip = nullptr) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+    AssertLockHeld(cs_main);
+    const auto *tip = ::ChainActive().Tip();
+    if (ptip) {
+        *ptip = tip;
+    }
+    return tip ? tip->GetTickDeltaForNextBlock() : legacy::POW_TARGET_SPACING_TICKS;
+}
+
+static bool TipMayBeStale() EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     AssertLockHeld(cs_main);
     if (g_last_tip_update == 0) {
         g_last_tip_update = GetTime();
     }
-    return g_last_tip_update <
-               GetTime() - consensusParams.nPowTargetSpacing * 3 &&
-           mapBlocksInFlight.empty();
+    return mapBlocksInFlight.empty() && g_last_tip_update < GetTime() - GetCurrentPowSpacing().toSecs() * 3;
 }
 
-static bool CanDirectFetch(const Consensus::Params &consensusParams)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
-    return ::ChainActive().Tip()->GetBlockTime() >
-           GetAdjustedTime() - consensusParams.nPowTargetSpacing * 20;
+static bool CanDirectFetch() EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+    const CBlockIndex *tip{};
+    const auto powTargetSpacing = GetCurrentPowSpacing(&tip);
+    return tip->GetBlockTime() > GetAdjustedTime() - powTargetSpacing.toSecs() * 20;
 }
 
 static bool PeerHasHeader(CNodeState *state, const CBlockIndex *pindex)
@@ -963,7 +966,7 @@ PeerLogicValidation::PeerLogicValidation(CConnman *connmanIn, BanMan *banman,
     // combine them in one function and schedule at the quicker (peer-eviction)
     // timer.
     static_assert(
-        EXTRA_PEER_CHECK_INTERVAL < STALE_CHECK_INTERVAL,
+        EXTRA_PEER_CHECK_INTERVAL < upgrade2027::POW_TARGET_SPACING_TICKS.toSecs(),
         "peer eviction timer should be less than stale tip check timer");
     scheduler.scheduleEvery(
         [this, consensusParams, this_deleted = this->deleted]() {
@@ -1435,9 +1438,7 @@ void PeerLogicValidation::ProcessGetBlockData(const Config &config, const NodeRe
                 // we don't feel like constructing the object for them, so instead
                 // we respond with the full, non-compact block.
                 int nSendFlags = 0;
-                if (CanDirectFetch(consensusParams) &&
-                    pindex->nHeight >=
-                        ::ChainActive().Height() - MAX_CMPCTBLOCK_DEPTH) {
+                if (CanDirectFetch() && pindex->nHeight >= ::ChainActive().Height() - MAX_CMPCTBLOCK_DEPTH) {
                     if (recent_block.compact_block && recent_block.hash == pindex->GetBlockHash()) {
                         // The requested block is the one we cached on arrival, so reuse
                         // its short txids rather than recomputing them per peer.
@@ -1762,7 +1763,7 @@ bool PeerLogicValidation::ProcessHeadersMessage(const Config &config, const Node
                                      uint256()));
         }
 
-        bool fCanDirectFetch = CanDirectFetch(chainparams.GetConsensus());
+        bool fCanDirectFetch = CanDirectFetch();
         // If this set of headers is valid and ends in a block with at least as
         // much work as our tip, download as much as possible.
         if (fCanDirectFetch && pindexLast->IsValid(BlockValidity::TREE) &&
@@ -2701,13 +2702,15 @@ bool PeerLogicValidation::ProcessMessage(const Config &config, const NodeRef &pf
             // If pruning, don't inv blocks unless we have on disk and are
             // likely to still have for some reasonable time window (1 hour)
             // that block relay might require.
+            const CBlockIndex *tip{};
+            const auto powSpacing = GetCurrentPowSpacing(&tip);
             const int nPrunedBlocksLikelyToHave =
-                MIN_BLOCKS_TO_KEEP -
-                3600 / chainparams.GetConsensus().nPowTargetSpacing;
+                MIN_BLOCKS_TO_KEEP
+                // Below expression is always: 6 (legacy 10 min block times) or 60 (1 min block times)
+                - 3600 / powSpacing.toSecs(); // TODO: Ensure this expression can't be negative, even for <1min block time
             if (fPruneMode &&
                 (!pindex->nStatus.hasData() ||
-                 pindex->nHeight <= ::ChainActive().Tip()->nHeight -
-                                        nPrunedBlocksLikelyToHave)) {
+                 pindex->nHeight <= tip->nHeight - nPrunedBlocksLikelyToHave)) {
                 LogPrint(
                     BCLog::NET,
                     " getblocks stopping, pruned or too old block at %d %s\n",
@@ -3133,7 +3136,7 @@ bool PeerLogicValidation::ProcessMessage(const Config &config, const NodeRef &pf
 
             // If we're not close to tip yet, give up and let parallel block
             // fetch work its magic.
-            if (!nbrs.already_in_flight && !CanDirectFetch(chainparams.GetConsensus())) {
+            if (!nbrs.already_in_flight && !CanDirectFetch()) {
                 return true;
             }
 
@@ -4110,8 +4113,7 @@ void PeerLogicValidation::EvictExtraOutboundPeers(int64_t time_in_seconds) {
     }
 }
 
-void PeerLogicValidation::CheckForStaleTipAndEvictPeers(
-    const Consensus::Params &consensusParams) {
+void PeerLogicValidation::CheckForStaleTipAndEvictPeers(const Consensus::Params &) {
     LOCK(cs_main);
 
     if (connman == nullptr) {
@@ -4129,7 +4131,7 @@ void PeerLogicValidation::CheckForStaleTipAndEvictPeers(
     // Check whether our tip is stale, and if so, allow using an extra outbound
     // peer.
     if (!fImporting && !fReindex && connman->GetNetworkActive() &&
-        connman->GetUseAddrmanOutgoing() && TipMayBeStale(consensusParams)) {
+        connman->GetUseAddrmanOutgoing() && TipMayBeStale()) {
         LogPrintf("Potential stale tip detected, will try using extra outbound "
                   "peer (last tip update: %d seconds ago)\n",
                   time_in_seconds - g_last_tip_update);
@@ -4137,7 +4139,7 @@ void PeerLogicValidation::CheckForStaleTipAndEvictPeers(
     } else if (connman->GetTryNewOutboundPeer()) {
         connman->SetTryNewOutboundPeer(false);
     }
-    m_stale_tip_check_time = time_in_seconds + STALE_CHECK_INTERVAL;
+    m_stale_tip_check_time = time_in_seconds + GetCurrentPowSpacing().toSecs();
 }
 
 bool PeerLogicValidation::SendMessages(const Config &config, NodeRef pto,
@@ -4267,7 +4269,7 @@ bool PeerLogicValidation::SendMessages(const Config &config, NodeRef pto,
                 nNow + HEADERS_DOWNLOAD_TIMEOUT_BASE +
                 HEADERS_DOWNLOAD_TIMEOUT_PER_HEADER *
                     (GetAdjustedTime() - pindexBestHeader->GetBlockTime()) /
-                    (consensusParams.nPowTargetSpacing);
+                    pindexBestHeader->GetTickDeltaForNextBlock().toSecs();
             nSyncStarted++;
             const CBlockIndex *pindexStart = pindexBestHeader;
             /**
@@ -4678,7 +4680,7 @@ bool PeerLogicValidation::SendMessages(const Config &config, NodeRef pto,
             nPeersWithValidatedDownloads -
             (state.nBlocksInFlightValidHeaders > 0);
         if (nNow > state.nDownloadingSince +
-                       consensusParams.nPowTargetSpacing *
+                       pindexBestHeader->GetTickDeltaForNextBlock().toSecs() *
                            (BLOCK_DOWNLOAD_TIMEOUT_BASE +
                             BLOCK_DOWNLOAD_TIMEOUT_PER_PEER *
                                 nOtherPeersWithValidatedDownloads)) {

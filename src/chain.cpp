@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2022 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -131,6 +131,27 @@ void CBlockIndex::BuildSkip() {
     }
 }
 
+const CBlockIndex *CBlockIndex::FindAncestorWithTickDepth(const BlockTicks ticks) const {
+    if (ticks > GetBlockTicks()) {
+        return nullptr; // fast-path to avoid walking the whole chain back only to return nullptr anyway
+    }
+    const CBlockIndex *pindex = this;
+    while (pindex && TickDiff(pindex) < ticks) {
+        if (pindex->pskip && TickDiff(pindex->pskip) <= ticks) {
+            // skip backward only if doing so would not cause us to over-skip
+            pindex = pindex->pskip;
+        } else {
+            // otherwise walk backward by 1
+            pindex = pindex->pprev;
+        }
+    }
+    return pindex;
+}
+
+CBlockIndex *CBlockIndex::FindAncestorWithTickDepth(const BlockTicks ticks) {
+    return const_cast<CBlockIndex *>(const_cast<const CBlockIndex *>(this)->FindAncestorWithTickDepth(ticks));
+}
+
 arith_uint256 GetBlockProof(const CBlockIndex &block) {
     arith_uint256 bnTarget;
     bool fNegative;
@@ -149,7 +170,7 @@ arith_uint256 GetBlockProof(const CBlockIndex &block) {
 int64_t GetBlockProofEquivalentTime(const CBlockIndex &to,
                                     const CBlockIndex &from,
                                     const CBlockIndex &tip,
-                                    const Consensus::Params &params) {
+                                    const Consensus::Params &) {
     arith_uint256 r;
     int sign = 1;
     if (to.nChainWork > from.nChainWork) {
@@ -158,7 +179,18 @@ int64_t GetBlockProofEquivalentTime(const CBlockIndex &to,
         r = from.nChainWork - to.nChainWork;
         sign = -1;
     }
-    r = r * arith_uint256(params.nPowTargetSpacing) / GetBlockProof(tip);
+    // NOTE: For the below to always be correct, please ensure that all code paths that set nChainWork also set
+    //       block ticks & nHeight correctly.
+    const int64_t ticksDelta = [&] {
+        return to.TickDiff(&from).toSecs();
+    }();
+    const int64_t heightDelta = [&] {
+        int a = from.nHeight, b = to.nHeight;
+        if (b < a) { std::swap(b, a); }
+        return b - a;
+    }();
+    const int64_t avgSpacing = !heightDelta ? 0 : ticksDelta / heightDelta;
+    r = r * arith_uint256(avgSpacing) / GetBlockProof(tip);
     if (r.bits() > 63) {
         return sign * std::numeric_limits<int64_t>::max();
     }

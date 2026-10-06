@@ -1,12 +1,14 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2020 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <arith_uint256.h>
 #include <chain.h>
 #include <consensus/activation.h>
+#include <consensus/blockticks.h>
+#include <consensus/consensus.h>
 #include <consensus/params.h>
 #include <pow.h>
 #include <primitives/block.h>
@@ -15,6 +17,7 @@
 #include <util/system.h>
 
 #include <atomic>
+#include <cstdlib>
 
 static std::atomic<const CBlockIndex *> cachedAnchor{nullptr};
 
@@ -105,15 +108,15 @@ static uint32_t GetNextASERTWorkRequired(const CBlockIndex *pindexPrev,
     // This cannot handle the genesis block and early blocks in general.
     assert(pindexPrev != nullptr);
 
-    // We make no further assumptions other than the height of the prev block must be >= that of the anchor block.
-    assert(pindexPrev->nHeight >= anchorParams.nHeight);
+    // We make no further assumptions other than the the tick count of the current block must be >= that of the anchor.
+    assert(pindexPrev->GetBlockTicks() >= anchorParams.blockTicks);
 
     // Special difficulty rule for testnet
-    // If the new block's timestamp is more than 2 * 10 minutes then allow
+    // If the new block's timestamp is more than 2 * 10 minutes (upgrade2027 -> 2 * 1 minutes) then allow
     // mining of a min-difficulty block.
     if (params.fPowAllowMinDifficultyBlocks &&
         (pblock->GetBlockTime() >
-         pindexPrev->GetBlockTime() + 2 * params.nPowTargetSpacing)) {
+         pindexPrev->GetBlockTime() + 2 * pindexPrev->GetTickDeltaForNextBlock().toSecs())) {
         return UintToArith256(params.powLimit).GetCompact();
     }
 
@@ -127,19 +130,19 @@ static uint32_t GetNextASERTWorkRequired(const CBlockIndex *pindexPrev,
 
     const arith_uint256 refBlockTarget = arith_uint256().SetCompact(anchorParams.nBits);
 
-    // Time difference is from anchor block's parent block's timestamp
+    // Time difference is from anchor block parent's timestamp
     const int64_t nTimeDiff = pindexPrev->GetBlockTime() - anchorParams.nPrevBlockTime;
-    // Height difference is from current block to anchor block
-    const int nHeightDiff = pindexPrev->nHeight - anchorParams.nHeight;
+    // Tick difference is from anchor block to current block
+    const int64_t nTickDiff = (pindexPrev->GetBlockTicks() - anchorParams.blockTicks).toSecs<int64_t>();
 
-    // Do the actual target adaptation calculation in separate
-    // CalculateASERT() function
-    arith_uint256 nextTarget = CalculateASERT(refBlockTarget,
-                                              params.nPowTargetSpacing,
-                                              nTimeDiff,
-                                              nHeightDiff,
-                                              powLimit,
-                                              params.nASERTHalfLife);
+    // Do the actual target adaptation calculation in separate CalculateASERT() function
+    arith_uint256 nextTarget = CalculateASERT_TickBased(refBlockTarget,
+                                                        anchorParams.blockInterval.toSecs<int64_t>(),
+                                                        pindexPrev->GetTickDeltaForNextBlock().toSecs<int64_t>(),
+                                                        nTimeDiff,
+                                                        nTickDiff,
+                                                        powLimit,
+                                                        params.nASERTHalfLife);
 
     // CalculateASERT() already clamps to powLimit.
     return nextTarget.GetCompact();
@@ -168,11 +171,17 @@ uint32_t GetNextASERTWorkRequired(const CBlockIndex *pindexPrev,
     const auto anchorTime = pindexAnchorBlock->pprev
                                     ? pindexAnchorBlock->pprev->GetBlockTime()
                                     : pindexAnchorBlock->GetBlockTime();
+    const BlockTicks anchorTicks = pindexAnchorBlock->GetBlockTicks();
+    const BlockTicks anchorInterval = pindexAnchorBlock->pprev
+                                          ? pindexAnchorBlock->pprev->GetTickDeltaForNextBlock()
+                                          : pindexAnchorBlock->GetTickDeltaForNextBlock();
 
     const Consensus::Params::ASERTAnchor anchorParams{
         pindexAnchorBlock->nHeight,
         pindexAnchorBlock->nBits,
-        anchorTime
+        anchorTime,
+        anchorTicks,
+        anchorInterval
     };
 
     // Call the overloaded function that does the actual calculation using anchorParams
@@ -182,12 +191,12 @@ uint32_t GetNextASERTWorkRequired(const CBlockIndex *pindexPrev,
 
 // ASERT calculation function.
 // Clamps to powLimit.
-arith_uint256 CalculateASERT(const arith_uint256 &refTarget,
-                             const int64_t nPowTargetSpacing,
-                             const int64_t nTimeDiff,
-                             const int64_t nHeightDiff,
-                             const arith_uint256 &powLimit,
-                             const int64_t nHalfLife) noexcept {
+arith_uint256 CalculateASERT_HeightBased(const arith_uint256 &refTarget,
+                                         const int64_t nPowTargetSpacing,
+                                         const int64_t nTimeDiff,
+                                         const int64_t nHeightDiff,
+                                         const arith_uint256 &powLimit,
+                                         const int64_t nHalfLife) noexcept {
 
     // Input target must never be zero nor exceed powLimit.
     assert(refTarget > 0 && refTarget <= powLimit);
@@ -206,7 +215,7 @@ arith_uint256 CalculateASERT(const arith_uint256 &refTarget,
     //     new_target = old_target * 2^((blocks_time - IDEAL_BLOCK_TIME * (height_diff + 1)) / nHalfLife)
 
     // First, we'll calculate the exponent:
-    assert( llabs(nTimeDiff - nPowTargetSpacing * nHeightDiff) < (1ll << (63 - 16)) );
+    assert( std::llabs(nTimeDiff - nPowTargetSpacing * nHeightDiff) < (1ll << (63 - 16)) );
     const int64_t exponent = ((nTimeDiff - nPowTargetSpacing * (nHeightDiff + 1)) * 65536) / nHalfLife;
 
     // Next, we use the 2^x = 2 * 2^(x-1) identity to shift our exponent into the [0, 1) interval.
@@ -267,6 +276,141 @@ arith_uint256 CalculateASERT(const arith_uint256 &refTarget,
     return nextTarget;
 }
 
+arith_uint256 CalculateASERT_TickBased(const arith_uint256 &refTarget,
+                                       const int64_t nAnchorIdealBlockTime,
+                                       const int64_t nNextIdealBlockTime,
+                                       const int64_t nTimeDiff,
+                                       const int64_t nTickDiff,
+                                       const arith_uint256 &powLimit,
+                                       const int64_t nHalfLife) noexcept {
+
+    // Input target must never be zero nor exceed powLimit.
+    assert(refTarget > 0 && refTarget <= powLimit);
+
+    // We need some leading zero bits in powLimit in order to have room to handle
+    // overflows easily. 32 leading zero bits is more than enough.
+    assert((powLimit >> 224) == 0);
+
+    // Tick diff should NOT be negative or zero.
+    assert(nTickDiff >= 0);
+
+    // Ideal block times should not be 0
+    assert(nAnchorIdealBlockTime > 0 && nNextIdealBlockTime > 0);
+
+    int64_t blockIntervalRatio;
+    bool blockIntervalRatioIsInverted;
+    if (nAnchorIdealBlockTime >= nNextIdealBlockTime) {
+        // We either scaled DOWN the block time from the anchor, or it's the same.
+        assert(nAnchorIdealBlockTime % nNextIdealBlockTime == 0); // ratio should be integral
+        blockIntervalRatio = nAnchorIdealBlockTime / nNextIdealBlockTime;
+        blockIntervalRatioIsInverted = false;
+    } else  {
+        // We scaled UP the block time from the anchor (can only really happen on ScaleNet in some hypothetical future)
+        assert(nNextIdealBlockTime % nAnchorIdealBlockTime == 0); // ratio should be integral
+        blockIntervalRatio = nNextIdealBlockTime / nAnchorIdealBlockTime;
+        blockIntervalRatioIsInverted = true;
+    }
+
+    // The ratio should be >= 1
+    assert(blockIntervalRatio >= 1);
+    // And should fit in a 32-bit integer
+    assert(blockIntervalRatio <= static_cast<int64_t>(std::numeric_limits<uint32_t>::max()));
+
+    // It will be helpful when reading what follows, to remember that
+    // nextTarget is adapted from anchor block target value.
+
+    // Ultimately, we want to approximate the following ASERT formula, using only integer (fixed-point) math:
+    //     new_target = anchor_target * (anchor_ideal_block_time / next_ideal_block_time)
+    //                  * 2^((time_delta - (tick_delta + anchor_ideal_block_time)) / halflife)
+
+    // First, we'll calculate the exponent:
+    assert( std::llabs(nTimeDiff - nTickDiff) < (1ll << (63 - 16)) );
+    const int64_t exponent = ((nTimeDiff - (nTickDiff + nAnchorIdealBlockTime)) * 65536) / nHalfLife;
+
+    // Next, we use the 2^x = 2 * 2^(x-1) identity to shift our exponent into the [0, 1) interval.
+    // The truncated exponent tells us how many shifts we need to do
+    // Note1: This needs to be a right shift. Right shift rounds downward (floored division),
+    //        whereas integer division in C++ rounds towards zero (truncated division).
+    // Note2: This algorithm uses arithmetic shifts of negative numbers. This
+    //        is unpecified but very common behavior for C++ compilers before
+    //        C++20, and standard with C++20. We must check this behavior e.g.
+    //        using static_assert.
+    static_assert(int64_t(-1) >> 1 == int64_t(-1),
+                  "ASERT algorithm needs arithmetic shift support");
+
+    // Now we compute an approximated target * 2^(exponent/65536.0)
+
+    // First decompose exponent into 'integer' and 'fractional' parts:
+    int64_t shifts = exponent >> 16;
+    const auto frac = uint16_t(exponent);
+    assert(exponent == (shifts * 65536) + frac);
+
+    // multiply target by 65536 * 2^(fractional part)
+    // 2^x ~= (1 + 0.695502049*x + 0.2262698*x**2 + 0.0782318*x**3) for 0 <= x < 1
+    // Error versus actual 2^x is less than 0.013%.
+    const uint32_t factor = 65536 + ((
+        + 195766423245049ull * frac
+        + 971821376ull * frac * frac
+        + 5127ull * frac * frac * frac
+        + (1ull << 47)
+    ) >> 48);
+    // this is always < 2^241 since refTarget < 2^224
+    arith_uint256 nextTarget = refTarget;
+    // multiply by 65536 * 2^(dractional part)
+    nextTarget *= factor;
+
+    // multiply by 2^(integer part) / 65536
+    shifts -= 16;
+    if (shifts <= 0) {
+        nextTarget >>= -shifts;
+    } else {
+        // Detect overflow that would discard high bits
+        const auto nextTargetShifted = nextTarget << shifts;
+        if ((nextTargetShifted >> shifts) != nextTarget) {
+            // If we had wider integers, the final value of nextTarget would
+            // be >= 2^256 so it would have just ended up as powLimit anyway.
+            nextTarget = powLimit;
+        } else {
+            // Shifting produced no overflow, can assign value
+            nextTarget = nextTargetShifted;
+        }
+    }
+
+    // Scale target up by the blockIntervalRatio for possible blocktime change
+    if (blockIntervalRatio > 1) {
+        // We have a blocktime change between anchor and now.. scale target up or down according to the ratio.
+        if (!blockIntervalRatioIsInverted) {
+            // Current blocktime is less than anchor's blocktime, so scale target UP (higher target -> less difficulty)
+            const arith_uint256 nextTargetNotScaled = nextTarget;
+            nextTarget *= blockIntervalRatio;
+            if (nextTarget / blockIntervalRatio != nextTargetNotScaled) {
+                // We overflowed past 2^256, set to powLimit since that's what it would have ended up as anyway.
+                nextTarget = powLimit;
+            }
+        } else {
+            // This branch is here to support scaling the block time interval to something greater than the anchor's
+            // interval. May be relevant on ScaleNet where the anchor is not fixed and may end up at 1 min,
+            // and then in some future upgrade we maybe decide to go from e.g. 1 min blocktime -> 2 mins.
+            nextTarget /= blockIntervalRatio;
+        }
+    }
+
+    if (nextTarget == 0) {
+        // 0 is not a valid target, but 1 is.
+        nextTarget = arith_uint256(1);
+    } else if (nextTarget > powLimit) {
+        nextTarget = powLimit;
+    }
+
+    // we return from only 1 place for copy elision
+    return nextTarget;
+}
+
+namespace {
+// Values used by the legacy EDA as well as the legacy Cash DAA (CW144).
+constexpr int64_t LEGACY_DIFFICULTY_ADJUSTMENT_INTERVAL = legacy::POW_TARGET_TIMESPAN_SECS / legacy::POW_TARGET_SPACING_SECS;
+} // namespace
+
 /**
  * Compute the next required proof of work using the legacy Bitcoin difficulty
  * adjustment + Emergency Difficulty Adjustment (EDA).
@@ -276,15 +420,14 @@ static uint32_t GetNextEDAWorkRequired(const CBlockIndex *pindexPrev,
                                        const Consensus::Params &params) {
     // Only change once per difficulty adjustment interval
     uint32_t nHeight = pindexPrev->nHeight + 1;
-    if (nHeight % params.DifficultyAdjustmentInterval() == 0) {
+    if (nHeight % LEGACY_DIFFICULTY_ADJUSTMENT_INTERVAL == 0) {
         // Go back by what we want to be 14 days worth of blocks
-        assert(nHeight >= params.DifficultyAdjustmentInterval());
-        uint32_t nHeightFirst = nHeight - params.DifficultyAdjustmentInterval();
+        assert(nHeight >= LEGACY_DIFFICULTY_ADJUSTMENT_INTERVAL);
+        uint32_t nHeightFirst = nHeight - LEGACY_DIFFICULTY_ADJUSTMENT_INTERVAL;
         const CBlockIndex *pindexFirst = pindexPrev->GetAncestor(nHeightFirst);
         assert(pindexFirst);
 
-        return CalculateNextWorkRequired(pindexPrev,
-                                         pindexFirst->GetBlockTime(), params);
+        return legacy::CalculateNextWorkRequired(pindexPrev, pindexFirst->GetBlockTime(), params);
     }
 
     const uint32_t nProofOfWorkLimit =
@@ -294,15 +437,14 @@ static uint32_t GetNextEDAWorkRequired(const CBlockIndex *pindexPrev,
         // Special difficulty rule for testnet:
         // If the new block's timestamp is more than 2* 10 minutes then allow
         // mining of a min-difficulty block.
-        if (pblock->GetBlockTime() >
-            pindexPrev->GetBlockTime() + 2 * params.nPowTargetSpacing) {
+        if (pblock->GetBlockTime() > pindexPrev->GetBlockTime() + 2 * legacy::POW_TARGET_SPACING_SECS) {
             return nProofOfWorkLimit;
         }
 
         // Return the last non-special-min-difficulty-rules-block
         const CBlockIndex *pindex = pindexPrev;
         while (pindex->pprev &&
-               pindex->nHeight % params.DifficultyAdjustmentInterval() != 0 &&
+               pindex->nHeight % LEGACY_DIFFICULTY_ADJUSTMENT_INTERVAL != 0 &&
                pindex->nBits == nProofOfWorkLimit) {
             pindex = pindex->pprev;
         }
@@ -371,21 +513,20 @@ uint32_t GetNextWorkRequired(const CBlockIndex *pindexPrev,
     return GetNextEDAWorkRequired(pindexPrev, pblock, params);
 }
 
-uint32_t CalculateNextWorkRequired(const CBlockIndex *pindexPrev,
-                                   int64_t nFirstBlockTime,
-                                   const Consensus::Params &params) {
+uint32_t legacy::CalculateNextWorkRequired(const CBlockIndex *pindexPrev, int64_t nFirstBlockTime,
+                                           const Consensus::Params &params) {
     if (params.fPowNoRetargeting) {
         return pindexPrev->nBits;
     }
 
     // Limit adjustment step
     int64_t nActualTimespan = pindexPrev->GetBlockTime() - nFirstBlockTime;
-    if (nActualTimespan < params.nPowTargetTimespan / 4) {
-        nActualTimespan = params.nPowTargetTimespan / 4;
+    if (nActualTimespan < legacy::POW_TARGET_TIMESPAN_SECS / 4) {
+        nActualTimespan = legacy::POW_TARGET_TIMESPAN_SECS / 4;
     }
 
-    if (nActualTimespan > params.nPowTargetTimespan * 4) {
-        nActualTimespan = params.nPowTargetTimespan * 4;
+    if (nActualTimespan > legacy::POW_TARGET_TIMESPAN_SECS * 4) {
+        nActualTimespan = legacy::POW_TARGET_TIMESPAN_SECS * 4;
     }
 
     // Retarget
@@ -393,7 +534,7 @@ uint32_t CalculateNextWorkRequired(const CBlockIndex *pindexPrev,
     arith_uint256 bnNew;
     bnNew.SetCompact(pindexPrev->nBits);
     bnNew *= nActualTimespan;
-    bnNew /= params.nPowTargetTimespan;
+    bnNew /= legacy::POW_TARGET_TIMESPAN_SECS;
 
     if (bnNew > bnPowLimit) {
         bnNew = bnPowLimit;
@@ -422,43 +563,6 @@ bool CheckProofOfWork(const BlockHash &hash, uint32_t nBits,
     }
 
     return true;
-}
-
-/**
- * Compute a target based on the work done between 2 blocks and the time
- * required to produce that work.
- */
-static arith_uint256 ComputeTarget(const CBlockIndex *pindexFirst,
-                                   const CBlockIndex *pindexLast,
-                                   const Consensus::Params &params) {
-    assert(pindexLast->nHeight > pindexFirst->nHeight);
-
-    /**
-     * From the total work done and the time it took to produce that much work,
-     * we can deduce how much work we expect to be produced in the targeted time
-     * between blocks.
-     */
-    arith_uint256 work = pindexLast->nChainWork - pindexFirst->nChainWork;
-    work *= params.nPowTargetSpacing;
-
-    // In order to avoid difficulty cliffs, we bound the amplitude of the
-    // adjustment we are going to do to a factor in [0.5, 2].
-    int64_t nActualTimespan =
-        int64_t(pindexLast->nTime) - int64_t(pindexFirst->nTime);
-    if (nActualTimespan > 288 * params.nPowTargetSpacing) {
-        nActualTimespan = 288 * params.nPowTargetSpacing;
-    } else if (nActualTimespan < 72 * params.nPowTargetSpacing) {
-        nActualTimespan = 72 * params.nPowTargetSpacing;
-    }
-
-    work /= nActualTimespan;
-
-    /**
-     * We need to compute T = (2^256 / W) - 1 but 2^256 doesn't fit in 256 bits.
-     * By expressing 1 as W / W, we get (2^256 - W) / W, and we can compute
-     * 2^256 - W as the complement of W.
-     */
-    return (-work) / work;
 }
 
 /**
@@ -507,6 +611,40 @@ static const CBlockIndex *GetSuitableBlock(const CBlockIndex *pindex) {
 uint32_t GetNextCashWorkRequired(const CBlockIndex *pindexPrev,
                                  const CBlockHeader *pblock,
                                  const Consensus::Params &params) {
+    /**
+     * Compute a target based on the work done between 2 blocks and the time
+     * required to produce that work.
+     */
+    auto ComputeTarget = [](const CBlockIndex *pindexFirst, const CBlockIndex *pindexLast) -> arith_uint256 {
+        assert(pindexLast->nHeight > pindexFirst->nHeight);
+
+        /**
+         * From the total work done and the time it took to produce that much work,
+         * we can deduce how much work we expect to be produced in the targeted time
+         * between blocks.
+         */
+        arith_uint256 work = pindexLast->nChainWork - pindexFirst->nChainWork;
+        work *= legacy::POW_TARGET_SPACING_SECS;
+
+        // In order to avoid difficulty cliffs, we bound the amplitude of the
+        // adjustment we are going to do to a factor in [0.5, 2].
+        int64_t nActualTimespan = int64_t(pindexLast->nTime) - int64_t(pindexFirst->nTime);
+        if (nActualTimespan > 288 * legacy::POW_TARGET_SPACING_SECS) {
+            nActualTimespan = 288 * legacy::POW_TARGET_SPACING_SECS;
+        } else if (nActualTimespan < 72 * legacy::POW_TARGET_SPACING_SECS) {
+            nActualTimespan = 72 * legacy::POW_TARGET_SPACING_SECS;
+        }
+
+        work /= nActualTimespan;
+
+        /**
+         * We need to compute T = (2^256 / W) - 1 but 2^256 doesn't fit in 256 bits.
+         * By expressing 1 as W / W, we get (2^256 - W) / W, and we can compute
+         * 2^256 - W as the complement of W.
+         */
+        return (-work) / work;
+    };
+
     // This cannot handle the genesis block and early blocks in general.
     assert(pindexPrev);
 
@@ -515,13 +653,13 @@ uint32_t GetNextCashWorkRequired(const CBlockIndex *pindexPrev,
     // mining of a min-difficulty block.
     if (params.fPowAllowMinDifficultyBlocks &&
         (pblock->GetBlockTime() >
-         pindexPrev->GetBlockTime() + 2 * params.nPowTargetSpacing)) {
+         pindexPrev->GetBlockTime() + 2 * legacy::POW_TARGET_SPACING_SECS)) {
         return UintToArith256(params.powLimit).GetCompact();
     }
 
     // Compute the difficulty based on the full adjustment interval.
     const uint32_t nHeight = pindexPrev->nHeight;
-    assert(nHeight >= params.DifficultyAdjustmentInterval());
+    assert(nHeight >= LEGACY_DIFFICULTY_ADJUSTMENT_INTERVAL);
 
     // Get the last suitable block of the difficulty interval.
     const CBlockIndex *pindexLast = GetSuitableBlock(pindexPrev);
@@ -534,8 +672,7 @@ uint32_t GetNextCashWorkRequired(const CBlockIndex *pindexPrev,
     assert(pindexFirst);
 
     // Compute the target based on time and work done during the interval.
-    const arith_uint256 nextTarget =
-        ComputeTarget(pindexFirst, pindexLast, params);
+    const arith_uint256 nextTarget = ComputeTarget(pindexFirst, pindexLast);
 
     const arith_uint256 powLimit = UintToArith256(params.powLimit);
     if (nextTarget > powLimit) {
@@ -545,3 +682,12 @@ uint32_t GetNextCashWorkRequired(const CBlockIndex *pindexPrev,
     return nextTarget.GetCompact();
 }
 
+BlockTicks GetPowTargetSpacing(const Consensus::Params &params, const CBlockIndex *pindexPrev) {
+    if (IsUpgrade2027Enabled(params, pindexPrev)) {
+        static_assert(upgrade2027::POW_TARGET_SPACING_TICKS.value() > 0);
+        return upgrade2027::POW_TARGET_SPACING_TICKS;
+    }
+    // Legacy default = 10 min block time
+    static_assert(legacy::POW_TARGET_SPACING_TICKS.value() > 0);
+    return legacy::POW_TARGET_SPACING_TICKS;
+}
