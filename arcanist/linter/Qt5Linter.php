@@ -1,5 +1,7 @@
 <?php
 
+require_once("include/LintSuppressor.php");
+
 /**
  * Enforces Qt5 SIGNAL/SLOT connect style
  */
@@ -43,6 +45,9 @@ final class Qt5Linter extends ArcanistLinter {
     if(preg_match_all($pattern, $fileContent, $matches, PREG_OFFSET_CAPTURE)) {
       foreach($matches[1] as $match) {
         list($qt4syntax, $offset) = $match;
+        if (isSuppressed($fileContent, $offset, $this->getLinterName(), self::QT4_CONNECT_SYNTAX_FOUND)) {
+          continue;
+        }
         $this->raiseLintAtOffset(
           $offset,
           self::QT4_CONNECT_SYNTAX_FOUND,

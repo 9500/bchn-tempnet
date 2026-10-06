@@ -231,7 +231,6 @@
             "type": "lint-qt",
             "include": "(^src/qt/.*\\.(h|cpp)$)",
             "exclude": [
-                "(.*/)",
                 "(^src/qt/(locale|forms|res)/)"
             ]
         },
