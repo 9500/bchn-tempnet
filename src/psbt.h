@@ -426,7 +426,7 @@ struct PartiallySignedTransaction {
         // Make sure that we got an unsigned tx
         if (!tx) {
             throw std::ios_base::failure(
-                "No unsigned transcation was provided");
+                "No unsigned transaction was provided");
         }
 
         // Read input data

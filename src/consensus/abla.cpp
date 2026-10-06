@@ -96,7 +96,7 @@ bool Config::IsValid(const char **err) const {
     if (epsilon0 < muldiv(gammaReciprocal, B7, zeta_xB7 - B7)) {
         // Required due to truncation of integer ops.
         // With this we ensure that the control size can be adjusted for at least 1 byte.
-        // Also, with this we ensure that divisior bytesMax in State::NextBlockState() can't be 0.
+        // Also, with this we ensure that divisor bytesMax in State::NextBlockState() can't be 0.
         errStr = "Error, epsilon0 sanity check failed. Too low relative to gamma and zeta.";
         return false;
     }

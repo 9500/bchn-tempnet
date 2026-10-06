@@ -1,5 +1,5 @@
 // Copyright (c) 2016 Jeremy Rubin
-// Copyright (c) 2017-2021 The Bitcoin developers
+// Copyright (c) 2017-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -423,7 +423,7 @@ public:
      * is not guaranteed to return true.
      *
      * @param e the element to insert
-     * @param weither to replace if an existing element with the same key is
+     * @param whether to replace if an existing element with the same key is
      * found.
      * @post one of the following: All previously inserted elements and e are
      * now in the table, one previously inserted element is evicted from the

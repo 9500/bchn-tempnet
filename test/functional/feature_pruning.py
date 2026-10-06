@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2019 The Bitcoin Core developers
+# Copyright (c) 2026 The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the pruning code.
@@ -39,7 +40,7 @@ def mine_large_blocks(node, n):
     # transaction but is consensus valid.
 
     # Set the nTime if this is the first time this function has been called.
-    # A static variable ensures that time is monotonicly increasing and is therefore
+    # A static variable ensures that time is monotonically increasing and is therefore
     # different for each block created => blockhash is unique.
     if "nTimes" not in mine_large_blocks.__dict__:
         mine_large_blocks.nTime = 0

@@ -1,5 +1,5 @@
 // Copyright (c) 2020 The Bitcoin Core developers
-// Copyright (c) 2024 The Bitcoin developers
+// Copyright (c) 2024-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -72,7 +72,7 @@
  *
  *     Rationale: random assignments are hard to influence for attackers.
  *
- * Together these rules strike a balance between being fast in non-adverserial conditions and minimizing
+ * Together these rules strike a balance between being fast in non-adversarial conditions and minimizing
  * susceptibility to censorship attacks. An attacker that races the network:
  * - Will be unsuccessful if all preferred connections are honest (and there is at least one preferred connection).
  * - If there are P preferred connections of which Ph>=1 are honest, the attacker can delay us from learning

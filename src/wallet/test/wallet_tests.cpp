@@ -798,7 +798,7 @@ BOOST_FIXTURE_TEST_CASE(wallet_bip69, Upgrade9NotActivatedTestingSetup) {
             }
             BOOST_TEST_MESSAGE(strprintf("%s < %s", a.ToString(), b.ToString()));
         }
-        // check inputs are sorted ascending accorting to COutpoint::operator<
+        // check inputs are sorted ascending according to COutpoint::operator<
         for (size_t i = 1; i < tx->vin.size(); ++i) {
             auto &a = tx->vin[i-1].prevout, &b = tx->vin[i].prevout;
             if (!(a < b || a == b)) {

@@ -390,7 +390,7 @@ BENCHMARK(VerifyScripts_Block556034, 3);
 // Since sigchecks dominate the cost here, this is slow, and as a result
 // may not reveal much about the efficiency of the script interpreter itself.
 // Consequently, if concerned with optimizing the script interpreter, it may
-// be better to prefer the above two benchmarcks over the below two for
+// be better to prefer the above two benchmarks over the below two for
 // measuring the script interpreter's own efficiency.
 BENCHMARK(VerifyScripts_SigsChecks_Block413567, 2);
 BENCHMARK(VerifyScripts_SigsChecks_Block556034, 1);

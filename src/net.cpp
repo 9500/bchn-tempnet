@@ -2134,7 +2134,7 @@ void CConnman::ThreadMessageHandler() {
                                      || (WITH_LOCK(pnode->cs_filter, return pnode->fRelayTxes)
                                          && !pnode->setInventoryTxToSendTopoSorted.empty()));
 
-                // Calculate next wakeup time as the closest time in the future we plan on sending an Inv messgae.
+                // Calculate next wakeup time as the closest time in the future we plan on sending an Inv message.
                 if (hasInvToSend) {
                     auto prevVal = nSleepUntil;
 
@@ -3026,7 +3026,7 @@ void CNode::ReadConfigFromExtversion()
         LogPrint(BCLog::NET, "extversion: peer=%d did not send us their \"Version\" key\n", GetId());
 }
 
-//! Returns the number of bytes enqeueud (and eventually sent) for a particular command
+//! Returns the number of bytes enqueued (and eventually sent) for a particular command
 uint64_t CNode::GetBytesSentForMsgType(const std::string &msg_type) const
 {
     LOCK(cs_vSend);

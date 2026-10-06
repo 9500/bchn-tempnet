@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2025 The Bitcoin developers
+// Copyright (c) 2017-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <addrman.h>
@@ -696,7 +696,7 @@ BOOST_AUTO_TEST_CASE(addrman_serialization) {
     addrman_asmap1.Add(addr, default_source);
 
     stream << addrman_asmap1;
-    // serizalizing/deserializing addrman with the same asmap
+    // serializing/deserializing addrman with the same asmap
     stream >> addrman_asmap1_dup;
 
     std::pair<int, int> bucketAndEntry_asmap1 = addrman_asmap1.GetBucketAndEntry(addr);

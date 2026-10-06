@@ -143,7 +143,7 @@ static void TestPackageSelection(const Config &config,
     BOOST_CHECK(pblocktemplate->block.vtx[2]->GetId() == parentTxId);
     BOOST_CHECK(pblocktemplate->block.vtx[3]->GetId() == highFeeTxId);
 
-    // Test that a tranactions with ancestor below the block min tx fee doesn't get included
+    // Test that a transactions with ancestor below the block min tx fee doesn't get included
     tx.vin[0].prevout = COutPoint(highFeeTxId, 0);
     // 0 fee.
     tx.vout[0].nValue = int64_t(5000000000LL - 1000 - 50000) * SATOSHI;

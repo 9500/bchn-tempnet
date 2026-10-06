@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2019-2022 The Bitcoin developers
+# Copyright (c) 2019-2026 The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test requesting invalid blocks behaves safely."""
@@ -39,7 +39,7 @@ class GetInvalidBlockTest(BitcoinTestFramework):
             node.p2p.last_message.pop("cmpctblock", None)
             node.p2p.last_message.pop("headers", None)
 
-        # Requests for the invalidated block and it's decendants should fail.
+        # Requests for the invalidated block and it's descendants should fail.
         # Not doing so is a potential DoS vector.
         for b in blocks:
             block_hash = int(b, 16)

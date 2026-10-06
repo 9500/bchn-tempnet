@@ -1728,7 +1728,7 @@ BOOST_FIXTURE_TEST_CASE(sighash_utxos_test, TestChain100Setup) {
         spend_tx.vout[0].scriptPubKey = p2pk_scriptPubKey;
 
         const auto real_contexts = [&] {
-            LOCK(cs_main); // access to pcoinsTip shoule be done with cs_main held
+            LOCK(cs_main); // access to pcoinsTip should be done with cs_main held
             return ScriptExecutionContext::createForAllInputs(spend_tx, *pcoinsTip);
         }();
 

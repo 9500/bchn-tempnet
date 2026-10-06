@@ -1,4 +1,5 @@
 // Copyright (c) 2021 Calin A. Culianu <calin.culianu@gmail.com>
+// Copyright (c) 2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -352,7 +353,7 @@ int main(int argc, const char *argv[])
                      "Usage: %s file\n\n"
                      "Influential environment variables:\n\n"
                      "ALLOW=<hex>[,<hex>...]     A comma-delimited list of hex values which will be\n"
-                     "                           interpreted by this progream as Unicode codepoints\n"
+                     "                           interpreted by this program as Unicode codepoints\n"
                      "                           that should be allowed, even if they appear in the\n"
                      "                           program's internal exclusion lists.\n\n"
                      "DECODE_ERRORS=<num>        If non-zero, fail on Unicode decode errors. If 0,\n"

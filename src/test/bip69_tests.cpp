@@ -1,4 +1,4 @@
-// Copyright (c) 2022 The Bitcoin developers
+// Copyright (c) 2022-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -141,7 +141,7 @@ BOOST_AUTO_TEST_CASE(random_tests) {
 
     // Create a txn with:
     // - inputs that all have same hash, but random inputN
-    // - outputs that pay to a scriptPubKeys of length [0, 32] that is a subtring of a static scriptPubKey of length 32,
+    // - outputs that pay to a scriptPubKeys of length [0, 32] that is a substring of a static scriptPubKey of length 32,
     //   and all have same value.
     {
         CMutableTransaction tx;

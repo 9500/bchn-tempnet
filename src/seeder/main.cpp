@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2024 The Bitcoin developers
+// Copyright (c) 2017-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -575,7 +575,7 @@ void ThreadAppShutdownNotifier() {
                 // app signaled us to exit
                 return;
             } else {
-                std::fprintf(stderr, "\nWARNING: ThreadAppShutdownNotifier got unexepected return from read():"
+                std::fprintf(stderr, "\nWARNING: ThreadAppShutdownNotifier got unexpected return from read():"
                                      " %d (read bytes: %x)\n", res, sig);
             }
         }

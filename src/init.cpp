@@ -820,7 +820,7 @@ void SetupServerArgs() {
     gArgs.AddArg(
         "-peerratelimit=<data_amount>/<time_window>:<ban_time>",
         "Per-peer data transfer rate limit rules. Each rule sets what amount of data transfer across what amount of "
-        "time will result in a ban for the specified duration. Multiple rules are accpeted (default: no limit). "
+        "time will result in a ban for the specified duration. Multiple rules are accepted (default: no limit). "
         "Valid data units: MB, GB, TB, PB (max: 10,000 PB). "
         "Valid time units: m (minutes), h (hours), d (days), w (weeks) (max: 10,000 weeks). "
         "Example: -peerratelimit=600GB/3h:1h",
@@ -1683,7 +1683,7 @@ bool AppInitParameterInteraction(Config &config) {
         gArgs.GetArg("-maxconnections", DEFAULT_MAX_PEER_CONNECTIONS);
     nMaxConnections = std::max(nUserMaxConnections, 0);
 
-    // NB: We require as many fd's as we can get, so as to accomodate leveldb and/or SerializedDataSource::FileBacked
+    // NB: We require as many fd's as we can get, so as to accommodate leveldb and/or SerializedDataSource::FileBacked
     nFD = SetMaxFileDescriptorLimit();
     LogPrintf("File descriptor limit: %d\n", nFD);
 #ifdef USE_POLL

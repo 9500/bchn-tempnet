@@ -1,5 +1,5 @@
 // Copyright (c) 2016 The Bitcoin Core developers
-// Copyright (c) 2017-2021 The Bitcoin developers
+// Copyright (c) 2017-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -88,7 +88,7 @@ struct PrefilledTransaction {
 enum ReadStatus {
     READ_STATUS_OK,
     // Invalid object, peer is sending bogus crap.
-    // FIXME: differenciate bogus crap from crap that do not fit our policy.
+    // FIXME: differentiate bogus crap from crap that do not fit our policy.
     READ_STATUS_INVALID,
     // Failed to process object.
     READ_STATUS_FAILED,
@@ -152,7 +152,7 @@ protected:
 public:
     CBlockHeader header;
 
-    // Can be overriden with a mock block checker for testing (if nullptr, we use real CheckBlock() from validation.h)
+    // Can be overridden with a mock block checker for testing (if nullptr, we use real CheckBlock() from validation.h)
     using CheckBlockFn = std::function<bool(const CBlock &block, CValidationState &state,
                                             const Consensus::Params &params, BlockValidationOptions validationOptions,
                                             uint64_t *)>;

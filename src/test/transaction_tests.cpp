@@ -950,7 +950,7 @@ BOOST_AUTO_TEST_CASE(txsize_activation_test) {
     BOOST_CHECK_LT(magneticAnomalyActivationHeight, upgrade9ActivationHeight);
     const int64_t unusedMTP = 0;
 
-    // A minimally-sized transction.
+    // A minimally-sized transaction.
     const auto &minTx = CTransaction::null;
     BOOST_CHECK(::GetSerializeSize(minTx) < MIN_TX_SIZE_MAGNETIC_ANOMALY);
     CValidationState state;

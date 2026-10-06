@@ -482,7 +482,7 @@ public:
 
 private:
     //! Lookup a dsproof by TxId -- caller must hold cs.
-    //! @returns a valid optional contaning the proof if such a proof exists for `txId`.
+    //! @returns a valid optional containing the proof if such a proof exists for `txId`.
     //! @param desc - if non-nullptr, `*desc` will be set to contain all the in-memory descendants of `txId` (including
     //!     `txId` itself). This set is only populated when there is a successful result.
     //! @throws std::runtime_error on internal error

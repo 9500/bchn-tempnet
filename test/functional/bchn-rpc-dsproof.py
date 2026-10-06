@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021 The Bitcoin Cash Node developers
+# Copyright (c) 2021-2026 The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """ Test for the DoubleSpend Proof RPCs """
@@ -320,7 +320,7 @@ class DoubleSpendProofRPCTest(BitcoinTestFramework):
                     orphans_ids.index(dspid)
                     matches += 1
                 except ValueError:
-                    pass  # this is ok, stale oprhan (ignore)
+                    pass  # this is ok, stale orphan (ignore)
             assert_equal(matches, len(orphans_data))
             assert_equal(non_orph_ct, len_noorphans)
             assert_equal(orph_ct, len_orphans)

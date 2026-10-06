@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2019 The Bitcoin Core developers
+# Copyright (c) 2026 The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test mempool limiting together/eviction with the wallet."""
@@ -34,7 +35,7 @@ class MempoolLimitTest(BitcoinTestFramework):
     def run_test(self):
         relayfee = self.nodes[0].getnetworkinfo()['relayfee']
 
-        self.log.info('Check that mempoolminfee is minrelytxfee')
+        self.log.info('Check that mempoolminfee is minrelaytxfee')
         assert_equal(self.nodes[0].getmempoolinfo()[
                      'minrelaytxfee'], Decimal('0.00001000'))
         assert_equal(self.nodes[0].getmempoolinfo()[
@@ -68,7 +69,7 @@ class MempoolLimitTest(BitcoinTestFramework):
         # confirmation should still be 0
         assert txdata['confirmations'] == 0
 
-        self.log.info('Check that mempoolminfee is larger than minrelytxfee')
+        self.log.info('Check that mempoolminfee is larger than minrelaytxfee')
         assert_equal(self.nodes[0].getmempoolinfo()[
                      'minrelaytxfee'], Decimal('0.00001000'))
         assert_greater_than(self.nodes[0].getmempoolinfo()[

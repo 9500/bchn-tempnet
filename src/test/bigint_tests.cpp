@@ -1,4 +1,4 @@
-// Copyright (c) 2024-2025 The Bitcoin developers
+// Copyright (c) 2024-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -1328,13 +1328,13 @@ BOOST_AUTO_TEST_CASE(json_test_vectors) {
                     BOOST_CHECK_EQUAL(a.ToString(), expectedResultStr);
                 } else {
                     // This is not reached.
-                    BOOST_ERROR("Unkown operation!");
+                    BOOST_ERROR("Unknown operation!");
                 }
             }
             ++itemNum;
         }
     }
-    // Do unary negation opeator-(), also check that .negate(), .sign(), .abs(), isNegative() behave as expected
+    // Do unary negation operator-(), also check that .negate(), .sign(), .abs(), isNegative() behave as expected
     {
         size_t n0{}, nNeg{}, nPos{}, ni64{};
         [[maybe_unused]] size_t ni128{};

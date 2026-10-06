@@ -607,7 +607,7 @@ class CAutoFile {
 public:
     CAutoFile(FILE *filenew, int nTypeIn, int nVersionIn);
 
-    // Alow move-construct to transfer ownership
+    // Allow move-construct to transfer ownership
     CAutoFile(CAutoFile &&o);
 
     // Allow move-assign to transfer ownership

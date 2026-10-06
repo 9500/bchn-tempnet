@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021 The Bitcoin developers
+// Copyright (c) 2020-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -142,7 +142,7 @@ BOOST_AUTO_TEST_CASE(dsproof_dspidptr_regularity) {
     }
 }
 
-/// Tests the correct fucntionality of the DspIdPtr class
+/// Tests the correct functionality of the DspIdPtr class
 BOOST_AUTO_TEST_CASE(dsproof_dspidptr) {
     std::vector<DspId> dspIds;
     std::set<DspId> dspIdSet;

@@ -1,4 +1,4 @@
-// Copyright (c) 2022 The Bitcoin developers
+// Copyright (c) 2022-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -49,7 +49,7 @@ BOOST_AUTO_TEST_CASE(heapoptional_test) {
     BOOST_CHECK(p.get() != &data1);
     BOOST_CHECK(p2 < data1); // nullptr p2 is always less than data1
     BOOST_CHECK(p2 != data1); // nullptr p2 is always not equal to data1
-    BOOST_CHECK(!(p2 == data1)); // nullptr p2 is always not equal to data1 (test opeerator==)
+    BOOST_CHECK(!(p2 == data1)); // nullptr p2 is always not equal to data1 (test operator==)
     // decrement the last byte(s) of *p
     BOOST_CHECK(!p->empty());
     for (auto rit = p->rbegin(); rit != p->rend(); ++rit)
