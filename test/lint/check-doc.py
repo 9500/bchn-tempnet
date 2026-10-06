@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # Copyright (c) 2015-2019 The Bitcoin Core developers
-# Copyright (c) 2019-2020 The Bitcoin developers
+# Copyright (c) 2019-2026 The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 '''
 This checks if all command line args are documented.
-Return value is 0 to indicate no error.
 
 Author: @MarcoFalke
 '''
@@ -16,6 +15,7 @@ from pprint import PrettyPrinter
 import glob
 import re
 import itertools
+import sys
 
 TOP_LEVEL = 'git rev-parse --show-toplevel'
 FOLDER_SRC = '/src/**/'
@@ -27,15 +27,19 @@ REGEX_DOC = r'AddArg\(\s*"(-[^"]+?)"'
 REGEX_DOC_TRIM = r'=.+'
 
 # list false positive unknows arguments
+# The -zmq options are generated dynamically in src/zmq/zmqnotificationinterface.cpp
 SET_FALSE_POSITIVE_UNKNOWNS = {'-zmqpubhashblock',
+                               '-zmqpubhashds',
                                '-zmqpubhashtx',
+                               '-zmqpubrawds',
                                '-zmqpubrawblock',
                                '-zmqpubrawtx'}
 
 # list false positive undocumented arguments
 SET_FALSE_POSITIVE_UNDOCUMENTED = {'-dbcrashratio',
-                                   '-forcecompactdb',
-                                   '-expirerpc'}
+                                   '-expirerpc',
+                                   '-forceblocksize',  # Hidden argument for regtest
+                                   '-forcecompactdb'}
 
 
 def main():
@@ -73,9 +77,14 @@ def main():
     print("Args used        : {}".format(len(args_used)))
     print("Args documented  : {}".format(len(args_docd)))
     print("Args undocumented: {}".format(len(args_need_doc)))
-    pp.pprint(args_need_doc)
+    if args_need_doc:
+        pp.pprint(args_need_doc)
     print("Args unknown     : {}".format(len(args_unknown)))
-    pp.pprint(args_unknown)
+    if args_unknown:
+        pp.pprint(args_unknown)
+
+    if args_need_doc or args_unknown:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
