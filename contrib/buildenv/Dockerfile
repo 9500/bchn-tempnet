@@ -109,7 +109,6 @@ apt-get -y install libclang-rt-18-dev && \
 echo && \
 echo Add tools for static checking and Gitlab CI processing of results && \
 apt-get -y install \
-    clang-format-18 \
     eatmydata \
     git \
     nodejs \

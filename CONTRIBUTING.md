@@ -251,7 +251,7 @@ Here are some handy links for development practices aligned with Bitcoin Cash No
     During submission of patches, our GitLab CI process may refuse code that
     is not styled according to our coding guidelines.
 
-    To enforce Bitcoin Cash Node codeformatting standards, you may need to
+    To enforce Bitcoin Cash Node codeformatting standards, you may
     install `clang-format-11`, `clang-tidy` (version >=11), `autopep8`, `flake8`,
     `phpcs` and `shellcheck` on your system to format your code before submission
     as a Merge Request.

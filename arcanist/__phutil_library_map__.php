@@ -13,7 +13,6 @@ phutil_register_library_map(array(
     'AutoPEP8FormatLinter' => 'linter/AutoPEP8Linter.php',
     'CheckDocLinter' => 'linter/CheckDocLinter.php',
     'CheckRpcMappingsLinter' => 'linter/CheckRpcMappingsLinter.php',
-    'ClangFormatLinter' => 'linter/ClangFormatLinter.php',
     'DoxygenLinter' => 'linter/DoxygenLinter.php',
     'ExtendedConfigurationDrivenLintEngine' => 'engine/ExtendedConfigurationDrivenLintEngine.php',
     'GlobalExternalLinter' => 'linter/GlobalExternalLinter.php',
@@ -26,13 +25,17 @@ phutil_register_library_map(array(
     'StdintLinter' => 'linter/StdintLinter.php',
     'WhitespaceLinter' => 'linter/WhitespaceLinter.php',
   ),
-  'function' => array(),
+  'function' => array(
+    'getLineAtOffset' => 'linter/include/LintSuppressor.php',
+    'getPreviousLineAtOffset' => 'linter/include/LintSuppressor.php',
+    'isSuppressed' => 'linter/include/LintSuppressor.php',
+    'lineHasSuppressComment' => 'linter/include/LintSuppressor.php',
+  ),
   'xmap' => array(
     'ArcanistBitcoinCashNodeConfiguration' => 'ArcanistConfiguration',
     'AutoPEP8FormatLinter' => 'ArcanistExternalLinter',
     'CheckDocLinter' => 'GlobalExternalLinter',
     'CheckRpcMappingsLinter' => 'GlobalExternalLinter',
-    'ClangFormatLinter' => 'ArcanistExternalLinter',
     'DoxygenLinter' => 'ArcanistLinter',
     'ExtendedConfigurationDrivenLintEngine' => 'ArcanistLintEngine',
     'GlobalExternalLinter' => array(
