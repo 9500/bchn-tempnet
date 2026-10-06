@@ -8,12 +8,7 @@
 
 export LC_ALL=C
 
-# Only set color variables if stdout is a tty
-if [ -t 1 ]; then
-    red="\e[31m" brown="\e[33m" bold="\e[1m" norm="\e[0m"
-else
-    red="" brown="" bold="" norm=""
-fi
+red="\e[31m" brown="\e[33m" bold="\e[1m" norm="\e[0m"
 
 if ! command -v arc > /dev/null; then
     echo -e "${red}${bold}Skipping Arcanist linting since \`arc\` is not installed.${norm}"
@@ -41,20 +36,21 @@ else
     status=${PIPESTATUS[0]}
 fi
 
-# Annoyingly, when run with `--output compiler`, arc returns success even if an auto-fix issue is encountered (which it
-# can't actually fix in non-interactive mode). So we check the log to return failure in such cases.
 if [ ! -t 0 ]; then
+    # Annoyingly, when run with `--output compiler`, arc returns success even if an auto-fix issue is encountered (which it
+    # can't actually fix in non-interactive mode). So we check the log to return failure in such cases.
     if grep -q 'Auto-Fix' "$tmp_log"; then
+        status=1
+    fi
+    if [ $status -ne 0 ]; then
         arc_cmd="arc lint"
         if [[ "$commit_name" == "master" ]]; then
             arc_cmd="arc lint --everything"
         fi
-        echo -e "${brown}The 'Auto-Fix' errors above can be fixed automatically by running:"
+        echo -e "${brown}These errors might be fixed automatically by running:"
         echo -e "${bold}${arc_cmd}${norm}"
-        exit 1
     fi
-    rm "$tmp_log"
 fi
 
+rm "$tmp_log"
 exit "$status"
-
