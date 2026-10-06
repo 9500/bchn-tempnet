@@ -23,6 +23,7 @@ EXCLUDE_FOLDERS = [
     'src/secp256k1',
     'src/univalue',
     'src/util/syserror.cpp',
+    'src/script/bitcoinconsensus.h',
 ]
 
 SOURCE_PATTERNS = [

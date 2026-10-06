@@ -1,12 +1,18 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2021 The Bitcoin developers
+// Copyright (c) 2017-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #pragma once
 
+#ifdef __cplusplus
+/* C++ mode, include the C++ version in order to play nice with C++ tools */
 #include <cstdint>
+#else
+/* C mode */
+#include <stdint.h>
+#endif
 
 #if defined(BUILD_BITCOIN_INTERNAL) && defined(HAVE_CONFIG_H)
 #include <config/bitcoin-config.h>
