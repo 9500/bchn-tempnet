@@ -180,7 +180,6 @@
             "type": "lint-python-shebang",
             "include": "(\\.py$)",
             "exclude": [
-                "(.*/)",
                 "(__init__\\.py$)",
                 "(^contrib/gitian-builder/)"
             ]
