@@ -1,4 +1,4 @@
-// Copyright (c) 2022 The Bitcoin developers
+// Copyright (c) 2022-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -123,6 +123,6 @@ public:
 
 /// Salted hasher for ECMultiSet, so it may be used in a std::unordered_set or as a std::unordered_map key
 struct SaltedECMultiSetHasher : protected SaltedUint256Hasher {
-    SaltedECMultiSetHasher() noexcept {} // exclicitly define to circumvent some libstdc++-11 bugs on Debian unstable
+    SaltedECMultiSetHasher() noexcept {} // explicitly define to circumvent some libstdc++-11 bugs on Debian unstable
     size_t operator()(const ECMultiSet &ecm) const noexcept { return SaltedUint256Hasher::operator()(ecm.GetHash()); }
 };

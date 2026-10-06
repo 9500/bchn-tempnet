@@ -1,6 +1,6 @@
 // Copyright (C) 2018 The Bitcoin Unlimited developers
 // Copyright (C) 2020 The Bitcoin developers
-// Copyright (c) 2020-2021 The Bitcoin developers
+// Copyright (c) 2020-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -71,7 +71,7 @@ struct VersionTuple
     constexpr bool operator!=(const VersionTuple &o) const noexcept { return tuple != o.tuple; }
 };
 
-//! We are using verson 0.1.0 of the ExtVersion implementation
+//! We are using version 0.1.0 of the ExtVersion implementation
 static constexpr VersionTuple version{0, 1, 0};
 
 //! These are here to illustrate limitations of the spec

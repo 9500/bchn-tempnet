@@ -68,7 +68,7 @@ public:
     //! For now this basically just checks:
     //!
     //! 1. That all inputs to `tx` have "known" Coins (that is, prevouts
-    //!    refering to txs in the mempool or confirmed in the blockchain).
+    //!    referring to txs in the mempool or confirmed in the blockchain).
     //! 2. All inputs to `tx` are spends from p2pkh addresses.
     //!
     //! If either of the above are false, this will return false.

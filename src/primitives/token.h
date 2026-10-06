@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2025 The Bitcoin developers
+// Copyright (c) 2022-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -73,7 +73,7 @@ static constexpr size_t MAX_CONSENSUS_COMMITMENT_LENGTH_UPGRADE12 = 128;
 using NFTCommitmentBase = prevector<MAX_CONSENSUS_COMMITMENT_LENGTH_UPGRADE9, uint8_t>;
 
 /// Implementation is essentially a prevector with 40 bytes preallocated, a custom lex-comparing operator<, and a custom
-/// seriaizer that disallows (un)serialization of empties.
+/// serializer that disallows (un)serialization of empties.
 struct NFTCommitment : NFTCommitmentBase {
     using NFTCommitmentBase::NFTCommitmentBase;
 

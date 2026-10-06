@@ -264,7 +264,7 @@ BOOST_AUTO_TEST_CASE(dsproof_orphan_autocleaner) {
     BOOST_CHECK(storage.numOrphans() == expected);
 
     // make sure that what was deleted was what we expected -- only items that are >=50 seconds old
-    // are deleted and itmes <50 seconds old were kept
+    // are deleted and items <50 seconds old were kept
     auto cutoff = GetTime() - storage.secondsToKeepOrphans();
     for (const auto &pair : map) {
         auto &time = pair.first;
@@ -452,7 +452,7 @@ BOOST_FIXTURE_TEST_CASE(dsproof_doublespend_mempool, EnsureClearedMempoolTestCha
 
 
     // ---
-    // NEXT, do OPRHAN check -- ensure adding orphan, then adding tx, ends up claiming the orphan
+    // NEXT, do ORPHAN check -- ensure adding orphan, then adding tx, ends up claiming the orphan
     // ---
 
     // Add all the proofs as orphans

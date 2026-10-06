@@ -9,14 +9,6 @@
 2. Verify tests passed
     - Any known issues or limitations should be documented in release notes
     - Known bugs should have tickets
-    - Run `arc lint $(find contrib/)` and check there is no linter error
-    - Run `arc lint *.md $(find doc/)` from top level folder and check there
-      are no new linter error (except a suggestion to fix 'reenable' spelling
-      in an URL in `doc/bch-upgrades.md`, a suggestion which should be ignored.
-    - Run `arc lint` on any Markdown or other text documents within `src/`
-      and `depends/` which are not from third-party sources.
-      "Our" documents within `src/` and `depends/` should all be clean.
-      NOTE: We do not run `arc lint` on the other source files anymore.
     - Ensure that bitcoind and bitcoin-qt run with no issue on all supported
       platforms.
       Manually test bitcoin-qt by sending some transactions and navigating

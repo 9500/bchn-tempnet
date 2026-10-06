@@ -1,5 +1,5 @@
 // Copyright (c) 2020 The Bitcoin Core developers
-// Copyright (c) 2024 The Bitcoin developers
+// Copyright (c) 2024-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -143,7 +143,7 @@ public:
      * @param candidates The expected return value CountCandidates(peer)
      * @param inflight   The expected return value CountInFlight(peer)
      * @param completed  The expected return value of Count(peer), minus candidates and inflight.
-     * @param checkname  An arbitrary string to include in error messages, for test identificatrion.
+     * @param checkname  An arbitrary string to include in error messages, for test identification.
      * @param offset     Offset with the current time to use (must be <= 0). This allows simulations of time going
      *                   backwards (but note that the ordering of this event only follows the scenario's m_now.
      */

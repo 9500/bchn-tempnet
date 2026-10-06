@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 The Bitcoin developers
+// Copyright (c) 2017-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 // Copyright (c) 2015 The Bitcoin Core developers
@@ -895,7 +895,7 @@ BOOST_AUTO_TEST_CASE(asert_activation_anchor_test) {
     BOOST_CHECK_EQUAL(GetASERTAnchorBlockCache(), indexActivation4.get());
 
     // Finally create a random chain on top of our second activation, using ASERT targets all the way.
-    // Erase cache so that this will do a fresh search for anchor at every step (fortauntely this is
+    // Erase cache so that this will do a fresh search for anchor at every step (fortunately this is
     // not too slow, due to the skiplist traversal)
     CBlockIndex *pindexChain2 = indexActivation2.get();
     for (int i = 1; i < 1000; i++) {

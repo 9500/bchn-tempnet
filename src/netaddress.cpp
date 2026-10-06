@@ -444,7 +444,7 @@ bool CNetAddr::IsValid() const
  * @returns Whether or not this network address is publicly routable on the
  *          global internet.
  *
- * @note A routable address is always valid. As in, the set of routable addreses
+ * @note A routable address is always valid. As in, the set of routable addresses
  *       is a subset of the set of valid addresses.
  *
  * @see CNetAddr::IsValid()

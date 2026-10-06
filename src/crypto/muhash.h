@@ -1,5 +1,5 @@
 // Copyright (c) 2017-2021 The Bitcoin Core developers
-// Copyright (c) 2024 The Bitcoin developers
+// Copyright (c) 2024-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -74,7 +74,7 @@ public:
  *
  * As the update operations are also associative, H(a)+H(b)+H(c)+H(d) can
  * in fact be computed as (H(a)+H(b)) + (H(c)+H(d)). This implies that
- * all of this is perfectly parallellizable: each thread can process an
+ * all of this is perfectly parallelizable: each thread can process an
  * arbitrary subset of the update operations, allowing them to be
  * efficiently combined later.
  *

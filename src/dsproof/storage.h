@@ -1,6 +1,6 @@
 // Copyright (C) 2019-2020 Tom Zander <tomz@freedommail.ch>
 // Copyright (C) 2020-2021 Calin Culianu <calin.culianu@gmail.com>
-// Copyright (c) 2021 The Bitcoin developers
+// Copyright (c) 2021-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #pragma once
@@ -33,7 +33,7 @@ public:
     /// Returns the number of proofs currently stored (both orphan and non-orphan)
     size_t size() const;
 
-    /// Returns the numnber of proofs currently stored that are marked as orphans
+    /// Returns the number of proofs currently stored that are marked as orphans
     /// This value is always <= .size()
     size_t numOrphans() const;
 

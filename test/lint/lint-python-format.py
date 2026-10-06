@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 #
-# Copyright (c) 2019-2022 The Bitcoin developers
+# Copyright (c) 2019-2026 The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #
-# Lint python format : This program checks that the old python fomatting method
+# Lint python format : This program checks that the old python formatting method
 # is not being used (formatting with "string %s" % content).
 # The new "{}".format(content) or f"{} content" method should be used instead.
 # Usage of the % formatter is expected to be deprecated by python in the
@@ -269,7 +269,7 @@ def main(file):
     => {"test":" ["test {}".format(an_array[0][0])]}
     """
     errors = find_errors(file)
-    # Python dictionnaries do not guarantee ordering, sort by line number
+    # Python dictionaries do not guarantee ordering, sort by line number
     for line_number, error in sorted(errors.items(),
                                      key=lambda pair: int(pair[0])):
         replacement = build_replacement(error)

@@ -1,5 +1,5 @@
 // Copyright (c) 2017 - The Bitcoin Developers
-// Copyright (c) 2017-2021 The Bitcoin developers
+// Copyright (c) 2017-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -30,7 +30,7 @@ public:
     bool operator==(const ScriptCacheKey &rhs) const {
         return rhs.data == data;
     }
-    ScriptCacheKey &operator=(const ScriptCacheKey &) noexcept = default; // prevent -Wdepecated-copy
+    ScriptCacheKey &operator=(const ScriptCacheKey &) noexcept = default; // prevent -Wdeprecated-copy
 
     friend class ScriptCacheHasher;
 };

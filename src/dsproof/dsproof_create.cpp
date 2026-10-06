@@ -1,6 +1,6 @@
 // Copyright (C) 2019-2020 Tom Zander <tomz@freedommail.ch>
 // Copyright (C) 2020 Calin Culianu <calin.culianu@gmail.com>
-// Copyright (c) 2021-2024 The Bitcoin developers
+// Copyright (c) 2021-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -15,7 +15,7 @@
 #include <stdexcept>
 
 namespace {
-// Non-verifyng signature getter. Used for tests.
+// Non-verifying signature getter. Used for tests.
 std::vector<uint8_t> getP2PKHSignature(const CScript &script)
 {
     std::vector<uint8_t> vchRet;

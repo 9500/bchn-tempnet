@@ -335,7 +335,7 @@ void CTxMemPool::removeForBlock(const std::vector<CTransactionRef> &vtx) {
             removeConflicts(*tx);
         }
     }
-    // clear prioritisations (mapDeltas); optmized for the common case where
+    // clear prioritisations (mapDeltas); optimized for the common case where
     // mapDeltas is empty or much smaller than block.vtx
     algo::erase_if(mapDeltas, [&disconnectpool](const auto &kv) {
         return algo::contains(disconnectpool.GetQueuedTx(), kv.first);

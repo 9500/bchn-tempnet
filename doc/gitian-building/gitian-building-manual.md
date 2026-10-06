@@ -117,7 +117,7 @@ Then when building, override the remote URLs that gbuild would otherwise pull fr
 ```bash
 cd ~
 export URL=${HOME}/bitcoin-cash-node
-export COMMIT=<commmit hash or tag>
+export COMMIT=<commit hash or tag>
 
 ./bin/gbuild --commit bitcoin=${COMMIT} --url bitcoin=${URL} ${URL}/contrib/gitian-descriptors/gitian-win.yml
 ```

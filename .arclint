@@ -59,7 +59,6 @@
         "spelling": {
             "type": "spelling",
             "exclude": [
-                "(.*/)",
                 "(^build-aux/m4/)",
                 "(^depends/)",
                 "(^doc/release-notes/)",
@@ -70,6 +69,11 @@
             "spelling.dictionaries": [
                 "test/lint/dictionary/english.json"
             ]
+        },
+        "suppressible-spelling": {
+            "type": "script-and-regex",
+            "script-and-regex.script": "arcanist/linter/suppressible-spelling.sh",
+            "script-and-regex.regex": "/^(?P<file>.*?):(?P<line>\\d+):(?P<code>[^:]+):(?P<message>.*)$/"
         },
         "lint-stdint": {
             "type": "lint-stdint",

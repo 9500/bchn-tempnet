@@ -1,5 +1,5 @@
 // Copyright (c) 2020 The Bitcoin Core developers
-// Copyright (c) 2024 The Bitcoin developers
+// Copyright (c) 2024-2026 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -479,7 +479,7 @@ private:
     }
 
     //! Make the data structure consistent with a given point in time:
-    //! - REQUESTED annoucements with expiry <= now are turned into COMPLETED.
+    //! - REQUESTED announcements with expiry <= now are turned into COMPLETED.
     //! - CANDIDATE_DELAYED announcements with reqtime <= now are turned into CANDIDATE_{READY,BEST}.
     //! - CANDIDATE_{READY,BEST} announcements with reqtime > now are turned into CANDIDATE_DELAYED.
     void SetTimePoint(std::chrono::microseconds now, std::vector<std::pair<NodeId, TxId>>* expired) {

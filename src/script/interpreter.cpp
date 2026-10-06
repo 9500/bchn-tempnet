@@ -1597,7 +1597,7 @@ bool EvalScriptImpl(StackT &stack, const CScript &initialScript, uint32_t flags,
                                 for (int iSig = 0; iSig < nSigsCount; iSig++, iKey++) {
                                     if ((checkBits >> iKey) == 0) {
                                         // This is a sanity check and should be
-                                        // unrecheable.
+                                        // unreachable.
                                         return set_error(serror, ScriptError::INVALID_BIT_RANGE);
                                     }
 
@@ -1608,7 +1608,7 @@ bool EvalScriptImpl(StackT &stack, const CScript &initialScript, uint32_t flags,
 
                                     if (iKey >= nKeysCount) {
                                         // This is a sanity check and should be
-                                        // unrecheable.
+                                        // unreachable.
                                         return set_error(serror, ScriptError::PUBKEY_COUNT);
                                     }
 
@@ -1645,7 +1645,7 @@ bool EvalScriptImpl(StackT &stack, const CScript &initialScript, uint32_t flags,
 
                                 if ((checkBits >> iKey) != 0) {
                                     // This is a sanity check and should be
-                                    // unrecheable.
+                                    // unreachable.
                                     return set_error(serror, ScriptError::INVALID_BIT_COUNT);
                                 }
                             } else {

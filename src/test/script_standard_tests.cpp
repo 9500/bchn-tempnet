@@ -576,7 +576,7 @@ BOOST_AUTO_TEST_CASE(script_standard_ExtractDestinations) {
         BOOST_CHECK(!ExtractDestinations(s, whichType, addresses, nRequired, flags));
         BOOST_CHECK_EQUAL(whichType, enable_p2s ? TX_SCRIPT : TX_NONSTANDARD);
 
-        // TX_WITNESS_V0_SCRIPTHASH using p2sh_32 (nonsenical)
+        // TX_WITNESS_V0_SCRIPTHASH using p2sh_32 (nonsensical)
         s.clear();
         s << OP_0 << ScriptID(redeemScript, true /* p2sh_32 */);
         BOOST_CHECK(!ExtractDestinations(s, whichType, addresses, nRequired, flags));

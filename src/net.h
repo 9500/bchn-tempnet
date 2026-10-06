@@ -1051,7 +1051,7 @@ public:
 
     void ReadConfigFromExtversion() EXCLUSIVE_LOCKS_REQUIRED(cs_extversion);
 
-    //! Returns the number of bytes enqeueud (and eventually sent) for a particular command
+    //! Returns the number of bytes enqueued (and eventually sent) for a particular command
     uint64_t GetBytesSentForMsgType(const std::string &msg_type) const;
 
     bool IsOutboundOrBlockRelayConn() const {

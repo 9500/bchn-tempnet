@@ -323,7 +323,7 @@ BOOST_AUTO_TEST_CASE(methods) {
     BOOST_CHECK(hexCpy.size() == 32);
     BOOST_CHECK(uint160::size() == 20);
 
-    // check the uninitilized vs initialized constructor
+    // check the uninitialized vs initialized constructor
     constexpr size_t wordSize = sizeof(void *);
     constexpr size_t dataSize = sizeof(uint256) + wordSize;
     std::array<uint8_t, dataSize> rawBuf;

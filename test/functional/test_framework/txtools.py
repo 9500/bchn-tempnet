@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022 The Bitcoin developers
+# Copyright (c) 2022-2026 The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Bitcoin test framework miscellaneous transaction tools."""
@@ -107,4 +107,4 @@ def calc_dust_limit(*, typ: Optional[str] = None, txout: Optional[CTxOut] = None
         # Dust limit formula is taken from BCHN sources: src/policy/policy.cpp
         return ((148 + len(txout.serialize())) * 3000) // sats_per_kb
     else:
-        assert False, 'Must specify extactly one of one param typ= or param txout='
+        assert False, 'Must specify exactly one of one param typ= or param txout='

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2017-2019 The Bitcoin Core developers
-# Copyright (c) 2024 The Bitcoin developers
+# Copyright (c) 2024-2026 The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Class for bitcoind node under test"""
@@ -285,7 +285,7 @@ class TestNode():
                 # The wait is done here to make tests as robust as possible
                 # and prevent racy tests and intermittent failures as much
                 # as possible. Some tests might not need this, but the
-                # overhead is trivial, and the added gurantees are worth
+                # overhead is trivial, and the added guarantees are worth
                 # the minimal performance cost.
 
                 self.log.debug("RPC successfully started")

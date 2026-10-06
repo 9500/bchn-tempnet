@@ -7,7 +7,7 @@
 #include <uint256.h>
 
 /**
- * A BlockHash is a unqiue identifier for a block.
+ * A BlockHash is a unique identifier for a block.
  */
 struct BlockHash : public uint256 {
     explicit constexpr BlockHash() noexcept : uint256() {}

@@ -145,7 +145,7 @@ reproduce disclosures).
 
 ## Deviations from the Standard
 
-While Bitcoin Cash Node believes that strong cohesion among neighoring projects
+While Bitcoin Cash Node believes that strong cohesion among neighboring projects
 and ethical behavior can be standardized to reduce poorly handled disclosure
 incidents, we also believe that it's in the best interest of Bitcoin Cash for us
 to deviate from the standard in the following ways:

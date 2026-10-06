@@ -1,6 +1,5 @@
 Currently supported Bitcoin Cash upgrades
 =========================================
-
 This page lists the Bitcoin Cash upgrade proposals that have currently been
 implemented in Bitcoin Cash Node, along with their implementation status. Note
 that the Bitcoin Cash Node project co-publishes the specifications of all Bitcoin
@@ -31,7 +30,7 @@ Network upgrades
     * New Difficulty Adjustment Algorithm takes effect as of [v0.16.0](release-notes/release-notes-0.16.0.md) ([D601](https://github.com/Bitcoin-ABC/bitcoin-abc/commit/be51cf295c239ff6395a0aa67a3e13906aca9cb2), [D628](https://github.com/Bitcoin-ABC/bitcoin-abc/commit/18dc8bb907091d69f4887560ab2e4cfbc19bae77)).
 * **[May 15th 2018](https://upgradespecs.bitcoincashnode.org/may-2018-hardfork/)** (*Monolith*) upgrade implementation completed in [v0.17.0](release-notes/release-notes-0.17.0.md):
     * Default block size limit increases as of [v0.17.0](release-notes/release-notes-0.17.0.md) ([D1149](https://gitlab.com/bitcoin-cash-node/bitcoin-cash-node/-/commit/699f4b867318486b915bd2d3b2102fb49ec652f1)).
-    * [Opcodes are re-enabled](https://upgradespecs.bitcoincashnode.org/may-2018-reenabled-opcodes/) as of [v0.17.0](release-notes/release-notes-0.17.0.md) ([D1231](https://gitlab.com/bitcoin-cash-node/bitcoin-cash-node/-/commit/f103591b993fef4359819bd1fb956f47e7b540e2)).
+    * [Opcodes are re-enabled](https://upgradespecs.bitcoincashnode.org/may-2018-reenabled-opcodes/) as of [v0.17.0](release-notes/release-notes-0.17.0.md) ([D1231](https://gitlab.com/bitcoin-cash-node/bitcoin-cash-node/-/commit/f103591b993fef4359819bd1fb956f47e7b540e2)). <!-- NOLINT(SPELLING) -->
     * Automatic Replay Protection has been scheduled for November 15th 2018 in [v0.17.0](release-notes/release-notes-0.17.0.md) ([D1199](https://gitlab.com/bitcoin-cash-node/bitcoin-cash-node/-/commit/db0e07afa96e965c9ec3e70b794009c02be48198)).
     * Default OP_RETURN limit increases as of [v0.17.0](release-notes/release-notes-0.17.0.md) ([D1158](https://gitlab.com/bitcoin-cash-node/bitcoin-cash-node/-/commit/cbf4410912f6512e481f15270329683d4d4378d4), [D1205](https://gitlab.com/bitcoin-cash-node/bitcoin-cash-node/-/commit/0d1b49c9f37f8549540521e6e02a27c261c6da5a)).
 * **[November 15th 2018](https://upgradespecs.bitcoincashnode.org/2018-nov-upgrade/)** (*Magnetic Anomaly*) upgrade implementation completed in [v0.18.0](release-notes/release-notes-0.18.0.md):

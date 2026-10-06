@@ -73,7 +73,7 @@ class GetBlockTemplateSigopsTest(BitcoinTestFramework):
         self.reinit_node(1, ["-forceblocksize=" + str(target_size), "-blockmaxsize=" + str(ONE_MEGABYTE)])
         self.assert_case("when at lower boundary (1MB+1)", 1, target_size)
 
-        # When slighly above lower boundary (1MB+114) but still below the default for max generated block size
+        # When slightly above lower boundary (1MB+114) but still below the default for max generated block size
         target_size = ONE_MEGABYTE + 114
         self.reinit_node(1, ["-forceblocksize=" + str(target_size), "-blockmaxsize=" + str(ONE_MEGABYTE)])
         self.assert_case("when slightly above the lower boundary (1MB+114)", 1, target_size)

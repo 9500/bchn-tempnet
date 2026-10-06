@@ -26,7 +26,12 @@ phutil_register_library_map(array(
     'StdintLinter' => 'linter/StdintLinter.php',
     'WhitespaceLinter' => 'linter/WhitespaceLinter.php',
   ),
-  'function' => array(),
+  'function' => array(
+    'getLineAtOffset' => 'linter/include/LintSuppressor.php',
+    'getPreviousLineAtOffset' => 'linter/include/LintSuppressor.php',
+    'isSuppressed' => 'linter/include/LintSuppressor.php',
+    'lineHasSuppressComment' => 'linter/include/LintSuppressor.php',
+  ),
   'xmap' => array(
     'ArcanistBitcoinCashNodeConfiguration' => 'ArcanistConfiguration',
     'AutoPEP8FormatLinter' => 'ArcanistExternalLinter',

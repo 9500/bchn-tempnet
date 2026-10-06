@@ -339,7 +339,7 @@ public:
         return Derived(std::move(x));
     }
 
-    // Comparison ops; Note: Must declare opeator<=> and operator== in this way so as to avoid ambiguous resolution for
+    // Comparison ops; Note: Must declare operator<=> and operator== in this way so as to avoid ambiguous resolution for
     // derived classes.
     friend std::strong_ordering operator<=>(Derived const &a, IntType const& x) noexcept { return a.value_ <=> x; }
     friend bool operator==(Derived const &a, IntType const& x) noexcept { return operator<=>(a, x) == 0; }
@@ -798,7 +798,7 @@ protected:
  *
  * A CScriptNum gets serialized to a non-2's complement notation, in little-endian
  * byte order. The most significant bit (in the last, most significant byte) is
- * the sign bit. The other bits preceeding it (little endian) are the magnitude.
+ * the sign bit. The other bits preceding it (little endian) are the magnitude.
  *
  * This means that INT64_MIN would get serialized to 9 bytes in this encoding,
  * which is why it is forbidden (since we prefer to limit them to 8 serialized

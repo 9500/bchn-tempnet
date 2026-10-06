@@ -800,7 +800,7 @@ void PeerLogicValidation::InitializeNode(const Config &config, NodeRef pnode) {
         PushNodeVersion(config, pnode, GetTime());
     }
     // We only track data usage to enforce peer rate limit rules for the specified node if:
-    // (1) rules exist, and (2) we are regtest *or* the node is not whiltelisted and not maunally added and not local
+    // (1) rules exist, and (2) we are regtest *or* the node is not whitelisted and not maunally added and not local
     if (!m_peerRateLimitRules.empty() &&
         (m_is_regtest || (!pnode->HasPermission(PF_NOBAN) && !pnode->IsManualConn() && !pnode->addr.IsLocal()))) {
         pnode->m_rateTracker = std::make_unique<ClientUsageTracker>(m_peerRateLimitRules);
