@@ -222,10 +222,7 @@
         },
         "lint-logs": {
             "type": "lint-logs",
-            "include": "(^src/.*\\.(h|cpp)$)",
-            "exclude": [
-                "(.*/)"
-            ]
+            "include": "(^src/.*\\.(h|cpp)$)"
         },
         "lint-qt": {
             "type": "lint-qt",

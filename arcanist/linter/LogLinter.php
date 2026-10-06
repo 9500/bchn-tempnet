@@ -1,5 +1,7 @@
 <?php
 
+require_once("include/LintSuppressor.php");
+
 /**
  * Ensure the calls to (Wallet)LogPrint() and (Wallet)LogPrintf() end with a
  * newline.
@@ -57,8 +59,12 @@ final class LogLinter extends ArcanistLinter {
           list($message, $offsetMessage) = $logPrintMessage[1][0];
 
           if (!(substr($message, -3) == '\n"')) {
+            $offset = $offsetPrint + $offsetMessage;
+            if (isSuppressed($fileContent, $offset, $this->getLinterName(), self::MISSING_NEWLINE)) {
+              continue;
+            }
             $this->raiseLintAtOffset(
-              $offsetPrint + $offsetMessage,
+              $offset,
               self::MISSING_NEWLINE,
               pht('If this is deliberate, please use the '.
                   '`(Wallet)LogPrint*ToBeContinued()` method instead.'),

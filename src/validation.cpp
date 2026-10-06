@@ -1612,7 +1612,7 @@ static void MaintainAblaState(const Consensus::Params &consensusParams, const CB
             ablaStateOpt = ablaStateOpt->NextBlockState(consensusParams.ablaConfig, blockSize);
         }
         debugPrefix = debugPrefix ? debugPrefix : __func__;
-        LogPrint(BCLog::ABLA, "%s: ABLA state for block %d: ", debugPrefix, pindex->nHeight);
+        LogPrintToBeContinued(BCLog::ABLA, "%s: ABLA state for block %d: ", debugPrefix, pindex->nHeight);
         if (ablaStateOpt) {
             const char *newstr = " (existing)";
             if (pindex->GetAblaStateOpt() != ablaStateOpt) {
