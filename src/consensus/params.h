@@ -7,6 +7,7 @@
 #pragma once
 
 #include <consensus/abla.h>
+#include <consensus/blockticks.h>
 #include <primitives/blockhash.h>
 #include <uint256.h>
 
@@ -20,7 +21,8 @@ namespace Consensus {
  */
 struct Params {
     BlockHash hashGenesisBlock;
-    int nSubsidyHalvingInterval;
+    /** Subsidy halving interval, as expressed in ticks. Respects the legacy schedule: 210,000 10-min blocks */
+    BlockTicks subsidyHalvingInterval;
     /** Block height at which BIP16 becomes active */
     int BIP16Height;
     /** Block height and hash at which BIP34 becomes active */
@@ -60,9 +62,14 @@ struct Params {
     /** (Tentative) Unix time used for MTP activation of 15 May 2027 12:00:00 UTC upgrade */
     int64_t upgrade2027ActivationTime;
 
-    /** Default blocksize limit for this chain. After activation of upgrade 10, this is the max block size floor, since
-     *  the ABLA algorithm allows for growing the limit based on demand. */
-    uint64_t nDefaultConsensusBlockSize;
+    /**
+     *  Default blocksize limit for this chain. After activation of upgrade 10, this is the max block size floor, since
+     *  the ABLA algorithm allows for growing the limit based on demand. Note that this size is in terms of 10-min
+     *  blocks. If 1-min blocks activates, this size represents 10-blocks worth of size, and so 1/10th of this value
+     *  will be used for 1-min blocks.
+     */
+    uint64_t nDefaultConsensusBlockSize10Mins;
+
     /**
      * Chain-specific default for -percentblockmaxsize, which controls the maximum size of blocks that the
      * mining code will create. This value is stored as a double precision percentage to support scalenet's
@@ -70,28 +77,33 @@ struct Params {
      */
     double nDefaultGeneratedBlockSizePercent;
 
-    uint64_t GetDefaultGeneratedBlockSizeBytes() const {
-        return nDefaultConsensusBlockSize * (nDefaultGeneratedBlockSizePercent / 100.0);
+    uint64_t GetDefaultGeneratedBlockSizeBytes10Mins() const {
+        return nDefaultConsensusBlockSize10Mins * (nDefaultGeneratedBlockSizePercent / 100.0);
     }
 
     /** Proof of work parameters */
     uint256 powLimit;
     bool fPowAllowMinDifficultyBlocks;
     bool fPowNoRetargeting;
-    int64_t nPowTargetSpacing;
     int64_t nASERTHalfLife;
-    int64_t nPowTargetTimespan;
-    int64_t DifficultyAdjustmentInterval() const {
-        return nPowTargetTimespan / nPowTargetSpacing;
-    }
     uint256 nMinimumChainWork;
     BlockHash defaultAssumeValid;
 
     /** Used by the ASERT DAA activated after Nov. 15, 2020 */
     struct ASERTAnchor {
         int nHeight;
+        //! The nBits value from the anchor block's header
         uint32_t nBits;
+        //! The nTime value frome the anchor block's previous block
         int64_t nPrevBlockTime;
+        //! Anchor's height in terms of ticks (e.g. nHeight * 600 in most cases)
+        BlockTicks blockTicks;
+        //! Anchor block's interval in ticks (e.g. 600); the ideal blocktime interval used to mine the anchor block
+        //! e.g. `anchor->pprev->GetTickDeltaForNextBlock()`.
+        BlockTicks blockInterval;
+        ASERTAnchor(int height, uint32_t bits, int64_t prevBlockTime, BlockTicks ticks, BlockTicks interval) noexcept
+            : nHeight{height}, nBits{bits}, nPrevBlockTime{prevBlockTime}, blockTicks{ticks}, blockInterval{interval}
+        {}
     };
 
     /** For chains with a checkpoint after the ASERT anchor block, this is always defined */

@@ -17,6 +17,7 @@
 #include <consensus/validation.h>
 #include <dsproof/dsproof.h>
 #include <dsproof/storage.h>
+#include <node/blockheighttotickmapper.h>
 #include <policy/fees.h>
 #include <policy/mempool.h>
 #include <policy/policy.h>
@@ -368,17 +369,17 @@ void CTxMemPool::clear(bool clearDspOrphans /*= true*/) {
 
 static void CheckInputsAndUpdateCoins(const CTransaction &tx,
                                       CCoinsViewCache &mempoolDuplicate,
-                                      const int64_t spendheight) {
+                                      const BlockTicks spendTicks,
+                                      const BlockHeightToTickMapper &height2TickMapper) {
     CValidationState state;
     Amount txfee = Amount::zero();
-    bool fCheckResult =
-        tx.IsCoinBase() || Consensus::CheckTxInputs(tx, state, mempoolDuplicate,
-                                                    spendheight, txfee);
+    bool fCheckResult = tx.IsCoinBase()
+                        || Consensus::CheckTxInputs(tx, state, mempoolDuplicate, spendTicks, height2TickMapper, txfee);
     assert(fCheckResult);
     UpdateCoins(mempoolDuplicate, tx, std::numeric_limits<int>::max());
 }
 
-void CTxMemPool::check(const CCoinsViewCache *pcoins) const {
+void CTxMemPool::check(const CCoinsViewCache *pcoins) const EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     LOCK(cs);
     if (nCheckFrequency == 0) {
         return;
@@ -397,7 +398,8 @@ void CTxMemPool::check(const CCoinsViewCache *pcoins) const {
     uint64_t innerUsage = 0;
 
     CCoinsViewCache mempoolDuplicate(const_cast<CCoinsViewCache *>(pcoins));
-    const int64_t spendheight = GetSpendHeight(mempoolDuplicate);
+    BlockHeightToTickMapper height2TickMapper;
+    const BlockTicks spendTicks = GetSpendTicks(::GetConfig().GetChainParams().GetConsensus(), mempoolDuplicate, &height2TickMapper);
 
     std::list<const CTxMemPoolEntry *> waitingOnDependants;
     for (txiter it = mapTx.begin(); it != mapTx.end(); ++it) {
@@ -457,7 +459,7 @@ void CTxMemPool::check(const CCoinsViewCache *pcoins) const {
         if (fDependsWait) {
             waitingOnDependants.push_back(&(*it));
         } else {
-            CheckInputsAndUpdateCoins(tx, mempoolDuplicate, spendheight);
+            CheckInputsAndUpdateCoins(tx, mempoolDuplicate, spendTicks, height2TickMapper);
         }
     }
 
@@ -470,8 +472,7 @@ void CTxMemPool::check(const CCoinsViewCache *pcoins) const {
             stepsSinceLastRemove++;
             assert(stepsSinceLastRemove < waitingOnDependants.size());
         } else {
-            CheckInputsAndUpdateCoins(entry->GetTx(), mempoolDuplicate,
-                                      spendheight);
+            CheckInputsAndUpdateCoins(entry->GetTx(), mempoolDuplicate, spendTicks, height2TickMapper);
             stepsSinceLastRemove = 0;
         }
     }

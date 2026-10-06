@@ -6,6 +6,8 @@
 #pragma once
 
 #include <amount.h>
+#include <consensus/blockticks.h>
+#include <consensus/consensus.h>
 #include <feerate.h>
 #include <policy/policy.h>
 #include <util/noncopyable.h>
@@ -28,27 +30,36 @@ class CChainParams;
 class Config : public NonCopyable {
 public:
     /** Convenience. Returns the consensus max block size as configured by Consensus::Params for the current chain.
+        The returned value is scaled based on `blockInterval`.
         Note: If ABLA is enabled, this is the max block size floor for ABLA.
-        Note2: May return the value (if any) set by SetBlockSizeOverride() (functional tests only). */
-    virtual uint64_t GetDefaultConsensusBlockSize() const = 0;
+        Note2: May return the value (if any) set by SetBlockSizeOverride(), scaled for `blockInterval` (functional tests only). */
+    virtual uint64_t GetDefaultConsensusBlockSize(BlockTicks blockInterval = legacy::POW_TARGET_SPACING_TICKS) const = 0;
 
     /** Functional tests only: corresponds to the hidden CLI arg: -forceblocksize */
-    virtual bool SetBlockSizeOverride(std::optional<uint64_t> overrideBlockSize) = 0;
+    virtual bool SetBlockSizeOverride(std::optional<uint64_t> overrideBlockSize10Mins) = 0;
 
     /** Look-ahead "guess" for the max blocksize (actual blocksize limit is guaranteed to be <= this value for
         blocks within the block download window). This value gets updated by validation.cpp when the tip changes.
-        Used by net code and some pre-checks on blocks to discard blocks that are definitely oversized. */
+        Used by net code and some pre-checks on blocks to discard blocks that are definitely oversized.
+        The returned value is in terms of a 10-min blocktime's blocksize and should be used as such as a worst-case
+        upper threshold. */
     virtual uint64_t GetMaxBlockSizeLookAheadGuess() const = 0;
-    virtual void NotifyMaxBlockSizeLookAheadGuessChanged(uint64_t) const = 0;
+    /** Sets the max block size lookahead guess, in terms of a 10-min blocktime blocksize. */
+    virtual void NotifyMaxBlockSizeLookAheadGuessChanged(uint64_t blockSize10Mins) const = 0;
 
-    /** Set the largest block size this node will generate (mine) in bytes. */
-    virtual void SetGeneratedBlockSizeBytes(uint64_t blockSize) = 0;
+    /** Set the largest block size this node will generate (mine) in bytes.
+        Note on block time intervals: This value is interpreted "as-if" the blocktime were always 10 mins.
+        For 1 minute block times, the actual value used will be 1/10th of this value.
+        See: GetGeneratedBlockSize() and GetDefaultConsensusBlockSize() both of which take a blocktime interval arg. */
+    virtual void SetGeneratedBlockSizeBytes(uint64_t blockSize10Mins) = 0;
     /** Set the largest block size this node will generate (mine), in terms of
         percentage of the current block size as determined by ABLA.
         Returns false if `percent` is not in the range [0.0, 100.0]. */
     virtual bool SetGeneratedBlockSizePercent(double percent) = 0;
-    /** Returns the maximum mined block size in bytes, which is always <= `currentMaxBlockSize`. */
-    virtual uint64_t GetGeneratedBlockSize(uint64_t currentMaxBlockSize) const = 0;
+    /** Returns the maximum mined block size in bytes.
+        Note that the returned value is scaled to the target blockInterval. So for 10 mins it's a 1:1 scale, for 1-min
+        block times, the returned value is 1/10th of that, etc. */
+    virtual uint64_t GetGeneratedBlockSize(BlockTicks blockInterval, std::optional<uint64_t> currentMaxBlockSizeAleadyScaled) const = 0;
     /** The maximum amount of RAM to be used in the mempool before TrimToSize is called. */
     virtual void SetMaxMemPoolSize(uint64_t maxMemPoolSize) = 0;
     virtual uint64_t GetMaxMemPoolSize() const = 0;
@@ -80,13 +91,13 @@ public:
 class GlobalConfig final : public Config {
 public:
     GlobalConfig();
-    uint64_t GetDefaultConsensusBlockSize() const override;
-    bool SetBlockSizeOverride(std::optional<uint64_t> blockSize) override;
+    uint64_t GetDefaultConsensusBlockSize(BlockTicks blockInterval = legacy::POW_TARGET_SPACING_TICKS) const override;
+    bool SetBlockSizeOverride(std::optional<uint64_t> blockSize10Mins) override;
     uint64_t GetMaxBlockSizeLookAheadGuess() const override;
     void NotifyMaxBlockSizeLookAheadGuessChanged(uint64_t) const override;
     void SetGeneratedBlockSizeBytes(uint64_t blockSize) override;
     bool SetGeneratedBlockSizePercent(double percent) override;
-    uint64_t GetGeneratedBlockSize(uint64_t currentMaxBlockSize) const override;
+    uint64_t GetGeneratedBlockSize(BlockTicks blockInterval, std::optional<uint64_t> currentMaxBlockSizeAleadyScaled) const override;
     void SetMaxMemPoolSize(uint64_t maxMemPoolSize) override { nMaxMemPoolSize = maxMemPoolSize; }
     uint64_t GetMaxMemPoolSize() const override { return nMaxMemPoolSize; }
     //! Note: `rate` may not exceed MAX_INV_BROADCAST_RATE (1 million)
@@ -125,10 +136,11 @@ private:
     uint64_t nInvBroadcastRate;
     uint64_t nInvBroadcastInterval;
 
-    /** Override for the blockSize for functional tests */
-    std::optional<uint64_t> blockSizeOverride;
+    /** Override for the blockSize for functional tests (size is stored "as if" blocktime is 10 mins and is scaled by getter) */
+    std::optional<uint64_t> blockSize10MinsOverride;
 
-    /** The largest block size this node will generate. Stores either a size in bytes or a percentage (double). */
+    /** The largest block size this node will generate. Stores either a size in bytes (scaled to 10-min block times),
+        or a percentage (double). */
     std::variant<uint64_t, double> varGeneratedBlockSizeParam;
 
     /** The maximum amount of RAM to be used in the mempool before TrimToSize is called. */
@@ -137,8 +149,9 @@ private:
     std::set<std::string> rejectSubVersions;
 
     /** Temporarily set to mutable because consensus code only gets passed a `const Config &`, but it does need to
-        modify this value as the chain tip is updated. */
-    mutable std::atomic<uint64_t> nMaxBlockSizeWorstCaseGuess{0u};
+        modify this value as the chain tip is updated. Note that this value is in terms of 10-min block times, and
+        we never re-scale it since our worst-case guess will always be "as if" the blocktime is 10-mins. */
+    mutable std::atomic<uint64_t> nMaxBlockSizeWorstCaseGuess10Mins{0u};
 };
 
 // Dummy for subclassing in unittests
@@ -147,13 +160,13 @@ public:
     DummyConfig();
     DummyConfig(const std::string &net);
     DummyConfig(std::unique_ptr<CChainParams> chainParamsIn);
-    uint64_t GetDefaultConsensusBlockSize() const override { return 0; }
+    uint64_t GetDefaultConsensusBlockSize(BlockTicks = legacy::POW_TARGET_SPACING_TICKS) const override { return 0; }
     bool SetBlockSizeOverride(std::optional<uint64_t>) override { return false; }
     uint64_t GetMaxBlockSizeLookAheadGuess() const override { return 0; }
     void NotifyMaxBlockSizeLookAheadGuessChanged(uint64_t) const override {}
     void SetGeneratedBlockSizeBytes(uint64_t) override {}
     bool SetGeneratedBlockSizePercent(double) override { return false; }
-    uint64_t GetGeneratedBlockSize(uint64_t) const override { return 0; }
+    uint64_t GetGeneratedBlockSize(BlockTicks, std::optional<uint64_t>) const override { return 0; }
     void SetMaxMemPoolSize(uint64_t) override {}
     uint64_t GetMaxMemPoolSize() const override { return 0; }
     bool SetInvBroadcastRate(uint64_t) override { return false; }

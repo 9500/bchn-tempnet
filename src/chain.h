@@ -11,6 +11,8 @@
 #include <blockvalidity.h>
 #include <clientversion.h>
 #include <consensus/abla.h>
+#include <consensus/blockticks.h>
+#include <consensus/consensus.h>
 #include <consensus/params.h>
 #include <crypto/common.h> // for ReadLE64
 #include <flatfile.h>
@@ -21,6 +23,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <climits>
 #include <ios>
 #include <string_view>
 #include <type_traits>
@@ -54,6 +57,7 @@ static constexpr int64_t MAX_BLOCK_TIME_GAP = 90 * 60;
  *  Mixin class that provides atomic, thread-safe access to an optional abla::State instance.
  *  Used by CBlockIndex and its subclasses to capture the abla state (if any) of a particular block.
  */
+template <typename Derived>
 class AblaStateMixin {
     struct PackedState {
         uint64_t engaged : 1; ///< this should be `bool` but on win32 you lose the packing if types change
@@ -67,10 +71,10 @@ class AblaStateMixin {
             return *this;
         }
 
-        std::optional<abla::State> unpack() const noexcept {
+        std::optional<abla::State> unpack(BlockTicks thisBlockInterval) const noexcept {
             std::optional<abla::State> ret;
             if (engaged) {
-                ret.emplace() = abla::State::FromTuple({blockSize, controlBlockSize, elasticBufferSize});
+                ret.emplace(blockSize, controlBlockSize, elasticBufferSize, thisBlockInterval);
             }
             return ret;
         }
@@ -101,6 +105,8 @@ class AblaStateMixin {
 
     std::atomic<PackedState> atomicPacked;
 
+    constexpr const Derived &derived() const noexcept { return static_cast<const Derived &>(*this); }
+
 public:
     AblaStateMixin() noexcept { atomicPacked.store(PackedState().clear(), std::memory_order_relaxed); }
     AblaStateMixin(const AblaStateMixin &o) noexcept {
@@ -110,7 +116,7 @@ public:
     AblaStateMixin &operator=(const AblaStateMixin &) = delete;
 
     std::optional<abla::State> GetAblaStateOpt() const {
-        return atomicPacked.load().unpack();
+        return atomicPacked.load().unpack(derived().GetTickDeltaForThisBlock());
     }
 
     /// If `atomicPacked` is engaged, unpacks and returns the abla::State, otherwise returns the results of invoking
@@ -138,7 +144,7 @@ public:
  * next block. A blockindex may have multiple pprev pointing to it, but at most
  * one of them can be part of the currently active branch.
  */
-class CBlockIndex : public AblaStateMixin {
+class CBlockIndex : public AblaStateMixin<CBlockIndex> {
 protected:
     //! Copy & assignment operators are protected for safety since this is a
     //! linked list node with pointers pointing to this instance and it would
@@ -230,6 +236,22 @@ private:
         void Set(uint32_t v) { val.store(v, std::memory_order_release); }
         void Clear() { Set(NoValue); }
     } cachedMTP;
+
+
+    //! (memory only) Store information about this block's tick count and the tick delta for the next block after this.
+    struct TickInfo {
+        static constexpr size_t kTicksBits = 48, kTicksDeltaBits = 16;
+        static_assert(kTicksBits + kTicksDeltaBits == 64, "We require exactly 64-bits for this struct");
+        static_assert(kTicksBits % CHAR_BIT == 0 && kTicksDeltaBits % CHAR_BIT == 0, "Members should align to bytes");
+        static constexpr uint64_t kMaxTicks = (0x1ull << kTicksBits) - 1ull;
+        static constexpr uint64_t kMaxTicksDelta = (0x1ull << kTicksDeltaBits) - 1ull;
+
+        // in ticks (seconds), restricted to max 2^48 - 1, which corresponds to ~8.9 million years
+        uint64_t ticks : kTicksBits = 0;
+        //! in ticks (seconds), restricted to max 65535 to save memory. Change this if blocktime is ever > 64K seconds!
+        uint64_t nextBlockTickDelta : kTicksDeltaBits = 0;
+    } tickInfo;
+    static_assert(sizeof(TickInfo) == 8u, "TickInfo is a packed data structure and should be exactly 8 bytes");
 
 public:
     explicit CBlockIndex() = default;
@@ -365,6 +387,56 @@ public:
     //! Efficiently find an ancestor of this block.
     CBlockIndex *GetAncestor(int height);
     const CBlockIndex *GetAncestor(int height) const;
+
+    //! Return the BlockTicks for this block (memory-only computed value). This is only really valid after the
+    //! block index has been correctly constructed and loaded. Genesis returns BlockTicks{0}.
+    BlockTicks GetBlockTicks() const { return BlockTicks{tickInfo.ticks}; }
+
+    //! Return the tick delta for the next block. Should always equal: `pnext->GetBlockTicks() - this->GetBlockTicks()`
+    BlockTicks GetTickDeltaForNextBlock() const { return BlockTicks{tickInfo.nextBlockTickDelta}; }
+
+    void SetBlockTicks(const BlockTicks ticks) {
+        const uint64_t val = ticks.value(); // Assumption: ticks.value() is scaled to seconds (should always be true)
+        assert(val <= TickInfo::kMaxTicks); // ensure it fits
+        tickInfo.ticks = val;
+    }
+    void SetTickDeltaForNextBlock(const BlockTicks interval) {
+        const uint64_t val = interval.value(); // Assumption: ticks.value() is scaled to seconds (should always be true)
+        assert(val <= TickInfo::kMaxTicksDelta); // ensure it fits
+        tickInfo.nextBlockTickDelta = val;
+    }
+
+    //! Returns the block tick interval used to mine this block, or BlockTicks{600} if genesis (no pprev)
+    BlockTicks GetTickDeltaForThisBlock() const {
+        return pprev ? pprev->GetTickDeltaForNextBlock() : legacy::POW_TARGET_SPACING_TICKS;
+    }
+
+    /**
+     *  Get the tick difference between `pindex` and `this`.
+     *  @return The difference, in ticks, between `this` and `pindex`, e.g.:
+     *          `this->GetBlockTicks() - pindex->GetBlockTicks()`.
+     *          If `pindex` has a larger tick count than `this`, will return the difference as: `pindex->TickDiff(this)`
+     */
+    BlockTicks TickDiff(const CBlockIndex *pindex) const {
+        auto a = GetBlockTicks(), b = pindex ? pindex->GetBlockTicks() : BlockTicks{};
+        if (a < b) {
+            // Enforce a >= b, since BlockTicks is unsigned and we don't want to wrap around
+            std::swap(a, b);
+        }
+        return a - b;
+    }
+
+    /**
+     *  @return The most recent ancestor of `pindex` that has tick depth of at least `ticks` with respect to `this`.
+     *          Will return `nullptr` if `ticks > this->GetBlockTicks()`.
+     *  @see TickDiff()
+     *
+     *  The block tick depth is the number of ticks deep that a block is from `this`.  So `this` itself is 0,
+     *  the block before `this` is `pprev->GetTickDeltaForNextBlock()` ticks deep, and so on.
+     */
+    const CBlockIndex *FindAncestorWithTickDepth(BlockTicks ticks) const;
+    // Convenience; non-const version of above
+    CBlockIndex *FindAncestorWithTickDepth(BlockTicks ticks);
 };
 
 // ensure that the future code that may modify the CBlockIndex preserves type safety restriction on CBlockIndex

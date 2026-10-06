@@ -1,6 +1,6 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2026 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -81,7 +81,7 @@ class CMainParams : public CChainParams {
 public:
     CMainParams() {
         strNetworkID = CBaseChainParams::MAIN;
-        consensus.nSubsidyHalvingInterval = 210000;
+        consensus.subsidyHalvingInterval = 210'000ull * legacy::POW_TARGET_SPACING_TICKS;
         // 00000000000000ce80a7e057163a4db1d5ad7b20fb6f598c9597b9665c8fb0d4 -
         // April 1, 2012
         consensus.BIP16Height = 173805;
@@ -96,9 +96,6 @@ public:
         consensus.CSVHeight = 419328;
         consensus.powLimit = uint256S(
             "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        // two weeks
-        consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
-        consensus.nPowTargetSpacing = 10 * 60;
         consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.fPowNoRetargeting = false;
 
@@ -155,26 +152,28 @@ public:
         consensus.upgrade2027ActivationTime = 1810382400;
 
         // Default limit for block size (in bytes)
-        consensus.nDefaultConsensusBlockSize = DEFAULT_CONSENSUS_BLOCK_SIZE;
+        consensus.nDefaultConsensusBlockSize10Mins = DEFAULT_CONSENSUS_BLOCK_SIZE;
 
         // Chain-specific default for mining block size, in percent of excessive block size (conf: -percentblockmaxsize)
         consensus.nDefaultGeneratedBlockSizePercent = 50.0; // 50% of 32MB = 16MB
 
         assert(consensus.nDefaultGeneratedBlockSizePercent >= 0.0
                && consensus.nDefaultGeneratedBlockSizePercent <= 100.0);
-        assert(consensus.GetDefaultGeneratedBlockSizeBytes() <= consensus.nDefaultConsensusBlockSize);
+        assert(consensus.GetDefaultGeneratedBlockSizeBytes10Mins() <= consensus.nDefaultConsensusBlockSize10Mins);
 
         // Anchor params: Note that the block after this height *must* also be checkpointed below.
-        consensus.asertAnchorParams = Consensus::Params::ASERTAnchor{
-            661647,       // anchor block height
+        consensus.asertAnchorParams.emplace(
+            661'647,      // anchor block height
             0x1804dafe,   // anchor block nBits
             1605447844,   // anchor block previous block timestamp
-        };
+            661'647ull * legacy::POW_TARGET_SPACING_TICKS, // anchor block's tick count
+            legacy::POW_TARGET_SPACING_TICKS               // block interval used to mine the anchor block
+        );
 
         // ABLA config -- upgrade 10 adjustable block limit algorithm
-        consensus.ablaConfig = abla::Config::MakeDefault(consensus.nDefaultConsensusBlockSize, /* fixedSize = */ false);
+        consensus.ablaConfig = abla::Config::MakeDefault(consensus.nDefaultConsensusBlockSize10Mins, /* fixedSize = */ false);
         // Ensure base ABLA state yields same limit as pre-activation.
-        assert(abla::State(consensus.ablaConfig, 0).GetBlockSizeLimit() == consensus.nDefaultConsensusBlockSize);
+        assert(abla::State(consensus.ablaConfig, 0).GetBlockSizeLimit() == consensus.nDefaultConsensusBlockSize10Mins);
         // Ensure ABLA is *not* "fixed size" for mainnet
         assert( ! consensus.ablaConfig.IsFixedSize());
 
@@ -344,7 +343,7 @@ class CTestNetParams : public CChainParams {
 public:
     CTestNetParams() {
         strNetworkID = CBaseChainParams::TESTNET;
-        consensus.nSubsidyHalvingInterval = 210000;
+        consensus.subsidyHalvingInterval = 210'000ull * legacy::POW_TARGET_SPACING_TICKS;
         // 00000000040b4e986385315e14bee30ad876d8b47f748025b26683116d21aa65
         consensus.BIP16Height = 514;
         consensus.BIP34Height = 21111;
@@ -358,9 +357,6 @@ public:
         consensus.CSVHeight = 770112;
         consensus.powLimit = uint256S(
             "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        // two weeks
-        consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
-        consensus.nPowTargetSpacing = 10 * 60;
         consensus.fPowAllowMinDifficultyBlocks = true;
         consensus.fPowNoRetargeting = false;
 
@@ -414,26 +410,28 @@ public:
         consensus.upgrade2027ActivationTime = 1810382400;
 
         // Default limit for block size (in bytes)
-        consensus.nDefaultConsensusBlockSize = DEFAULT_CONSENSUS_BLOCK_SIZE;
+        consensus.nDefaultConsensusBlockSize10Mins = DEFAULT_CONSENSUS_BLOCK_SIZE;
 
         // Chain-specific default for mining block size, in percent of excessive block size (conf: -percentblockmaxsize)
         consensus.nDefaultGeneratedBlockSizePercent = 50.0; // 50% of 32MB = 16MB
 
         assert(consensus.nDefaultGeneratedBlockSizePercent >= 0.0
                && consensus.nDefaultGeneratedBlockSizePercent <= 100.0);
-        assert(consensus.GetDefaultGeneratedBlockSizeBytes() <= consensus.nDefaultConsensusBlockSize);
+        assert(consensus.GetDefaultGeneratedBlockSizeBytes10Mins() <= consensus.nDefaultConsensusBlockSize10Mins);
 
         // Anchor params: Note that the block after this height *must* also be checkpointed below.
-        consensus.asertAnchorParams = Consensus::Params::ASERTAnchor{
-            1421481,      // anchor block height
+        consensus.asertAnchorParams.emplace(
+            1'421'481,    // anchor block height
             0x1d00ffff,   // anchor block nBits
             1605445400,   // anchor block previous block timestamp
-        };
+            1'421'481ull * legacy::POW_TARGET_SPACING_TICKS, // anchor block's tick count
+            legacy::POW_TARGET_SPACING_TICKS                 // block interval used to mine the anchor block
+        );
 
         // ABLA config -- upgrade 10 adjustable block limit algorithm
-        consensus.ablaConfig = abla::Config::MakeDefault(consensus.nDefaultConsensusBlockSize, /* fixedSize = */ true);
+        consensus.ablaConfig = abla::Config::MakeDefault(consensus.nDefaultConsensusBlockSize10Mins, /* fixedSize = */ true);
         // Ensure base abla state yields same limit as pre-activation.
-        assert(abla::State(consensus.ablaConfig, 0).GetBlockSizeLimit() == consensus.nDefaultConsensusBlockSize);
+        assert(abla::State(consensus.ablaConfig, 0).GetBlockSizeLimit() == consensus.nDefaultConsensusBlockSize10Mins);
         // Ensure ABLA *is* "fixed size" for testnet3
         assert(consensus.ablaConfig.IsFixedSize());
 
@@ -559,7 +557,7 @@ class CTestNet4Params : public CChainParams {
 public:
     CTestNet4Params() {
         strNetworkID = CBaseChainParams::TESTNET4;
-        consensus.nSubsidyHalvingInterval = 210000;
+        consensus.subsidyHalvingInterval = 210'000ull * legacy::POW_TARGET_SPACING_TICKS;
         consensus.BIP16Height = 1;
         // Note: Because BIP34Height is less than 17, clients will face an unusual corner case with BIP34 encoding.
         // The "correct" encoding for BIP34 blocks at height <= 16 uses OP_1 (0x81) through OP_16 (0x90) as a single
@@ -573,9 +571,6 @@ public:
         consensus.BIP66Height = 4;
         consensus.CSVHeight = 5;
         consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        // two weeks
-        consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
-        consensus.nPowTargetSpacing = 10 * 60;
         consensus.fPowAllowMinDifficultyBlocks = true;
         consensus.fPowNoRetargeting = false;
 
@@ -639,26 +634,28 @@ public:
         consensus.upgrade2027ActivationTime = 1810382400;
 
         // Default limit for block size (in bytes) (testnet4 is smaller at 2MB)
-        consensus.nDefaultConsensusBlockSize = 2 * ONE_MEGABYTE;
+        consensus.nDefaultConsensusBlockSize10Mins = 2 * ONE_MEGABYTE;
 
         // Chain-specific default for mining block size, in percent of excessive block size (conf: -percentblockmaxsize)
         consensus.nDefaultGeneratedBlockSizePercent = 100.0; // 100% of 2MB = 2MB
 
         assert(consensus.nDefaultGeneratedBlockSizePercent >= 0.0
                && consensus.nDefaultGeneratedBlockSizePercent <= 100.0);
-        assert(consensus.GetDefaultGeneratedBlockSizeBytes() <= consensus.nDefaultConsensusBlockSize);
+        assert(consensus.GetDefaultGeneratedBlockSizeBytes10Mins() <= consensus.nDefaultConsensusBlockSize10Mins);
 
         // Anchor params: Note that the block after this height *must* also be checkpointed below.
-        consensus.asertAnchorParams = Consensus::Params::ASERTAnchor{
-            16844,        // anchor block height
+        consensus.asertAnchorParams.emplace(
+            16'844,       // anchor block height
             0x1d00ffff,   // anchor block nBits
             1605451779,   // anchor block previous block timestamp
-        };
+            16'844ull * legacy::POW_TARGET_SPACING_TICKS, // anchor block's tick count
+            legacy::POW_TARGET_SPACING_TICKS              // block interval used to mine the anchor block
+        );
 
         // ABLA config -- upgrade 10 adjustable block limit algorithm
-        consensus.ablaConfig = abla::Config::MakeDefault(consensus.nDefaultConsensusBlockSize, /* fixedSize = */ true);
+        consensus.ablaConfig = abla::Config::MakeDefault(consensus.nDefaultConsensusBlockSize10Mins, /* fixedSize = */ true);
         // Ensure base abla state yields same limit as pre-activation.
-        assert(abla::State(consensus.ablaConfig, 0).GetBlockSizeLimit() == consensus.nDefaultConsensusBlockSize);
+        assert(abla::State(consensus.ablaConfig, 0).GetBlockSizeLimit() == consensus.nDefaultConsensusBlockSize10Mins);
         // Ensure ABLA *is* "fixed size" for testnet4
         assert(consensus.ablaConfig.IsFixedSize());
 
@@ -754,7 +751,7 @@ class CScaleNetParams : public CChainParams {
 public:
     CScaleNetParams() {
         strNetworkID = CBaseChainParams::SCALENET;
-        consensus.nSubsidyHalvingInterval = 210000;
+        consensus.subsidyHalvingInterval = 210'000ull * legacy::POW_TARGET_SPACING_TICKS;
         consensus.BIP16Height = 1;
         consensus.BIP34Height = 2;
         // Note: Because BIP34Height is less than 17, clients will face an unusual corner case with BIP34 encoding.
@@ -768,9 +765,6 @@ public:
         consensus.BIP66Height = 4;
         consensus.CSVHeight = 5;
         consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        // two weeks
-        consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
-        consensus.nPowTargetSpacing = 10 * 60;
         consensus.fPowAllowMinDifficultyBlocks = true;
         consensus.fPowNoRetargeting = false;
 
@@ -834,23 +828,23 @@ public:
         consensus.upgrade2027ActivationTime = 1810382400;
 
         // Default limit for block size (in bytes)
-        consensus.nDefaultConsensusBlockSize = 256 * ONE_MEGABYTE;
+        consensus.nDefaultConsensusBlockSize10Mins = 256 * ONE_MEGABYTE;
 
         // Chain-specific default for mining block size, in percent of excessive block size (conf: -percentblockmaxsize)
         consensus.nDefaultGeneratedBlockSizePercent = 6.25; // 6.25% of 256MB = 16MB
 
         assert(consensus.nDefaultGeneratedBlockSizePercent >= 0.0
                && consensus.nDefaultGeneratedBlockSizePercent <= 100.0);
-        assert(consensus.GetDefaultGeneratedBlockSizeBytes() <= consensus.nDefaultConsensusBlockSize);
+        assert(consensus.GetDefaultGeneratedBlockSizeBytes10Mins() <= consensus.nDefaultConsensusBlockSize10Mins);
 
         // ScaleNet has no hard-coded anchor block because will be expected to
         // reorg back down to height 10,000 periodically.
         consensus.asertAnchorParams.reset();
 
         // ABLA config -- upgrade 10 adjustable block limit algorithm
-        consensus.ablaConfig = abla::Config::MakeDefault(consensus.nDefaultConsensusBlockSize, /* fixedSize = */ false);
+        consensus.ablaConfig = abla::Config::MakeDefault(consensus.nDefaultConsensusBlockSize10Mins, /* fixedSize = */ false);
         // Ensure base abla state yields same limit as pre-activation.
-        assert(abla::State(consensus.ablaConfig, 0).GetBlockSizeLimit() == consensus.nDefaultConsensusBlockSize);
+        assert(abla::State(consensus.ablaConfig, 0).GetBlockSizeLimit() == consensus.nDefaultConsensusBlockSize10Mins);
         // Ensure ABLA is *not* "fixed size" for scalenet
         assert( ! consensus.ablaConfig.IsFixedSize());
 
@@ -916,7 +910,7 @@ class CChipNetParams : public CChainParams {
 public:
     CChipNetParams() {
         strNetworkID = CBaseChainParams::CHIPNET;
-        consensus.nSubsidyHalvingInterval = 210000;
+        consensus.subsidyHalvingInterval = 210'000ull * legacy::POW_TARGET_SPACING_TICKS;
         consensus.BIP16Height = 1;
         // Note: Because BIP34Height is less than 17, clients will face an unusual corner case with BIP34 encoding.
         // The "correct" encoding for BIP34 blocks at height <= 16 uses OP_1 (0x81) through OP_16 (0x90) as a single
@@ -930,9 +924,6 @@ public:
         consensus.BIP66Height = 4;
         consensus.CSVHeight = 5;
         consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        // two weeks
-        consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
-        consensus.nPowTargetSpacing = 10 * 60;
         consensus.fPowAllowMinDifficultyBlocks = true;
         consensus.fPowNoRetargeting = false;
 
@@ -997,26 +988,28 @@ public:
         consensus.upgrade2027ActivationTime = 1794744000;
 
         // Default limit for block size (in bytes) (chipnet is like testnet4 in that it is smaller at 2MB)
-        consensus.nDefaultConsensusBlockSize = 2 * ONE_MEGABYTE;
+        consensus.nDefaultConsensusBlockSize10Mins = 2 * ONE_MEGABYTE;
 
         // Chain-specific default for mining block size, in percent of excessive block size (conf: -percentblockmaxsize)
         consensus.nDefaultGeneratedBlockSizePercent = 100.0; // 100% of 2MB = 2MB
 
         assert(consensus.nDefaultGeneratedBlockSizePercent >= 0.0
                && consensus.nDefaultGeneratedBlockSizePercent <= 100.0);
-        assert(consensus.GetDefaultGeneratedBlockSizeBytes() <= consensus.nDefaultConsensusBlockSize);
+        assert(consensus.GetDefaultGeneratedBlockSizeBytes10Mins() <= consensus.nDefaultConsensusBlockSize10Mins);
 
         // Anchor params: Note that the block after this height *must* also be checkpointed below.
-        consensus.asertAnchorParams = Consensus::Params::ASERTAnchor{
-            16844,        // anchor block height
+        consensus.asertAnchorParams.emplace(
+            16'844,       // anchor block height
             0x1d00ffff,   // anchor block nBits
             1605451779,   // anchor block previous block timestamp
-        };
+            16'844ull * legacy::POW_TARGET_SPACING_TICKS, // anchor block's tick count
+            legacy::POW_TARGET_SPACING_TICKS              // block interval used to mine the anchor block
+        );
 
         // ABLA config -- upgrade 10 adjustable block limit algorithm
-        consensus.ablaConfig = abla::Config::MakeDefault(consensus.nDefaultConsensusBlockSize, /* fixedSize = */ false);
+        consensus.ablaConfig = abla::Config::MakeDefault(consensus.nDefaultConsensusBlockSize10Mins, /* fixedSize = */ false);
         // Ensure base abla state yields same limit as pre-activation.
-        assert(abla::State(consensus.ablaConfig, 0).GetBlockSizeLimit() == consensus.nDefaultConsensusBlockSize);
+        assert(abla::State(consensus.ablaConfig, 0).GetBlockSizeLimit() == consensus.nDefaultConsensusBlockSize10Mins);
         // Ensure ABLA is *not* "fixed size" for chipnet
         assert( ! consensus.ablaConfig.IsFixedSize());
 
@@ -1111,7 +1104,7 @@ class CRegTestParams : public CChainParams {
 public:
     CRegTestParams() {
         strNetworkID = CBaseChainParams::REGTEST;
-        consensus.nSubsidyHalvingInterval = 150;
+        consensus.subsidyHalvingInterval = 150ull * legacy::POW_TARGET_SPACING_TICKS; // 150 10-min blocks or equivalent
         // always enforce P2SH BIP16 on regtest
         consensus.BIP16Height = 0;
         // BIP34 has not activated on regtest (far in the future so block v1 are
@@ -1126,9 +1119,6 @@ public:
         consensus.CSVHeight = 576;
         consensus.powLimit = uint256S(
             "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        // two weeks
-        consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
-        consensus.nPowTargetSpacing = 10 * 60;
         consensus.fPowAllowMinDifficultyBlocks = true;
         consensus.fPowNoRetargeting = true;
 
@@ -1178,19 +1168,19 @@ public:
         consensus.upgrade2027ActivationTime = 1810382400;
 
         // Default limit for block size (in bytes)
-        consensus.nDefaultConsensusBlockSize = DEFAULT_CONSENSUS_BLOCK_SIZE;
+        consensus.nDefaultConsensusBlockSize10Mins = DEFAULT_CONSENSUS_BLOCK_SIZE;
 
         // Chain-specific default for mining block size, in percent of excessive block size (conf: -percentblockmaxsize)
         consensus.nDefaultGeneratedBlockSizePercent = 50.0; // 50% of 32MB = 16MB
 
         assert(consensus.nDefaultGeneratedBlockSizePercent >= 0.0
                && consensus.nDefaultGeneratedBlockSizePercent <= 100.0);
-        assert(consensus.GetDefaultGeneratedBlockSizeBytes() <= consensus.nDefaultConsensusBlockSize);
+        assert(consensus.GetDefaultGeneratedBlockSizeBytes10Mins() <= consensus.nDefaultConsensusBlockSize10Mins);
 
         // ABLA config -- upgrade 10 adjustable block limit algorithm
-        consensus.ablaConfig = abla::Config::MakeDefault(consensus.nDefaultConsensusBlockSize, /* fixedSize = */ false);
+        consensus.ablaConfig = abla::Config::MakeDefault(consensus.nDefaultConsensusBlockSize10Mins, /* fixedSize = */ false);
         // Ensure base abla state yields same limit as pre-activation.
-        assert(abla::State(consensus.ablaConfig, 0).GetBlockSizeLimit() == consensus.nDefaultConsensusBlockSize);
+        assert(abla::State(consensus.ablaConfig, 0).GetBlockSizeLimit() == consensus.nDefaultConsensusBlockSize10Mins);
         // Ensure ABLA is *not* "fixed size" for regtest
         assert( ! consensus.ablaConfig.IsFixedSize());
 

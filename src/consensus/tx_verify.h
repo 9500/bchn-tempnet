@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2022 The Bitcoin developers
+// Copyright (c) 2018-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,6 +8,8 @@
 #include <vector>
 
 struct Amount;
+class BlockTicks;
+struct BlockHeightToTickMapper;
 class CBlockIndex;
 class CCoinsViewCache;
 class CTransaction;
@@ -24,7 +26,9 @@ struct Params;
  * Preconditions: tx.IsCoinBase() is false.
  */
 bool CheckTxInputs(const CTransaction &tx, CValidationState &state,
-                   const CCoinsViewCache &inputs, int nSpendHeight,
+                   const CCoinsViewCache &inputs,
+                   const BlockTicks &spendTicks,
+                   const BlockHeightToTickMapper &mapper,
                    Amount &txfee);
 
 } // namespace Consensus

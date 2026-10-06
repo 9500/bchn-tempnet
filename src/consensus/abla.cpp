@@ -134,7 +134,15 @@ Config Config::MakeDefault(uint64_t defaultBlockSize, bool fixedSize) {
     return ret;
 }
 
-State State::NextBlockState(const Config &config, const uint64_t nextBlockSize) const {
+uint64_t StateBase::GetBlockSizeLimitBase(BlockTicks thisBlockInterval, bool disable2GBCap) const {
+    uint64_t val = muldiv(controlBlockSize + elasticBufferSize, thisBlockInterval.value(), BASE_BLOCK_INTERVAL.value());
+    if (!disable2GBCap) {
+        val = std::min<uint64_t>(val, MAX_CONSENSUS_BLOCK_SIZE);
+    }
+    return val;
+}
+
+StateBase StateBase::NextBlockStateBase(const Config &config, BlockTicks thisBlockInterval, uint64_t nextBlockSize) const {
     State ret;
 
     ret.blockSize = nextBlockSize; // save the blocksize for the next block to its State
@@ -144,11 +152,14 @@ State State::NextBlockState(const Config &config, const uint64_t nextBlockSize) 
     // For safety: we clamp this current block's blocksize to the maximum value this algorithm expects. Normally this
     // won't happen unless the node is run with some -forceblocksize parameter that permits larger blocks than this
     // algo's current state expects.
-    const uint64_t clampedBlockSize = std::min(this->blockSize, this->controlBlockSize + this->elasticBufferSize);
+    const uint64_t clampedBlockSize = std::min(this->blockSize,
+                                               muldiv(this->controlBlockSize + this->elasticBufferSize,
+                                                      thisBlockInterval.value(), BASE_BLOCK_INTERVAL.value()));
 
     // zeta * x_{n-1}
     // Note: We determine the amplified block size from `clampedBlockSize`, not from `nextBlockSize`.
-    const uint64_t amplifiedCurrentBlockSize = muldiv(config.zeta_xB7, clampedBlockSize, B7);
+    const uint64_t amplifiedCurrentBlockSize =
+        muldiv(config.zeta_xB7, muldiv(clampedBlockSize, BASE_BLOCK_INTERVAL.value(), thisBlockInterval.value()), B7);
 
     // if zeta * x_{n-1} > epsilon_{n-1} then increase
     if (amplifiedCurrentBlockSize > this->controlBlockSize) {
@@ -166,7 +177,8 @@ State State::NextBlockState(const Config &config, const uint64_t nextBlockSize) 
                                               bytesToAdd, bytesMax);
 
         // epsilon_n = epsilon_{n-1} + gamma * (zeta * x_{n-1} - epsilon_{n-1} - zeta * beta_{n-1} * (zeta * x_{n-1} - epsilon_{n-1}) / (zeta * y_{n-1} - epsilon_{n-1}))
-        ret.controlBlockSize = this->controlBlockSize + (bytesToAdd - scalingOffset) / config.gammaReciprocal;
+        ret.controlBlockSize = this->controlBlockSize + muldiv((bytesToAdd - scalingOffset), thisBlockInterval.value(),
+                                                               config.gammaReciprocal * BASE_BLOCK_INTERVAL.value());
     }
     // if zeta * x_{n-1} <= epsilon_{n-1} then decrease or no change
     else {
@@ -176,7 +188,8 @@ State State::NextBlockState(const Config &config, const uint64_t nextBlockSize) 
         // epsilon_{n-1} + gamma * (zeta * x_{n-1} - epsilon_{n-1})
         // rearranged to:
         // epsilon_{n-1} - gamma * (epsilon_{n-1} - zeta * x_{n-1})
-        ret.controlBlockSize = this->controlBlockSize - bytesToRemove / config.gammaReciprocal;
+        ret.controlBlockSize = this->controlBlockSize - muldiv(bytesToRemove, thisBlockInterval.value(),
+                                                               config.gammaReciprocal * BASE_BLOCK_INTERVAL.value());
 
         // epsilon_n = max(epsilon_{n-1} + gamma * (zeta * x_{n-1} - epsilon_{n-1}), epsilon_0)
         ret.controlBlockSize = std::max(ret.controlBlockSize, config.epsilon0);
@@ -185,7 +198,8 @@ State State::NextBlockState(const Config &config, const uint64_t nextBlockSize) 
     // elastic buffer function
 
     // beta_{n-1} * theta
-    const uint64_t bufferDecay = this->elasticBufferSize / config.thetaReciprocal;
+    const uint64_t bufferDecay = muldiv(this->elasticBufferSize, thisBlockInterval.value(),
+                                        config.thetaReciprocal * BASE_BLOCK_INTERVAL.value());
 
     // if zeta * x_{n-1} > epsilon_{n-1} then increase
     if (amplifiedCurrentBlockSize > this->controlBlockSize) {
@@ -213,11 +227,12 @@ State State::NextBlockState(const Config &config, const uint64_t nextBlockSize) 
     return ret;
 }
 
-uint64_t State::CalcLookaheadBlockSizeLimit(const Config &config, size_t count, bool disable2GBCap) const {
+uint64_t State::CalcLookaheadBlockSizeLimitWorstCase(const Config &config, size_t count,
+                                                     BlockTicks paranoidWorseCaseBlockInterval, bool disable2GBCap) const {
     State lookaheadState{*this};
     for (size_t i = 0; i < count; ++i) {
-        const uint64_t maxSize = lookaheadState.GetNextBlockSizeLimit(config, disable2GBCap);
-        lookaheadState = lookaheadState.NextBlockState(config, maxSize);
+        const uint64_t maxSize = lookaheadState.GetNextBlockSizeLimit(config, paranoidWorseCaseBlockInterval, disable2GBCap);
+        lookaheadState = lookaheadState.NextBlockState(config, paranoidWorseCaseBlockInterval, maxSize);
     }
     return lookaheadState.GetBlockSizeLimit(disable2GBCap);
 }
@@ -233,6 +248,10 @@ bool State::IsValid(const Config &config, const char **err) const {
             *err = "";
         }
     });
+    if (blockInterval < MIN_BLOCK_INTERVAL || blockInterval > MAX_BLOCK_INTERVAL) {
+        errStr = "Error, invalid blockInterval state. Must be in allowed range [MIN_BLOCK_INTERVAL, MAX_BLOCK_INTERVAL].";
+        return false;
+    }
     if (controlBlockSize < config.epsilon0 || controlBlockSize > config.epsilonMax) {
         errStr = "Error, invalid controlBlockSize state. Can't be below initialization value nor above epsilonMax.";
         return false;
@@ -245,8 +264,8 @@ bool State::IsValid(const Config &config, const char **err) const {
 }
 
 std::string State::ToString() const {
-    return strprintf("abla::State(blockSize=%u, controlBlockSize=%u, elasticBufferSize=%u)",
-                     blockSize, controlBlockSize, elasticBufferSize);
+    return strprintf("abla::State(blockSize=%u, controlBlockSize=%u, elasticBufferSize=%u, blockInterval=%i)",
+                     blockSize, controlBlockSize, elasticBufferSize, blockInterval.toSecs());
 }
 
 } // namespace abla
