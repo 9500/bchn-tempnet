@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 The Bitcoin developers
+# Copyright (c) 2020-2026 The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -32,6 +32,7 @@ nav:
   - Setup instructions: doc/README.md
   - Release notes:
       - Current release notes: doc/release-notes.md
+      - Bitcoin Cash Node v29.2.0: doc/release-notes/release-notes-29.2.0.md
       - Bitcoin Cash Node v29.1.0: doc/release-notes/release-notes-29.1.0.md
       - Bitcoin Cash Node v29.0.0: doc/release-notes/release-notes-29.0.0.md
       - Bitcoin Cash Node v28.0.1: doc/release-notes/release-notes-28.0.1.md
