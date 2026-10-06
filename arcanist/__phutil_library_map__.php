@@ -22,7 +22,6 @@ phutil_register_library_map(array(
     'PythonShebangLinter' => 'linter/PythonShebangLinter.php',
     'Qt5Linter' => 'linter/Qt5Linter.php',
     'ShellCheckLinter' => 'linter/ShellCheckLinter.php',
-    'StdintLinter' => 'linter/StdintLinter.php',
     'WhitespaceLinter' => 'linter/WhitespaceLinter.php',
   ),
   'function' => array(
@@ -47,7 +46,6 @@ phutil_register_library_map(array(
     'PythonShebangLinter' => 'ArcanistLinter',
     'Qt5Linter' => 'ArcanistLinter',
     'ShellCheckLinter' => 'ArcanistExternalLinter',
-    'StdintLinter' => 'ArcanistLinter',
     'WhitespaceLinter' => 'ArcanistLinter',
   ),
 ));

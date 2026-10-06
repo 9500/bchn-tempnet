@@ -65,15 +65,6 @@
             "script-and-regex.script": "arcanist/linter/suppressible-spelling.sh",
             "script-and-regex.regex": "/^(?P<file>.*?):(?P<line>\\d+):(?P<code>[^:]+):(?P<message>.*)$/"
         },
-        "lint-stdint": {
-            "type": "lint-stdint",
-            "include": "(^src/.*\\.(h|c|cpp)$)",
-            "exclude": [
-                "(.*/)",
-                "(^src/(secp256k1|univalue|leveldb)/)",
-                "(^src/compat/assumptions.h$)"
-            ]
-        },
         "check-rpc-mappings": {
             "type": "check-rpc-mappings",
             "include": "(^src/(rpc/|wallet/rpc).*\\.cpp$)",
