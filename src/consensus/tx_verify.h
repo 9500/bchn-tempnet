@@ -8,6 +8,8 @@
 #include <vector>
 
 struct Amount;
+class BlockTicks;
+struct BlockHeightToTickMapper;
 class CBlockIndex;
 class CCoinsViewCache;
 class CTransaction;
@@ -24,7 +26,9 @@ struct Params;
  * Preconditions: tx.IsCoinBase() is false.
  */
 bool CheckTxInputs(const CTransaction &tx, CValidationState &state,
-                   const CCoinsViewCache &inputs, int nSpendHeight,
+                   const CCoinsViewCache &inputs,
+                   const BlockTicks &spendTicks,
+                   const BlockHeightToTickMapper &mapper,
                    Amount &txfee);
 
 } // namespace Consensus

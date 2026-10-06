@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2026 The Bitcoin developers
+// Copyright (c) 2018-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -90,6 +90,13 @@ extern std::optional<int32_t> g_Upgrade12HeightOverride;
 bool IsUpgrade12Enabled(const Consensus::Params &params, const CBlockIndex *pindexPrev);
 /** Returns the height of the activation block. This is one less than the actual block for which the new rules apply. */
 int32_t GetUpgrade12ActivationHeight(const Consensus::Params &params);
+
+/**
+ *  Global: If set, the user overrode the -upgrade2027activationtime from the command-line or config file. Unit tests
+ *  also may temporarily set this value. If this is not set, the *Upgrade2027*() functions use hard-coded chain params
+ *  for the activation time rather than this override.
+ */
+extern std::optional<int64_t> g_Upgrade2027TimeOverride;
 
 /** Check if May 15th, 2027 protocol upgrade has activated. */
 bool IsUpgrade2027Enabled(const Consensus::Params &params, const CBlockIndex *pindexPrev);

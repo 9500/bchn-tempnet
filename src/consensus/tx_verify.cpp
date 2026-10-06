@@ -8,9 +8,11 @@
 #include <chain.h>
 #include <coins.h>
 #include <consensus/activation.h>
+#include <consensus/blockticks.h>
 #include <consensus/consensus.h>
 #include <consensus/params.h>
 #include <consensus/validation.h>
+#include <node/blockheighttotickmapper.h>
 #include <primitives/transaction.h>
 #include <script/script_flags.h>
 #include <util/moneystr.h> // For FormatMoney
@@ -173,9 +175,8 @@ bool SequenceLocks(const CTransaction &tx, int flags, std::vector<int> *prevHeig
 }
 
 namespace Consensus {
-bool CheckTxInputs(const CTransaction &tx, CValidationState &state,
-                   const CCoinsViewCache &inputs, int nSpendHeight,
-                   Amount &txfee) {
+bool CheckTxInputs(const CTransaction &tx, CValidationState &state, const CCoinsViewCache &inputs,
+                   const BlockTicks &spendTicks, const BlockHeightToTickMapper &mapper, Amount &txfee) {
     assert(!tx.IsCoinBase()); // precondition of this function
 
     Amount nValueIn = Amount::zero();
@@ -191,12 +192,16 @@ bool CheckTxInputs(const CTransaction &tx, CValidationState &state,
         }
 
         // If prev is coinbase, check that it's matured
-        if (coin.IsCoinBase() &&
-            nSpendHeight - coin.GetHeight() < COINBASE_MATURITY) {
-            return state.Invalid(
-                false, REJECT_INVALID, "bad-txns-premature-spend-of-coinbase",
-                strprintf("tried to spend coinbase at depth %d",
-                          nSpendHeight - coin.GetHeight()));
+        if (coin.IsCoinBase()) {
+            const auto coinTicks = mapper.HeightToTick(coin.GetHeight());
+            const auto depthTicks = spendTicks > coinTicks ? spendTicks - coinTicks : BlockTicks{0};
+            if (depthTicks < kCoinbaseMaturityTicks) {
+                return state.Invalid(false, REJECT_INVALID, "bad-txns-premature-spend-of-coinbase",
+                                     strprintf("tried to spend coinbase at tick depth %u, required depth: %u "
+                                               "(coinTicks: %u, spendTicks: %u, coinHeight: %i)",
+                                               depthTicks.value(), kCoinbaseMaturityTicks.value(),
+                                               coinTicks.value(), spendTicks.value(), coin.GetHeight()));
+            }
         }
 
         // Fail now if the locking script is guaranteed to fail evaluation later on in the pipeline

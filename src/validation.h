@@ -14,6 +14,7 @@
 #include <blockfileinfo.h>
 #include <chain.h>
 #include <coins.h>
+#include <consensus/blockticks.h>
 #include <consensus/consensus.h>
 #include <consensus/validation.h>
 #include <flatfile.h>
@@ -39,7 +40,7 @@
 #include <vector>
 
 class arith_uint256;
-
+struct BlockHeightToTickMapper;
 class CBlockIndex;
 class CBlockTreeDB;
 class CBlockUndo;
@@ -166,8 +167,8 @@ static constexpr bool DEFAULT_PEERBLOOMFILTERS = true;
 
 /** Default for -stopatheight */
 static constexpr int DEFAULT_STOPATHEIGHT = 0;
-/** Default for -maxreorgdepth */
-static constexpr int DEFAULT_MAX_REORG_DEPTH = 10;
+/** Default for -maxreorgticks */
+static constexpr BlockTicks DEFAULT_MAX_REORG_TICKS{10 * legacy::POW_TARGET_SPACING_TICKS};
 /** Default for -finalizeheaders */
 static constexpr bool DEFAULT_FINALIZE_HEADERS = true;
 /** Default DoS score for finalized header violation - range 0..100 */
@@ -235,9 +236,9 @@ extern CBlockIndex *pindexBestHeader;
  * Block files containing a block-height within MIN_BLOCKS_TO_KEEP of
  * ::ChainActive().Tip() will not be pruned.
  */
-static constexpr unsigned int MIN_BLOCKS_TO_KEEP = 288;
+static constexpr unsigned int MIN_BLOCKS_TO_KEEP = 288; // TODO: Scale this to block time?
 /** Minimum blocks required to signal NODE_NETWORK_LIMITED */
-static constexpr unsigned int NODE_NETWORK_LIMITED_MIN_BLOCKS = 288;
+static constexpr unsigned int NODE_NETWORK_LIMITED_MIN_BLOCKS = 288; // TODO: Scale this to block time?
 
 static constexpr signed int DEFAULT_CHECKBLOCKS = 6;
 static constexpr unsigned int DEFAULT_CHECKLEVEL = 3;
@@ -380,7 +381,20 @@ bool GetTransaction(const TxId &txid, CTransactionRef &txOut,
 bool ActivateBestChain(
     const Config &config, CValidationState &state,
     std::shared_ptr<const CBlock> pblock = std::shared_ptr<const CBlock>());
-Amount GetBlockSubsidy(int nHeight, const Consensus::Params &consensusParams);
+/**
+ * Returns the block subsidy for a given block, given its previous block.
+ *
+ * This function replaces the previous version which was based on height,
+ * and scales the subsidy based on BlockTicks and/or block time interval
+ * (as per the FABLOUS CHIP).
+ *
+ * @pre - `pindexPrev` and `consensusParams` must be valid:
+ *         - `pindexPrev` *may* be `nullptr`, in in which case we assume genesis block rules (50 COIN subsidy)
+ *         - `consensusParams.subsidyHalvingInterval` must be nonzero
+ *         - If `pindexPrev` is not `nullptr`, then `pindexPrev->GetTickDeltaForNextBlock()` must be valid and
+ *           in the range [1, 600]
+ */
+Amount GetBlockSubsidy(const CBlockIndex *pindexPrev /* nullable */, const Consensus::Params &consensusParams);
 
 /**
  * Guess verification progress (as a fraction between 0.0=genesis and
@@ -689,14 +703,16 @@ const CBlockIndex *GetFinalizedBlock() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 /**
  * Checks if a block is finalized.
  */
-bool IsBlockFinalized(const CBlockIndex *pindex)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+bool IsBlockFinalized(const CBlockIndex *pindex) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 /**
  * Get the most-work chain. Caution: `cs_main` must be held to call methods on or otherwise operate on this object!
  * @returns the most-work chain.
  */
 CChain &ChainActive();
+
+/** Check the block index once by calling g_chainstate.CheckBlockIndex(params) (called from tests) */
+void CheckBlockIndex(const Consensus::Params &params);
 
 /**
  * Global variable that points to the coins database (protected by cs_main)
@@ -714,12 +730,19 @@ extern std::unique_ptr<CCoinsViewCache> pcoinsTip;
 extern std::unique_ptr<CBlockTreeDB> pblocktree;
 
 /**
- * Return the spend height, which is one more than the inputs.GetBestBlock().
+ * Return the spend ticks, which is one block's ticks more than the inputs.GetBestBlock().
  * While checking, GetBestBlock() refers to the parent block. (protected by
  * cs_main)
  * This is also true for mempool checks.
+ *
+ * Also, optionally, can fill-in the `mapperOut` mapper (used by Consensus::CheckTxInputs).
  */
-int GetSpendHeight(const CCoinsViewCache &inputs);
+BlockTicks GetSpendTicks(const Consensus::Params &params, const CCoinsViewCache &inputs,
+                         BlockHeightToTickMapper *mapperOut = nullptr) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+// Given a previous block index, make the height-to-tick mapper needed by Consensus::CheckTxInputs()
+BlockHeightToTickMapper MakeHeightToTickMapperForPrev(const Consensus::Params &params, const CBlockIndex *pindexPrev)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 /**
  * Determine what nVersion a new block should use.

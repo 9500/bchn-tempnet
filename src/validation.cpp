@@ -27,6 +27,7 @@
 #include <hash.h>
 #include <index/txindex.h>
 #include <net_datasource.h>
+#include <node/blockheighttotickmapper.h>
 #include <node/blockstorage.h>
 #include <policy/fees.h>
 #include <policy/mempool.h>
@@ -48,6 +49,7 @@
 #include <txmempool.h>
 #include <ui_interface.h>
 #include <undo.h>
+#include <util/check.h>
 #include <util/defer.h>
 #include <util/moneystr.h>
 #include <util/strencodings.h>
@@ -206,6 +208,14 @@ public:
 
     void UnloadBlockIndex();
 
+    /**
+     * Make various assertions about the state of the block index.
+     *
+     * By default this only executes fully when using the Regtest chain; see:
+     * fCheckBlockIndex.
+     */
+    void CheckBlockIndex(const Consensus::Params &consensusParams);
+
 private:
     bool ActivateBestChainStep(const Config &config, CValidationState &state,
                                CBlockIndex *pindexMostWork,
@@ -219,18 +229,20 @@ private:
                     DisconnectedBlockTransactions &disconnectpool)
         EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
-    CBlockIndex *AddToBlockIndex(const CBlockHeader &block)
-        EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-    /** Create a new block index entry for a given block hash */
-    CBlockIndex *InsertBlockIndex(const BlockHash &hash)
+    /**
+     *  Add a block to the blockindex. Returns nullptr if it could not be connected (missing prevblock).
+     *  Most setup of the CBlockIndex is done here except for ABLA-specific state management which happens
+     *  later once the block's size is known.
+     */
+    CBlockIndex *AddToBlockIndex(const Consensus::Params &params, const CBlockHeader &block)
         EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     /**
-     * Make various assertions about the state of the block index.
-     *
-     * By default this only executes fully when using the Regtest chain; see:
-     * fCheckBlockIndex.
+     *  Create a new block index entry for a given block hash.
+     *  Note that the CBlockIndex is merely inserted, without being properly initialized and connected.
+     *  This function is only used by LoadBlockIndexGuts() during app startup.
      */
-    void CheckBlockIndex(const Consensus::Params &consensusParams);
+    CBlockIndex *InsertBlockIndex(const BlockHash &hash)
+        EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     void InvalidBlockFound(CBlockIndex *pindex, const CValidationState &state)
         EXCLUSIVE_LOCKS_REQUIRED(cs_main);
@@ -246,6 +258,10 @@ private:
 
 CChain &ChainActive() {
     return g_chainstate.m_chain;
+}
+
+void CheckBlockIndex(const Consensus::Params &params) {
+    g_chainstate.CheckBlockIndex(params);
 }
 
 /**
@@ -359,6 +375,8 @@ bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, int flag
     // want to know if a transaction can be part of the *next* block, we need to
     // use one more than ::ChainActive().Height()
     index.nHeight = tip->nHeight + 1;
+    index.SetBlockTicks(tip->GetBlockTicks() + tip->GetTickDeltaForNextBlock()); // maintain correct tick count
+    index.SetTickDeltaForNextBlock(tip->GetTickDeltaForNextBlock()); // this is a dummy value (unused by below)
 
     // pcoinsTip contains the UTXO set for ::ChainActive().Tip()
     CCoinsViewMemPool viewMemPool(pcoinsTip.get(), pool);
@@ -602,8 +620,9 @@ AcceptToMemoryPoolWorker(const Config &config, CTxMemPool &pool,
         }
 
         Amount nFees = Amount::zero();
-        if (!Consensus::CheckTxInputs(tx, state, view, GetSpendHeight(view),
-                                      nFees)) {
+        BlockHeightToTickMapper height2TickMapper;
+        const BlockTicks spendTicks = GetSpendTicks(consensusParams, view, &height2TickMapper);
+        if (!Consensus::CheckTxInputs(tx, state, view, spendTicks, height2TickMapper, nFees)) {
             return error("%s: Consensus::CheckTxInputs: %s, %s", __func__,
                          tx.GetId().ToString(), FormatStateMessage(state));
         }
@@ -628,7 +647,7 @@ AcceptToMemoryPoolWorker(const Config &config, CTxMemPool &pool,
         }
 
         // Keep track of transactions that spend a coinbase, which we re-scan
-        // during reorgs to ensure COINBASE_MATURITY is still met.
+        // during reorgs to ensure kCoinbaseMaturityTicks is still met.
         bool fSpendsCoinbase = false;
         for (const CTxIn &txin : tx.vin) {
             const Coin &coin = view.AccessCoin(txin.prevout);
@@ -962,17 +981,35 @@ bool GetTransaction(const TxId &txid, CTransactionRef &txOut,
     return false;
 }
 
-Amount GetBlockSubsidy(int nHeight, const Consensus::Params &consensusParams) {
-    int halvings = nHeight / consensusParams.nSubsidyHalvingInterval;
+Amount GetBlockSubsidy(const CBlockIndex *pindexPrev, const Consensus::Params &consensusParams) {
+    const BlockTicks blockTickCount = pindexPrev
+                                          ? pindexPrev->GetBlockTicks() + pindexPrev->GetTickDeltaForNextBlock()
+                                          : BlockTicks{0u};
+    static_assert(legacy::POW_TARGET_SPACING_TICKS.value() > 0u);
+    const BlockTicks blockTimeInterval = pindexPrev
+                                             ? pindexPrev->GetTickDeltaForNextBlock()
+                                             : legacy::POW_TARGET_SPACING_TICKS;
+    assert(consensusParams.subsidyHalvingInterval > BlockTicks{0u}); // Prevent divide by zero below
+    assert(blockTimeInterval <= legacy::POW_TARGET_SPACING_TICKS); // Below expression doesn't support >10 min blocks
+    // The below numerator is an expression required to "round down" coin emissions schedule slightly
+    // See: https://bitcoincashresearch.org/t/chip-2025-03-faster-blocks-for-bitcoin-cash/1513/211
+    const uint64_t halvings = (blockTickCount + legacy::POW_TARGET_SPACING_TICKS - blockTimeInterval)
+                              / consensusParams.subsidyHalvingInterval;
     // Force block reward to zero when right shift is undefined.
     if (halvings >= 64) {
         return Amount::zero();
     }
 
     Amount nSubsidy = 50 * COIN;
-    // Subsidy is cut in half every 210,000 blocks which will occur
+    // Subsidy is cut in half every 210,000 blocks (for idealized 10 min blocks) which will occur
     // approximately every 4 years.
-    return ((nSubsidy / SATOSHI) >> halvings) * SATOSHI;
+    nSubsidy = ((nSubsidy / SATOSHI) >> halvings) * SATOSHI;
+    // Scale subsidy down to the faster blocktime ratio, if any
+    assert(blockTimeInterval > BlockTicks{0u}); // Prevent divide by zero below
+    const int64_t blockTimeRatio = legacy::POW_TARGET_SPACING_TICKS / blockTimeInterval;
+    assert(blockTimeRatio > 0); // Prevent divide by zero below
+    nSubsidy /= blockTimeRatio;
+    return nSubsidy;
 }
 
 bool IsInitialBlockDownload() {
@@ -1205,10 +1242,27 @@ bool CScriptCheck::operator()() {
     return true;
 }
 
-int GetSpendHeight(const CCoinsViewCache &inputs) {
-    LOCK(cs_main);
-    CBlockIndex *pindexPrev = LookupBlockIndex(inputs.GetBestBlock());
-    return pindexPrev->nHeight + 1;
+BlockHeightToTickMapper MakeHeightToTickMapperForPrev(const Consensus::Params &params, const CBlockIndex *pindexPrev)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+    if (IsUpgrade2027Enabled(params, pindexPrev)) {
+        // Upgrade is activated, push the activation block's next block tick delta as the height at which blocktime
+        // changed.
+        const CBlockIndex *activationBlock = Assert(g_upgrade2027_block_tracker.GetActivationBlock(pindexPrev, params));
+        // Note that it's possible for the activation block to be genesis, in which case we just have 1 entry in the
+        // mapper. Otherwise if activation block is not genesis, we have 2: {0, 600} (genesis), and the below entry:
+        return BlockHeightToTickMapper({{activationBlock->nHeight, activationBlock->GetTickDeltaForNextBlock()}});
+    }
+    return BlockHeightToTickMapper{}; // default schedule with 1 entry: {0, 600}
+}
+
+BlockTicks GetSpendTicks(const Consensus::Params &params, const CCoinsViewCache &inputs,
+                         BlockHeightToTickMapper *mapperOut) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+    CBlockIndex *pindexPrev = Assert(LookupBlockIndex(inputs.GetBestBlock()));
+    if (mapperOut) {
+        // Caller wants a mapper, so give it to him
+        *mapperOut = MakeHeightToTickMapperForPrev(params, pindexPrev);
+    }
+    return pindexPrev->GetBlockTicks() + pindexPrev->GetTickDeltaForNextBlock();
 }
 
 bool CheckInputs(const CTransaction &tx, CValidationState &state,
@@ -1552,10 +1606,10 @@ static void MaintainAblaState(const Consensus::Params &consensusParams, const CB
             // activation block, give default state
             blockSize = blockSize ? blockSize : ::GetSerializeSize(block, PROTOCOL_VERSION);
             ablaStateOpt.emplace(consensusParams.ablaConfig, blockSize);
-        } else if ((ablaStateOpt = pindex->pprev->GetAblaStateOpt())) {
+        } else if (const auto prevAblaStateOpt = pindex->pprev->GetAblaStateOpt()) {
             // non-activation block, advance state from previous, based on this block's size
             blockSize = blockSize ? blockSize : ::GetSerializeSize(block, PROTOCOL_VERSION);
-            ablaStateOpt = ablaStateOpt->NextBlockState(consensusParams.ablaConfig, blockSize);
+            ablaStateOpt = prevAblaStateOpt->NextBlockState(consensusParams.ablaConfig, pindex->GetTickDeltaForThisBlock(), blockSize);
         }
         debugPrefix = debugPrefix ? debugPrefix : __func__;
         LogPrintToBeContinued(BCLog::ABLA, "%s: ABLA state for block %d: ", debugPrefix, pindex->nHeight);
@@ -1567,7 +1621,7 @@ static void MaintainAblaState(const Consensus::Params &consensusParams, const CB
                 setDirtyBlockIndex.insert(pindex);
             }
             LogPrint(BCLog::ABLA, "%s, nextBlockSizeLimit: %i%s\n", ablaStateOpt->ToString(),
-                     ablaStateOpt->GetNextBlockSizeLimit(consensusParams.ablaConfig), newstr);
+                     ablaStateOpt->GetNextBlockSizeLimit(consensusParams.ablaConfig, pindex->GetTickDeltaForNextBlock()), newstr);
         } else {
             LogPrint(BCLog::ABLA, "??? NOT YET DEFINED ???\n");
         }
@@ -1806,6 +1860,9 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state, CBl
         firstTokenBlockHeight = std::numeric_limits<int64_t>::max();
     }
 
+    const BlockHeightToTickMapper height2TickMapper = MakeHeightToTickMapperForPrev(consensusParams, pindex->pprev);
+    const BlockTicks spendTicks = pindex->GetBlockTicks();
+
     size_t txIndex = 0;
     for (const auto &ptx : block.vtx) {
         const CTransaction &tx = *ptx;
@@ -1813,8 +1870,7 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state, CBl
         nInputs += tx.vin.size();
 
         Amount txfee = Amount::zero();
-        if (!isCoinBase && !Consensus::CheckTxInputs(tx, state, view,
-                                                     pindex->nHeight, txfee)) {
+        if (!isCoinBase && !Consensus::CheckTxInputs(tx, state, view, spendTicks, height2TickMapper, txfee)) {
             return error("%s: Consensus::CheckTxInputs: %s, %s", __func__,
                          tx.GetId().ToString(), FormatStateMessage(state));
         }
@@ -1907,8 +1963,7 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state, CBl
              nInputs <= 1 ? 0 : MILLI * (nTime3 - nTime2) / (nInputs - 1),
              nTimeConnect * MICRO, nTimeConnect * MILLI / nBlocksTotal);
 
-    Amount blockReward =
-        nFees + GetBlockSubsidy(pindex->nHeight, consensusParams);
+    const Amount blockReward = nFees + GetBlockSubsidy(pindex->pprev, consensusParams);
     if (block.vtx[0]->GetValueOut() > blockReward) {
         return state.DoS(100,
                          error("ConnectBlock(): coinbase pays too much "
@@ -2158,7 +2213,8 @@ static void TipChanged(const ::Config &config, const CBlockIndex *pindexNew, uin
         // If this lambda is called, no ABLA state for this tip (not activated yet). Build a default ABLA state based on
         // the current block's size, etc (tolerating failure of ReadBlockSizeFromDisk() for defensive programming).
         if (!blockSize) {
-            blockSize = ReadBlockSizeFromDisk(pindexNew, params).value_or(config.GetDefaultConsensusBlockSize());
+            blockSize = ReadBlockSizeFromDisk(pindexNew, params)
+                            .value_or(config.GetDefaultConsensusBlockSize(pindexNew->GetTickDeltaForThisBlock()));
         }
         return abla::State(consensusParams.ablaConfig, blockSize);
     });
@@ -2170,8 +2226,8 @@ static void TipChanged(const ::Config &config, const CBlockIndex *pindexNew, uin
     // As such we guess a bit large, at 2x the download window. Note that we recalculate our guess every time the tip
     // is updated, even if upgrade 10 is not enabled yet, since for all we know here right now, the upgrade may be
     // enabled in the next few blocks (since it depends on MTP).
-    const uint64_t nLimit = ablaState.CalcLookaheadBlockSizeLimit(consensusParams.ablaConfig,
-                                                                  BLOCK_DOWNLOAD_WINDOW * 2);
+    const uint64_t nLimit = ablaState.CalcLookaheadBlockSizeLimitWorstCase(consensusParams.ablaConfig,
+                                                                           BLOCK_DOWNLOAD_WINDOW * 2);
     config.NotifyMaxBlockSizeLookAheadGuessChanged(nLimit);
     LogPrint(BCLog::ABLA, "%s: set lookahead-blocksize-guess for tip height %i to %i (%s msec elapsed)\n",
              __func__, pindexNew->nHeight, config.GetMaxBlockSizeLookAheadGuess(), t0.msecStr());
@@ -2404,43 +2460,45 @@ static bool FinalizeBlockInternal(const Config &config, CValidationState &state,
     return true;
 }
 
-static const CBlockIndex *FindBlockToFinalize(const Config &config,
-                                              CBlockIndex *pindexNew)
+static const CBlockIndex *FindBlockToFinalize(const Config &, CBlockIndex * const pindexNew)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     AssertLockHeld(cs_main);
 
-    const int32_t maxreorgdepth =
-        gArgs.GetArg("-maxreorgdepth", DEFAULT_MAX_REORG_DEPTH);
+    const int64_t maxreorgsecs = gArgs.GetArg("-maxreorgticks", DEFAULT_MAX_REORG_TICKS.toSecs());
+    if (maxreorgsecs < 0) {
+        // If maxreorgticks is < 0, auto finalization is disabled
+        return nullptr;
+    }
 
-    const int64_t finalizationdelay =
-        gArgs.GetArg("-finalizationdelay", DEFAULT_MIN_FINALIZATION_DELAY);
+    const int64_t finalizationdelay = gArgs.GetArg("-finalizationdelay", DEFAULT_MIN_FINALIZATION_DELAY);
+    const int64_t now = GetTime();
 
-    // Find our candidate.
-    // If maxreorgdepth is < 0 pindex will be null and auto finalization
-    // disabled
-    const CBlockIndex *pindex =
-        pindexNew->GetAncestor(pindexNew->nHeight - maxreorgdepth);
-
-    int64_t now = GetTime();
-
-    // If the finalization delay is not expired since the startup time,
+    // If the finalization delay has not expired since the startup time,
     // finalization should be avoided. Header receive time is not saved to disk
-    // and so cannot be anterior to startup time.
+    // and so cannot ever precede the startup time.
     if (now < (GetStartupTime() + finalizationdelay)) {
         LogPrint(BCLog::FINALIZATION, "No finalization because uptime has not reached finalizationdelay\n");
         return nullptr;
     }
+
+    const BlockTicks maxreorgticks{static_cast<uint64_t>(maxreorgsecs)};
+
+    // Find our candidate, which is defined as the first block where the delta between the two blocks in ticks is
+    // >= maxreorgticks
+    assert(pindexNew->nHeight == 0 || pindexNew->GetBlockTicks().value() > 0); // sanity check for GetBlockTicks()
+    const CBlockIndex *pindex = pindexNew->FindAncestorWithTickDepth(maxreorgticks);
 
     // While our candidate is not eligible (finalization delay not expired), try
     // the previous one.
     while (pindex && (pindex != pindexFinalized)) {
         // Check that the block to finalize is known for a long enough time.
         // This test will ensure that an attacker could not cause a block to
-        // finalize by forking the chain with a depth > maxreorgdepth.
+        // finalize by forking the chain with a depth in ticks > maxreorgticks.
         // If the block is loaded from disk, header receive time is 0 and the
-        // block will be finalized. This is safe because the delay since the
-        // node startup is already expired.
-        auto headerReceivedTime = pindex->GetHeaderReceivedTime();
+        // block will be finalized. This is safe because the delay since node
+        // startup has already expired (enforced by the startup time check
+        // towards the top of this function).
+        const auto headerReceivedTime = pindex->GetHeaderReceivedTime();
 
         // If finalization delay is <= 0, finalization always occurs immediately
         if (now >= (headerReceivedTime + finalizationdelay)) {
@@ -2649,22 +2707,62 @@ CBlockIndex *CChainState::FindMostWorkChain() {
                 // accumulated as the main chain has since the fork block.
                 CBlockIndex const *pindexExtraPow = pindexTip;
                 arith_uint256 requiredWork = pindexTip->nChainWork;
-                switch (pindexTip->nHeight - pindexFork->nHeight) {
-                    // Limit the penality for depth 1, 2 and 3 to half a block
-                    // worth of work to ensure we don't fork accidentally.
+                // We pretend these were 10-min blocks and "emulate" 10 min block height diff, even if we are on a
+                // faster blocktime.
+                auto EmulateDepth = [](const CBlockIndex *hi, const CBlockIndex *lo) -> std::pair<uint64_t, uint64_t> {
+                    const auto a = hi->GetBlockTicks(), b = lo->GetBlockTicks();
+                    if (a < b) [[unlikely]] {
+                        // Defensive programming: In case calling code passes some impossible values here, we
+                        // should just return 0,0 rather than some wraped-around impossibly high "depth".
+                        // In that case the subsequent code will recover the situation as best it can but if we
+                        // take this branch it does indicate a programming error of some sort in surrounding code.
+                        LogPrintf("WARNING: FindMostWorkChain::EmulateDepth got passed some invalid parameters:"
+                                  " %u < %u!\n", a.value(), b.value());
+                        return {0, 0};
+                    }
+                    const auto tickDiff = a - b;
+                    static_assert(legacy::POW_TARGET_SPACING_TICKS.value() > 0);
+                    const auto div = tickDiff / legacy::POW_TARGET_SPACING_TICKS;
+                    const auto rem = tickDiff % legacy::POW_TARGET_SPACING_TICKS;
+                    return {div, rem};
+                };
+                const auto [emulatedDepth, remainder] = EmulateDepth(pindexTip, pindexFork);
+                switch (emulatedDepth) {
+                    // Impose a penalty in switching to another chain on a "deep" reorg (defined as >= 4 10-min blocks).
+                    // We limit the penality for emulated depth 1, 2 and 3 to under 1.5x to ensure we don't encourage
+                    // accidental chain splits. At emulated depth >= 4, we impose a 2x work penalty before we switch
+                    // to the other chain.
                     case 3:
                     case 2:
-                        pindexExtraPow = pindexExtraPow->pprev;
+                        // Emulate going back "1 full 10 min block" (= 10 blocks if 1-min blocks)
+                        for (;;) {
+                            pindexExtraPow = pindexExtraPow->pprev;
+                            const auto [d, r] = EmulateDepth(pindexExtraPow, pindexFork);
+                            if ((d == emulatedDepth - 1 && r <= remainder)
+                                /* extra clause for unlikely corner case where we crossed a blocktime change boundary */
+                                || d <= emulatedDepth - 2 ) {
+                                // We went back "1 full 10 min block" worth of blocks; end for() loop
+                                break;
+                            }
+                        }
                         [[fallthrough]];
                     case 1: {
-                        const arith_uint256 deltaWork =
-                            pindexExtraPow->nChainWork - pindexFork->nChainWork;
+                        // 1 block height difference in 10-min block mode, or 10-19 blocks height difference in 1-min
+                        // block mode: to reorg to the other chain, its branch must have 1.5x the work from the common
+                        // fork block than this branch has.
+                        const arith_uint256 deltaWork = pindexExtraPow->nChainWork - pindexFork->nChainWork;
                         requiredWork += (deltaWork >> 1);
                         break;
                     }
+                    case 0:
+                        // "0 blocks" worth of emulated height difference -- this branch is not taken on 10-min blocks.
+                        // However, on 1-min blocks is means the first 1-9 blocks in a split impose no reorg penalty;
+                        // we merely switch to the other chain iff it has more work (aka original Satoshi client logic).
+                        break;
                     default:
-                        requiredWork +=
-                            pindexExtraPow->nChainWork - pindexFork->nChainWork;
+                        // >=4 blocks in 10-min mode or >=40 blocks in 1 min block mode; the other branch must have
+                        // 2x more work from the common fork block than this branch, otherwise we don't switch.
+                        requiredWork += pindexExtraPow->nChainWork - pindexFork->nChainWork;
                         break;
                 }
 
@@ -3104,14 +3202,14 @@ bool CChainState::UnwindBlock(const Config &config, CValidationState &state,
                               CBlockIndex *pindex, bool invalidate) {
     CBlockIndex *to_mark_failed_or_parked = pindex;
     bool pindex_was_in_chain = false;
-    int disconnected = 0;
 
     {
-        constexpr int maxDisconnectPoolBlocks = 10;
+        constexpr BlockTicks maxDisconnectPoolBlockTicks{10 * legacy::POW_TARGET_SPACING_TICKS};
+        BlockTicks disconnectedTicks;
         bool ret = false;
         DisconnectedBlockTransactions disconnectpool;
-        // After 10 blocks this becomes nullptr, so that DisconnectTip will
-        // stop giving us unwound block txs if we are doing a deep unwind.
+        // After adding more than 10 10-min blocks (or equivalent), this becomes nullptr, so that
+        // DisconnectTip will stop giving us unwound block txs if we are doing a deep unwind.
         DisconnectedBlockTransactions *optDisconnectPool = &disconnectpool;
 
         Defer deferred([&disconnectpool, &ret, &config] {
@@ -3136,7 +3234,7 @@ bool CChainState::UnwindBlock(const Config &config, CValidationState &state,
                 break;
             }
 
-            if (disconnected == 0) {
+            if (disconnectedTicks == BlockTicks{}) {
                 // On first iteration, we grab all the mempool txs to preserve topological
                 // ordering. This has the side-effect of temporarily clearing the mempool,
                 // but we will re-add later in updateMempoolForReorg() (above). This
@@ -3152,21 +3250,23 @@ bool CChainState::UnwindBlock(const Config &config, CValidationState &state,
             // unconditionally valid already, so force disconnect away from it.
 
             ret = DisconnectTip(config, state, optDisconnectPool);
-            ++disconnected;
-
-            if (optDisconnectPool && disconnected > maxDisconnectPoolBlocks) {
-                // Stop using the disconnect pool after 10 blocks. After 10
-                // blocks we no longer add block tx's to the disconnectpool.
-                // However, when this scope ends we will reconcile what's
-                // in the pool with the new tip (in the deferred d'tor above).
-                optDisconnectPool = nullptr;
-            }
 
             if (!ret) {
                 return false;
             }
 
-            assert(invalid_walk_tip->pprev == m_chain.Tip());
+            const CBlockIndex *const new_tip = m_chain.Tip();
+            assert(invalid_walk_tip->pprev == new_tip);
+
+            disconnectedTicks += new_tip ? new_tip->GetTickDeltaForNextBlock() : legacy::POW_TARGET_SPACING_TICKS;
+
+            if (optDisconnectPool && disconnectedTicks > maxDisconnectPoolBlockTicks) {
+                // Stop using the disconnect pool after adding more than 10 10-min blocks (or equivalent).
+                // After adding >6000 ticks worth of blocks we no longer add block txs to the disconnectpool.
+                // However, when the outer scope ends we will reconcile what's in the pool with the new tip
+                // (in the deferred d'tor above).
+                optDisconnectPool = nullptr;
+            }
 
             // We immediately mark the disconnected blocks as invalid.
             // This prevents a case where pruned nodes may fail to invalidateblock
@@ -3391,18 +3491,19 @@ void UnparkBlock(CBlockIndex *pindex) {
     return g_chainstate.UnparkBlockImpl(pindex, false);
 }
 
-const CBlockIndex *GetFinalizedBlock() {
+const CBlockIndex *GetFinalizedBlock() EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     AssertLockHeld(cs_main);
     return pindexFinalized;
 }
 
-bool IsBlockFinalized(const CBlockIndex *pindex) {
+bool IsBlockFinalized(const CBlockIndex *pindex) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     AssertLockHeld(cs_main);
     return pindexFinalized &&
            pindexFinalized->GetAncestor(pindex->nHeight) == pindex;
 }
 
-CBlockIndex *CChainState::AddToBlockIndex(const CBlockHeader &block) {
+CBlockIndex *CChainState::AddToBlockIndex(const Consensus::Params &params, const CBlockHeader &block)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     AssertLockHeld(cs_main);
 
     // Construct new block index object or return existing
@@ -3422,6 +3523,7 @@ CBlockIndex *CChainState::AddToBlockIndex(const CBlockHeader &block) {
         pindexNew->pprev = &miPrev->second;
         pindexNew->nHeight = pindexNew->pprev->nHeight + 1;
         pindexNew->BuildSkip();
+        pindexNew->SetBlockTicks(pindexNew->pprev->GetBlockTicks() + pindexNew->pprev->GetTickDeltaForNextBlock());
     }
     pindexNew->nTimeReceived = GetTime();
     pindexNew->nTimeMax =
@@ -3431,6 +3533,7 @@ CBlockIndex *CChainState::AddToBlockIndex(const CBlockHeader &block) {
     pindexNew->nChainWork =
         (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) +
         GetBlockProof(*pindexNew);
+    pindexNew->SetTickDeltaForNextBlock(GetPowTargetSpacing(params, pindexNew)); // Maintain correct tick interval state
     pindexNew->RaiseValidity(BlockValidity::TREE);
     if (pindexBestHeader == nullptr ||
         pindexBestHeader->nChainWork < pindexNew->nChainWork) {
@@ -3648,16 +3751,16 @@ static bool ContextualCheckBlockHeader(const CChainParams &params,
         const auto finalizeheaders = gArgs.GetBoolArg("-finalizeheaders", DEFAULT_FINALIZE_HEADERS);
 
         if (finalizeheaders) {
-            const auto maxreorgdepth = gArgs.GetArg("-maxreorgdepth", DEFAULT_MAX_REORG_DEPTH);
-            LogPrint(BCLog::FINALIZATION, "%s: header finalization check: hash=%s  height=%d  date=%s  maxreorgdepth=%d   final height=%d  final hash=%s\n",
+            const auto maxreorgticks = gArgs.GetArg("-maxreorgticks", DEFAULT_MAX_REORG_TICKS.toSecs());
+            LogPrint(BCLog::FINALIZATION, "%s: header finalization check: hash=%s  height=%d  date=%s  maxreorgticks=%d"
+                                          "   final height=%d  final hash=%s\n",
                      __func__, block.GetHash().ToString(),
                      nHeight,
                      FormatISO8601DateTime(block.GetBlockTime()),
-                     maxreorgdepth,
+                     maxreorgticks,
                      pindexFinalized->nHeight,
                      pindexFinalized->GetBlockHash().ToString());
-            if (maxreorgdepth > -1
-                && pindexPrev->GetAncestor(pindexFinalized->nHeight) != pindexFinalized) {
+            if (maxreorgticks > -1 && pindexPrev->GetAncestor(pindexFinalized->nHeight) != pindexFinalized) {
                 LogPrint(BCLog::FINALIZATION, "%s: below final=%s  height=%d  date=%s\n",
                          __func__, block.GetHash().ToString(),
                          nHeight,
@@ -3939,7 +4042,7 @@ bool CChainState::AcceptBlockHeader(const Config &config,
     }
 
     if (pindex == nullptr) {
-        pindex = AddToBlockIndex(block);
+        pindex = AddToBlockIndex(chainparams.GetConsensus(), block);
     }
 
     if (ppindex) {
@@ -3987,9 +4090,9 @@ bool ProcessNewBlockHeaders(const Config &config,
             const CBlockIndex *const pindex = *ppindex;
             const auto nTimeDiff = GetAdjustedTime() - pindex->GetBlockTime();
             if (nTimeDiff > 0) {
-                const double chainHeightGuess = pindex->nHeight + nTimeDiff / double(config.GetChainParams()
-                                                                                     .GetConsensus().nPowTargetSpacing);
-                const double percentProg = pindex->nHeight / chainHeightGuess * 100.0;
+                const BlockTicks currentTicks = pindex->GetBlockTicks();
+                const BlockTicks chainTicksGuess = currentTicks + BlockTicks{static_cast<uint64_t>(nTimeDiff)};
+                const double percentProg = currentTicks.toSecs<double>() / chainTicksGuess.toSecs<double>() * 100.0;
                 LogPrintf("Synchronizing headers, height: %d, progress: %.1f%%\n", pindex->nHeight, percentProg);
             }
         }
@@ -4220,6 +4323,8 @@ bool TestBlockValidity(CValidationState &state, const CChainParams &params,
     indexDummy.pprev = pindexPrev;
     indexDummy.nHeight = pindexPrev->nHeight + 1;
     indexDummy.phashBlock = &block_hash;
+    indexDummy.SetBlockTicks(pindexPrev->GetBlockTicks() + pindexPrev->GetTickDeltaForNextBlock());
+    indexDummy.SetTickDeltaForNextBlock(GetPowTargetSpacing(params.GetConsensus(), pindexPrev));
 
     // NOTE: CheckBlockHeader is called by CheckBlock
     if (!ContextualCheckBlockHeader(params, block, state, pindexPrev,
@@ -4440,8 +4545,9 @@ CBlockIndex *CChainState::InsertBlockIndex(const BlockHash &hash) {
 bool CChainState::LoadBlockIndex(const Config &config,
                                  CBlockTreeDB &blocktree) {
     AssertLockHeld(cs_main);
+    const Consensus::Params &consensusParams = config.GetChainParams().GetConsensus();
     if (!blocktree.LoadBlockIndexGuts(
-            config.GetChainParams().GetConsensus(),
+            consensusParams,
             [this](const BlockHash &hash) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
                 return this->InsertBlockIndex(hash);
             })) {
@@ -4459,17 +4565,20 @@ bool CChainState::LoadBlockIndex(const Config &config,
             return error("%s: block hash %s is missing from the block database", __func__, hash.ToString());
         }
         // Sanity check ok, add pair
-        vSortedByHeight.push_back(std::make_pair(pindex->nHeight, pindex));
+        vSortedByHeight.emplace_back(pindex->nHeight, pindex);
     }
 
     sort(vSortedByHeight.begin(), vSortedByHeight.end());
-    for (const std::pair<int, CBlockIndex *> &item : vSortedByHeight) {
-        CBlockIndex *pindex = item.second;
+    for (const auto & [_, pindex] : vSortedByHeight) {
         pindex->nChainWork = (pindex->pprev ? pindex->pprev->nChainWork : 0) +
                              GetBlockProof(*pindex);
         pindex->nTimeMax =
             (pindex->pprev ? std::max(pindex->pprev->nTimeMax, pindex->nTime)
                            : pindex->nTime);
+        // Ensure the BlockTicks are correct by accumulating them properly
+        pindex->SetTickDeltaForNextBlock(GetPowTargetSpacing(consensusParams, pindex));
+        pindex->SetBlockTicks(pindex->pprev ? pindex->pprev->GetBlockTicks() + pindex->pprev->GetTickDeltaForNextBlock()
+                                            : BlockTicks{});
         // We can link the chain of blocks for which we've received transactions
         // at some point. Pruned nodes may have deleted the block.
         if (pindex->nTx > 0) {
@@ -4631,7 +4740,8 @@ static bool VerifyAblaStateForChain(const Config &config, CChain &chain) EXCLUSI
                 }
 
                 // Verify: prevState + curSize results in the current state
-                if (prevState && prevState->NextBlockState(ablaConfig, curSize) != *curAblaStateOpt) {
+                if (prevState && prevState->NextBlockState(ablaConfig, pcur->GetTickDeltaForThisBlock(), curSize)
+                                     != *curAblaStateOpt) {
                     throw std::string{"bad state"};
                 }
 
@@ -4658,7 +4768,7 @@ static bool VerifyAblaStateForChain(const Config &config, CChain &chain) EXCLUSI
                 assert(pcur->pprev);
                 prevState = pcur->pprev->GetAblaStateOpt();
                 assert(prevState);
-                state = prevState->NextBlockState(ablaConfig, *optBlockSize);
+                state = prevState->NextBlockState(ablaConfig, pcur->GetTickDeltaForThisBlock(), *optBlockSize);
             }
             assert(state.IsValid(ablaConfig));
             pcur->SetAblaStateOpt(state);
@@ -5100,7 +5210,7 @@ bool CChainState::LoadGenesisBlock(const CChainParams &chainparams) {
         if (blockPos.IsNull()) {
             return error("%s: writing genesis block to disk failed", __func__);
         }
-        CBlockIndex *pindex = AddToBlockIndex(block);
+        CBlockIndex *pindex = AddToBlockIndex(chainparams.GetConsensus(), block);
         ReceivedBlockTransactions(block, pindex, blockPos);
         MaintainAblaState(chainparams.GetConsensus(), block, pindex, __func__);
     } catch (const std::runtime_error &e) {
@@ -5369,6 +5479,8 @@ void CChainState::CheckBlockIndex(const Consensus::Params &consensusParams) {
             assert(pindex->GetBlockHash() == consensusParams.hashGenesisBlock);
             // The current active chain's genesis block must be this block.
             assert(pindex == m_chain.Genesis());
+            // Genesis should always have BlockTicks == 0.
+            assert(pindex->GetBlockTicks() == BlockTicks{0});
         }
         if (!pindex->HaveTxsDownloaded()) {
             // nSequenceId can't be set positive for blocks that aren't linked
@@ -5521,6 +5633,24 @@ void CChainState::CheckBlockIndex(const Consensus::Params &consensusParams) {
             // called before pindex was properly connected to its ancestors (doing so would violate cache correctness).
             pindex->ClearCachedMTPValue();
             assert(pindex->GetMedianTimePast() == cachedVal);
+        }
+        {
+            // Check block ticks sanity
+            const auto ticksParent = pindex->pprev ? pindex->pprev->GetBlockTicks() : BlockTicks{0};
+            const auto ticksUs = pindex->GetBlockTicks();
+            const auto intervalParent = pindex->pprev ? pindex->pprev->GetTickDeltaForNextBlock()
+                                                      : BlockTicks{0};
+            const auto intervalUs = pindex->GetTickDeltaForNextBlock();
+            // Ensure our tick count is sane and is based on previous block's tickCount + interval
+            assert(ticksUs == ticksParent + intervalParent);
+            if (pindex->pprev) {
+                // Ensure tick count always increases between subsequent blocks
+                assert(ticksUs > ticksParent);
+                // Ensure parent interval matches consensus
+                assert(intervalParent == GetPowTargetSpacing(consensusParams, pindex->pprev));
+            }
+            // Ensure our interval matches consensus
+            assert(intervalUs == GetPowTargetSpacing(consensusParams, pindex));
         }
         // Perhaps too slow
         // assert(pindex->GetBlockHash() == pindex->GetBlockHeader().GetHash());
@@ -5941,14 +6071,16 @@ ActivationBlockTracker::GetActivationBlock(const CBlockIndex *pindex, const Cons
 
 uint64_t GetNextBlockSizeLimit(const Config &config, const CBlockIndex *pindexPrev) {
     const auto &params = config.GetChainParams().GetConsensus();
-    const uint64_t confMaxBlockSize = config.GetDefaultConsensusBlockSize();
+    const BlockTicks nextBlockInterval = pindexPrev ? pindexPrev->GetTickDeltaForNextBlock()
+                                                    : legacy::POW_TARGET_SPACING_TICKS;
+    const uint64_t confMaxBlockSize = config.GetDefaultConsensusBlockSize(nextBlockInterval);
     if (!IsUpgrade10Enabled(params, pindexPrev)) {
         return confMaxBlockSize;
     }
     const auto ablaStateOpt = pindexPrev->GetAblaStateOpt();
     assert(ablaStateOpt);
-    // std::max here to ensure the minimum max block size is what the user overrode from config, if anything
-    return std::max(confMaxBlockSize, ablaStateOpt->GetNextBlockSizeLimit(params.ablaConfig));
+    // std::max here to ensure the block size floor is what the user overrode from config, if anything
+    return std::max(confMaxBlockSize, ablaStateOpt->GetNextBlockSizeLimit(params.ablaConfig, pindexPrev->GetTickDeltaForNextBlock()));
 }
 
 bool IsBIP30Repeat(const CBlockIndex &index) {
