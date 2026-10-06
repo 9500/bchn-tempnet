@@ -13,7 +13,6 @@ phutil_register_library_map(array(
     'AutoPEP8FormatLinter' => 'linter/AutoPEP8Linter.php',
     'CheckDocLinter' => 'linter/CheckDocLinter.php',
     'CheckRpcMappingsLinter' => 'linter/CheckRpcMappingsLinter.php',
-    'ClangFormatLinter' => 'linter/ClangFormatLinter.php',
     'DoxygenLinter' => 'linter/DoxygenLinter.php',
     'ExtendedConfigurationDrivenLintEngine' => 'engine/ExtendedConfigurationDrivenLintEngine.php',
     'GlobalExternalLinter' => 'linter/GlobalExternalLinter.php',
@@ -37,7 +36,6 @@ phutil_register_library_map(array(
     'AutoPEP8FormatLinter' => 'ArcanistExternalLinter',
     'CheckDocLinter' => 'GlobalExternalLinter',
     'CheckRpcMappingsLinter' => 'GlobalExternalLinter',
-    'ClangFormatLinter' => 'ArcanistExternalLinter',
     'DoxygenLinter' => 'ArcanistLinter',
     'ExtendedConfigurationDrivenLintEngine' => 'ArcanistLintEngine',
     'GlobalExternalLinter' => array(

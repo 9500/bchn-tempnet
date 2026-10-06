@@ -5,9 +5,7 @@
 Various coding styles have been used during the history of the codebase,
 and the result is not very consistent. However, we're now trying to converge to
 a single style, so please use it in new code. Old code will be converted
-gradually and you are encouraged to use the provided
-[clang-format-diff script](../contrib/devtools/README.md#clang-format-diffpy)
-to clean up the patch automatically before submitting a pull request.
+gradually.
 
 - Basic rules specified in `src/.clang-format`.
     - Braces on new lines for namespaces, classes, functions, methods.
