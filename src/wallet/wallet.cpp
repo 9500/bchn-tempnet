@@ -219,7 +219,7 @@ const BlockHash CMerkleTx::ABANDON_HASH(uint256S(
 
 std::string COutput::ToString() const {
     return strprintf("COutput(%s, %d, %d) [%s]", tx->GetId().ToString(), i,
-                     nDepth, FormatMoney(tx->tx->vout[i].nValue));
+                     depthInfo.first, FormatMoney(tx->tx->vout[i].nValue));
 }
 
 class CAffectedKeysVisitor {
@@ -2632,6 +2632,11 @@ void CWallet::AvailableCoins(interfaces::Chain::Lock &locked_chain,
             continue;
         }
 
+        BlockTicks tickDepth;
+        if (auto res = pcoin->GetTickDepthInMainChain(locked_chain); !res.conflicts && !res.mempool) {
+            tickDepth = res.tickDepth;
+        }
+
         bool safeTx = pcoin->IsTrusted(locked_chain);
 
         // Bitcoin-ABC: Removed check that prevents consideration of coins from
@@ -2713,7 +2718,7 @@ void CWallet::AvailableCoins(interfaces::Chain::Lock &locked_chain,
                 }
             }
 
-            vCoins.emplace_back( /* COutput c'tor: */ pcoin, i, nDepth, spendable, solvable, safeTx,
+            vCoins.emplace_back( /* COutput c'tor: */ pcoin, i, std::pair{nDepth, tickDepth}, spendable, solvable, safeTx,
                                  /* use_max_sig= */ external_signing || !wallet_spendable);
 
             // Checks the sum amount of all UTXO's.
@@ -2761,11 +2766,15 @@ CWallet::ListCoins(interfaces::Chain::Lock &locked_chain) const {
             if (depth >= 0 && output.GetN() < it->second.tx->vout.size() &&
                 IsMine(it->second.tx->vout[output.GetN()]) ==
                     ISMINE_SPENDABLE) {
+                BlockTicks tickDepth;
+                if (const auto res = it->second.GetTickDepthInMainChain(locked_chain); !res.conflicts && !res.mempool) {
+                    tickDepth = res.tickDepth;
+                }
                 CTxDestination address;
                 if (ExtractDestination(FindNonChangeParentOutput(*it->second.tx, output.GetN()).scriptPubKey,
                                        address, 0 /* no p2sh_32 in wallet */)) {
                     result[address].emplace_back(
-                        &it->second, output.GetN(), depth, true /* spendable */,
+                        &it->second, output.GetN(), std::pair{depth, tickDepth}, true /* spendable */,
                         true /* solvable */, false /* safe */);
                 }
             }
@@ -2953,6 +2962,10 @@ bool CWallet::SelectCoins(const std::vector<COutput> &vAvailableCoins,
         // outputs before processing
         Shuffle(vCoins.begin(), vCoins.end(), FastRandomContext());
     }
+
+    //
+    // TODO: (blocktime) Figure out if the below heuristics need to scale based on ticks
+    //
     std::vector<OutputGroup> groups =
         GroupOutputs(vCoins, !coin_control.m_avoid_partial_spends);
 
@@ -4998,20 +5011,47 @@ int CMerkleTx::GetDepthInMainChain(
     return locked_chain.getBlockDepth(hashBlock) * (nIndex == -1 ? -1 : 1);
 }
 
-int CMerkleTx::GetBlocksToMaturity(
-    interfaces::Chain::Lock &locked_chain) const {
-    if (!IsCoinBase()) {
-        return 0;
+auto CMerkleTx::GetTickDepthInMainChain(interfaces::Chain::Lock &locked_chain) const -> TickDepthResult {
+    TickDepthResult res;
+    if (hashUnset()) {
+        res.mempool = true;
+        return res;
     }
 
-    return std::max(0, (COINBASE_MATURITY + 1) -
-                           GetDepthInMainChain(locked_chain));
+    AssertLockHeld(cs_main);
+    const auto depth = locked_chain.getBlockTickDepth(hashBlock);
+    if (!depth.value()) {
+        res.mempool = true;
+        return res;
+    }
+    if (nIndex == -1) {
+        res.conflicts = true;
+    }
+    res.tickDepth = depth;
+    return res;
 }
 
-bool CMerkleTx::IsImmatureCoinBase(
-    interfaces::Chain::Lock &locked_chain) const {
-    // note GetBlocksToMaturity is 0 for non-coinbase tx
-    return GetBlocksToMaturity(locked_chain) > 0;
+BlockTicks CMerkleTx::GetBlockTicksToMaturity(interfaces::Chain::Lock &locked_chain) const {
+    if (!IsCoinBase()) {
+        return BlockTicks{0};;
+    }
+
+    const auto res = GetTickDepthInMainChain(locked_chain);
+    if (res.mempool || res.conflicts) {
+        return kCoinbaseMaturityTicks;
+    }
+    const auto extra = locked_chain.getPrevBlockTickInterval(hashBlock).value_or(legacy::POW_TARGET_SPACING_TICKS);
+    // We must do it this way because res.tickDepth includes the ticks used to mine `hashBlock`
+    const auto threshold = kCoinbaseMaturityTicks + extra;
+    if (res.tickDepth >= threshold) {
+        return BlockTicks{0};
+    }
+    return threshold - res.tickDepth;
+}
+
+bool CMerkleTx::IsImmatureCoinBase(interfaces::Chain::Lock &locked_chain) const {
+    // note GetBlockTicksToMaturity is BlockTicks{0} for non-coinbase tx
+    return GetBlockTicksToMaturity(locked_chain) > BlockTicks{0};
 }
 
 bool CWalletTx::AcceptToMemoryPool(interfaces::Chain::Lock &locked_chain,
@@ -5060,10 +5100,10 @@ CWallet::GroupOutputs(const std::vector<COutput> &outputs,
                     groups.push_back(gmap[dst]);
                     gmap.erase(dst);
                 }
-                gmap[dst].Insert(input_coin, output.nDepth,
+                gmap[dst].Insert(input_coin, output.depthInfo.first,
                                  output.tx->IsFromMe(ISMINE_ALL));
             } else {
-                groups.emplace_back(input_coin, output.nDepth,
+                groups.emplace_back(input_coin, output.depthInfo.first,
                                     output.tx->IsFromMe(ISMINE_ALL));
             }
         }

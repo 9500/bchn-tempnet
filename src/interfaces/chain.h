@@ -6,6 +6,7 @@
 #pragma once
 
 #include <coins.h>
+#include <consensus/blockticks.h>
 #include <primitives/transaction.h>
 
 #include <cstdint>
@@ -43,14 +44,34 @@ public:
         //! any blocks).
         virtual std::optional<int> getHeight() = 0;
 
+        //! Returns the tick count for the current tip, or nullopt if chain does
+        //! not contain any blocks.
+        virtual std::optional<BlockTicks> getTicks() = 0;
+
+        //! Get the block tick interval at the chain tip -- that is, the tick amount by which the next block will be
+        //! larger than getTicks(). Returns nullopt of there is no blockchain.
+        virtual std::optional<BlockTicks> getTickInterval() = 0;
+
         //! Get block height above genesis block. Returns 0 for genesis block,
         //! 1 for following block, and so on. Returns nullopt for a block not
         //! included in the current chain.
         virtual std::optional<int> getBlockHeight(const BlockHash &hash) = 0;
 
+        //! Get block tick count for a given block. Returns nullopt for a block
+        //! not included in the current chain.
+        virtual std::optional<BlockTicks> getBlockTicks(const BlockHash &hash) = 0;
+
         //! Get block depth. Returns 1 for chain tip, 2 for preceding block, and
         //! so on. Returns 0 for a block not included in the current chain.
         virtual int getBlockDepth(const BlockHash &hash) = 0;
+
+        //! Like getBlockDepth(), but the tick-based version. Returns the block depth in ticks.
+        //! Returns 0 for blocks not on blockchain, > 0 for chain tip, or blocks under the tip.
+        //! In other words, the returned value includes the block time interval used to mine `hash`.
+        virtual BlockTicks getBlockTickDepth(const BlockHash &hash) = 0;
+
+        //! Returns the tick interval used to mine `hash`, that is, the contribution of `hash` to its block-tick-depth.
+        virtual std::optional<BlockTicks> getPrevBlockTickInterval(const BlockHash &hash) = 0;
 
         //! Get block hash. Height must be valid or this function will abort.
         virtual BlockHash getBlockHash(int height) = 0;

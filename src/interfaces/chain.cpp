@@ -1,5 +1,5 @@
 // Copyright (c) 2018 The Bitcoin Core developers
-// Copyright (c) 2020-2026 The Bitcoin developers
+// Copyright (c) 2020-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -29,6 +29,18 @@ namespace {
             }
             return std::nullopt;
         }
+        std::optional<BlockTicks> getTicks() override {
+            if (const auto *tip = ::ChainActive().Tip()) {
+                return tip->GetBlockTicks();
+            }
+            return std::nullopt;
+        }
+        std::optional<BlockTicks> getTickInterval() override {
+            if (const auto *tip = ::ChainActive().Tip()) {
+                return tip->GetTickDeltaForNextBlock();
+            }
+            return std::nullopt;
+        }
         std::optional<int> getBlockHeight(const BlockHash &hash) override {
             CBlockIndex *block = LookupBlockIndex(hash);
             if (block && ::ChainActive().Contains(block)) {
@@ -36,10 +48,34 @@ namespace {
             }
             return std::nullopt;
         }
+        std::optional<BlockTicks> getBlockTicks(const BlockHash &hash) override {
+            CBlockIndex *block = LookupBlockIndex(hash);
+            if (block && ::ChainActive().Contains(block)) {
+                return block->GetBlockTicks();
+            }
+            return std::nullopt;
+        }
         int getBlockDepth(const BlockHash &hash) override {
             const std::optional<int> tip_height = getHeight();
             const std::optional<int> height = getBlockHeight(hash);
             return tip_height && height ? *tip_height - *height + 1 : 0;
+        }
+        BlockTicks getBlockTickDepth(const BlockHash &hash) override {
+            const std::optional<BlockTicks> tipTicks = getTicks();
+            const std::optional<BlockTicks> ticks = getBlockTicks(hash);
+            if (!tipTicks || !ticks || *ticks > *tipTicks) {
+                return BlockTicks{0};
+            }
+            // We add the time it took to mine `hash` to the depth. We do this so it works like `getBlockDepth()`.
+            const BlockTicks prevInterval = getPrevBlockTickInterval(hash).value_or(BlockTicks{});
+            return prevInterval + *tipTicks - *ticks;
+        }
+        std::optional<BlockTicks> getPrevBlockTickInterval(const BlockHash &hash) override {
+            const auto *block = LookupBlockIndex(hash);
+            if (block && ::ChainActive().Contains(block)) {
+                return block->GetTickDeltaForThisBlock();
+            }
+            return std::nullopt;
         }
         BlockHash getBlockHash(int height) override {
             CBlockIndex *block = ::ChainActive()[height];
