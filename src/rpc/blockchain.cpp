@@ -92,13 +92,13 @@ static UniValue::Object blockToJSONCommon(const Config &config, const CBlockInde
         struct Result {
             const CBlockIndex *next{};     ///< The next block; if nullptr is not on active chain or is tip
             int confirmations{};           ///< The # of confirmations. 1 = tip, -1 is a block not on the active chain (orphan)
-            BlockTicks confirmationsTicks; ///< The confirmations in terms of ticks; orphaned == 0
+            int64_t confirmationsTicks; ///< The confirmations in terms of ticks; orphaned == -1
         } ret;
         ret.next = tip->GetAncestor(blockindex->nHeight + 1);
         if (ret.next && ret.next->pprev == blockindex) {
             // Some block on the main chain, behind the tip
             ret.confirmations = tip->nHeight - blockindex->nHeight + 1;
-            ret.confirmationsTicks = tip->TickDiff(blockindex) + blockindex->GetTickDeltaForThisBlock();
+            ret.confirmationsTicks = (tip->TickDiff(blockindex) + blockindex->GetTickDeltaForThisBlock()).toSecs();
             return ret;
         }
         // No "next" on the active chain, ensure it's nullptr for good measure
@@ -106,11 +106,11 @@ static UniValue::Object blockToJSONCommon(const Config &config, const CBlockInde
         if (blockindex == tip) {
             // A block at the tip, no `next` but we definitely have 1 confirmation
             ret.confirmations = 1;
-            ret.confirmationsTicks = tip->GetTickDeltaForThisBlock();
+            ret.confirmationsTicks = tip->GetTickDeltaForThisBlock().toSecs();
         } else {
             // Special case for orphaned block -- has "-1" confirmations
             ret.confirmations = -1;
-            ret.confirmationsTicks = BlockTicks{0};
+            ret.confirmationsTicks = -1;
         }
         return ret;
     }();
@@ -121,7 +121,7 @@ static UniValue::Object blockToJSONCommon(const Config &config, const CBlockInde
     result.reserve(17 + (2 * bool(block)) + previousblockhash + nextblockhash + bool(ablaStateOpt));
     result.emplace_back("hash", blockindex->GetBlockHash().GetHex());
     result.emplace_back("confirmations", res.confirmations);
-    result.emplace_back("confirmations_ticks", res.confirmationsTicks.toSecs());
+    result.emplace_back("confirmations_ticks", res.confirmationsTicks);
     if (block) {
         const uint64_t blockSize = ablaStateOpt ? ablaStateOpt->GetBlockSize()
                                                 : ::GetSerializeSize(*block, PROTOCOL_VERSION);
@@ -862,7 +862,7 @@ static std::string getblockHelpCommon(const bool block, const size_t extraSpaceM
     return strprintf(
         "  \"hash\" : \"hash\",               %s(string) the block hash (same as provided)\n"
         "  \"confirmations\" : n,           %s(numeric) The number of confirmations, or -1 if the block is not on the main chain\n"
-        "  \"confirmations_ticks\" : n,     %s(numeric) The confirmations as measured in ticks (seconds), or 0 if the block is not on the main chain\n"
+        "  \"confirmations_ticks\" : n,     %s(numeric) The confirmations as measured in ticks (seconds), or -1 if the block is not on the main chain\n"
         + sizeLine +
         "  \"height\" : n,                  %s(numeric) The block height or index\n"
         "  \"ticks\" : n,                   %s(numeric) The block ticks (seconds)\n"
