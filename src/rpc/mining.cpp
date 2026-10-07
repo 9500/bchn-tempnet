@@ -1,6 +1,6 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2018 The Bitcoin Core developers
-// Copyright (c) 2020-2026 The Bitcoin developers
+// Copyright (c) 2020-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -244,8 +244,10 @@ static UniValue getmininginfo(const Config &config,
                 "  \"currentblocksize\": nnn,     (numeric) The last block size\n"
                 "  \"currentblocktx\": nnn,       (numeric) The last block transaction\n"
                 "  \"difficulty\": xxx.xxxxx      (numeric) The current difficulty\n"
-                "  \"networkhashps\": nnn,        (numeric) The network hashes per second\n"
                 "  \"miningblocksizelimit\": nnn  (numeric) The mining block size limit configured for this node\n"
+                "  \"target_time\" : n,           (numeric) The target time in seconds used to mine the current chain tip\n"
+                "  \"next_target_time\" : n,      (numeric) The target time in seconds which will be used for the next block\n"
+                "  \"networkhashps\": nnn,        (numeric) The network hashes per second\n"
                 "  \"pooledtx\": n                (numeric) The size of the mempool\n"
                 "  \"chain\": \"xxxx\",             (string) current network name as defined in BIP70 (main, test, regtest)\n"
                 "  \"warnings\": \"...\"            (string) any network and blockchain warnings\n"
@@ -258,13 +260,16 @@ static UniValue getmininginfo(const Config &config,
     LOCK(cs_main);
 
     UniValue::Object obj;
-    obj.reserve(8);
+    obj.reserve(11);
     obj.emplace_back("blocks", ::ChainActive().Height());
     obj.emplace_back("currentblocksize", nLastBlockSize);
     obj.emplace_back("currentblocktx", nLastBlockTx);
     const CBlockIndex *pindexTip = ::ChainActive().Tip();
     obj.emplace_back("difficulty", GetDifficulty(pindexTip));
-    obj.emplace_back("miningblocksizelimit", config.GetGeneratedBlockSize(GetNextBlockSizeLimit(config, pindexTip)));
+    obj.emplace_back("miningblocksizelimit", config.GetGeneratedBlockSize(pindexTip->GetTickDeltaForNextBlock(),
+                                                                          GetNextBlockSizeLimit(config, pindexTip)));
+    obj.emplace_back("target_time", pindexTip->GetTickDeltaForThisBlock().toSecs());
+    obj.emplace_back("next_target_time", pindexTip->GetTickDeltaForNextBlock().toSecs());
     obj.emplace_back("networkhashps", getnetworkhashps(config, request));
     obj.emplace_back("pooledtx", g_mempool.size());
     obj.emplace_back("chain", config.GetChainParams().NetworkIDString());

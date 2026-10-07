@@ -15,6 +15,7 @@
 #include <config.h>
 #include <consensus/abla.h>
 #include <consensus/activation.h>
+#include <consensus/consensus.h>
 #include <consensus/validation.h>
 #include <core_io.h>
 #include <hash.h>
@@ -91,11 +92,13 @@ static UniValue::Object blockToJSONCommon(const Config &config, const CBlockInde
         struct Result {
             const CBlockIndex *next{};     ///< The next block; if nullptr is not on active chain or is tip
             int confirmations{};           ///< The # of confirmations. 1 = tip, -1 is a block not on the active chain (orphan)
+            BlockTicks confirmationsTicks; ///< The confirmations in terms of ticks; orphaned == 0
         } ret;
         ret.next = tip->GetAncestor(blockindex->nHeight + 1);
         if (ret.next && ret.next->pprev == blockindex) {
             // Some block on the main chain, behind the tip
             ret.confirmations = tip->nHeight - blockindex->nHeight + 1;
+            ret.confirmationsTicks = tip->TickDiff(blockindex) + blockindex->GetTickDeltaForThisBlock();
             return ret;
         }
         // No "next" on the active chain, ensure it's nullptr for good measure
@@ -103,9 +106,11 @@ static UniValue::Object blockToJSONCommon(const Config &config, const CBlockInde
         if (blockindex == tip) {
             // A block at the tip, no `next` but we definitely have 1 confirmation
             ret.confirmations = 1;
+            ret.confirmationsTicks = tip->GetTickDeltaForThisBlock();
         } else {
             // Special case for orphaned block -- has "-1" confirmations
             ret.confirmations = -1;
+            ret.confirmationsTicks = BlockTicks{0};
         }
         return ret;
     }();
@@ -113,15 +118,17 @@ static UniValue::Object blockToJSONCommon(const Config &config, const CBlockInde
     const bool nextblockhash = res.next;
     const auto ablaStateOpt = blockindex->GetAblaStateOpt();
     UniValue::Object result;
-    result.reserve(13 + (2 * bool(block)) + previousblockhash + nextblockhash + bool(ablaStateOpt));
+    result.reserve(17 + (2 * bool(block)) + previousblockhash + nextblockhash + bool(ablaStateOpt));
     result.emplace_back("hash", blockindex->GetBlockHash().GetHex());
     result.emplace_back("confirmations", res.confirmations);
+    result.emplace_back("confirmations_ticks", res.confirmationsTicks.toSecs());
     if (block) {
         const uint64_t blockSize = ablaStateOpt ? ablaStateOpt->GetBlockSize()
                                                 : ::GetSerializeSize(*block, PROTOCOL_VERSION);
         result.emplace_back("size", blockSize);
     }
     result.emplace_back("height", blockindex->nHeight);
+    result.emplace_back("ticks", blockindex->GetBlockTicks().toSecs());
     result.emplace_back("version", block ? block->nVersion : blockindex->nVersion);
     result.emplace_back("versionHex", strprintf("%08x", block ? block->nVersion : blockindex->nVersion));
     result.emplace_back("merkleroot", block ? block->hashMerkleRoot.GetHex() : blockindex->hashMerkleRoot.GetHex());
@@ -154,6 +161,8 @@ static UniValue::Object blockToJSONCommon(const Config &config, const CBlockInde
     result.emplace_back("nonce", block ? block->nNonce : blockindex->nNonce);
     result.emplace_back("bits", strprintf("%08x", block ? block->nBits : blockindex->nBits));
     result.emplace_back("difficulty", GetDifficulty(blockindex));
+    result.emplace_back("target_time", blockindex->GetTickDeltaForThisBlock().toSecs());
+    result.emplace_back("next_target_time", blockindex->GetTickDeltaForNextBlock().toSecs());
     result.emplace_back("chainwork", blockindex->nChainWork.GetHex());
     result.emplace_back("nTx", blockindex->nTx);
     if (previousblockhash) {
@@ -163,7 +172,7 @@ static UniValue::Object blockToJSONCommon(const Config &config, const CBlockInde
         result.emplace_back("nextblockhash", res.next->GetBlockHash().GetHex());
     }
     if (ablaStateOpt) {
-        result.emplace_back("ablastate", ablaStateToJSON(config, *ablaStateOpt));
+        result.emplace_back("ablastate", ablaStateToJSON(config, *ablaStateOpt, blockindex->GetTickDeltaForNextBlock()));
     }
     return result;
 }
@@ -177,18 +186,21 @@ UniValue::Object blockToJSON(const Config &config, const CBlock &block, const CB
     return blockToJSONCommon(config, tip, blockindex, &block, txOptions);
 }
 
-UniValue::Object ablaStateToJSON(const Config &config, const abla::State &state) {
+UniValue::Object ablaStateToJSON(const Config &config, const abla::State &state, const BlockTicks &nextBlockInterval) {
     UniValue::Object ret;
-    ret.reserve(5);
+    ret.reserve(6);
     ret.emplace_back("epsilon", state.GetControlBlockSize());
     ret.emplace_back("beta", state.GetElasticBufferSize());
     ret.emplace_back("blocksize", state.GetBlockSize());
+    ret.emplace_back("blockinterval", state.GetBlockInterval().toSecs());
     // Note that consensus rules are that the max block size is always at least the default consensus max block size,
     // or what ABLA says, whichever is greater.
-    const auto cmbs = config.GetDefaultConsensusBlockSize();
-    ret.emplace_back("blocksizelimit", std::max(cmbs, state.GetBlockSizeLimit()));
-    ret.emplace_back("nextblocksizelimit", std::max(cmbs, state.GetNextBlockSizeLimit(
-                                                              config.GetChainParams().GetConsensus().ablaConfig)));
+    // Scaled cmbs, depending on block interval
+    const auto cmbs1 = config.GetDefaultConsensusBlockSize(state.GetBlockInterval());
+    const auto cmbs2 = config.GetDefaultConsensusBlockSize(nextBlockInterval);
+    const auto &ablaConfig = config.GetChainParams().GetConsensus().ablaConfig;
+    ret.emplace_back("blocksizelimit", std::max(cmbs1, state.GetBlockSizeLimit()));
+    ret.emplace_back("nextblocksizelimit", std::max(cmbs2, state.GetNextBlockSizeLimit(ablaConfig, nextBlockInterval)));
     return ret;
 }
 
@@ -784,6 +796,7 @@ static std::string ablaStateHelpCommon(bool trailingComma, size_t extraSpaceLeft
         "%s    \"epsilon\" : n,               %s(numeric) ABLA state epsilon value\n"
         "%s    \"beta\" : n,                  %s(numeric) ABLA state beta value\n"
         "%s    \"blocksize\" : n,             %s(numeric) The size of this block\n"
+        "%s    \"blockinterval\": n,          %s(numeric) The block interval (in seconds) for this block\n"
         "%s    \"blocksizelimit\" : n,        %s(numeric) The size limit for this block\n"
         "%s    \"nextblocksizelimit\" : n     %s(numeric) The size limit for the next block\n"
         "%s  }%s\n", spL, spM, spL, spM, spL, spM, spL, spM, spL, spM, spL, spM, spL, trailingComma ? "," : "");
@@ -849,8 +862,10 @@ static std::string getblockHelpCommon(const bool block, const size_t extraSpaceM
     return strprintf(
         "  \"hash\" : \"hash\",               %s(string) the block hash (same as provided)\n"
         "  \"confirmations\" : n,           %s(numeric) The number of confirmations, or -1 if the block is not on the main chain\n"
+        "  \"confirmations_ticks\" : n,     %s(numeric) The confirmations as measured in ticks (seconds), or 0 if the block is not on the main chain\n"
         + sizeLine +
         "  \"height\" : n,                  %s(numeric) The block height or index\n"
+        "  \"ticks\" : n,                   %s(numeric) The block ticks (seconds)\n"
         "  \"version\" : n,                 %s(numeric) The block version\n"
         "  \"versionHex\" : \"00000000\",     %s(string) The block version formatted in hexadecimal\n"
         "  \"merkleroot\" : \"xxxx\",         %s(string) The merkle root\n"
@@ -860,11 +875,13 @@ static std::string getblockHelpCommon(const bool block, const size_t extraSpaceM
         "  \"nonce\" : n,                   %s(numeric) The nonce\n"
         "  \"bits\" : \"1d00ffff\",           %s(string) The bits\n"
         "  \"difficulty\" : x.xxx,          %s(numeric) The difficulty\n"
+        "  \"target_time\" : n,             %s(numeric) The target time in seconds for this block\n"
+        "  \"next_target_time\" : n,        %s(numeric) The target time in seconds for the next block\n"
         "  \"chainwork\" : \"0000...1f3\",    %s(string) Expected number of hashes required to produce the chain up to this block (in hex)\n"
         "  \"nTx\" : n,                     %s(numeric) The number of transactions in the block.\n"
         "  \"previousblockhash\" : \"hash\",  %s(string) The hash of the previous block\n"
         "  \"nextblockhash\" : \"hash\",      %s(string) The hash of the next block\n",
-        spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM
+        spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM, spM
     );
 }
 
@@ -1378,6 +1395,7 @@ UniValue gettxout(const Config &config, const JSONRPCRequest &request) {
             "{\n"
             "  \"bestblock\" : \"hash\",       (string) the block hash\n"
             "  \"confirmations\" : n,        (numeric) The number of confirmations\n"
+            "  \"confirmations_ticks\" : n,  (numeric) The confirmations as measured in ticks (seconds), or 0 if mempool\n"
             "  \"value\" : x.xxx,            (numeric) The transaction value in " + CURRENCY_UNIT + "\n"
             "  \"scriptPubKey\" : {          (json object)\n"
             "     \"asm\" : \"code\",          (string)\n"
@@ -1441,11 +1459,15 @@ UniValue gettxout(const Config &config, const JSONRPCRequest &request) {
     }
 
     const CBlockIndex *pindex = LookupBlockIndex(pcoinsTip->GetBestBlock());
+    const CBlockIndex *pindexCoin = coin.GetHeight() == MEMPOOL_HEIGHT ? nullptr : ::ChainActive()[coin.GetHeight()];
     const CTxOut &txout = coin.GetTxOut();
     UniValue::Object ret;
-    ret.reserve(5u + bool(txout.tokenDataPtr));
+    ret.reserve(6u + bool(txout.tokenDataPtr));
     ret.emplace_back("bestblock", pindex->GetBlockHash().GetHex());
     ret.emplace_back("confirmations", coin.GetHeight() == MEMPOOL_HEIGHT ? 0 : pindex->nHeight - coin.GetHeight() + 1);
+    ret.emplace_back("confirmations_ticks", !pindexCoin ? /* mempool */ int64_t{0}
+                                                        : /* onchain */ (pindex->TickDiff(pindexCoin)
+                                                                         + pindex->GetTickDeltaForThisBlock()).toSecs());
     ret.emplace_back("value", ValueFromAmount(txout.nValue));
     ret.emplace_back("scriptPubKey", ScriptPubKeyToUniv(config, txout.scriptPubKey, true, false, fPatterns));
     if (txout.tokenDataPtr) {
@@ -1500,14 +1522,15 @@ UniValue getblockchaininfo(const Config &config,
             "{\n"
             "  \"chain\": \"xxxx\",              (string) current network name "
             "as defined in BIP70 (main, test, regtest)\n"
-            "  \"blocks\": xxxxxx,             (numeric) the current number of "
-            "blocks processed in the server\n"
-            "  \"headers\": xxxxxx,            (numeric) the current number of "
-            "headers we have validated\n"
+            "  \"blocks\": xxxxxx,             (numeric) the current number of blocks processed in the server\n"
+            "  \"blocks_ticks\": xxxxxx,       (numeric) the current number of blocks as measured in ticks (seconds)\n"
+            "  \"headers\": xxxxxx,            (numeric) the current number of headers we have validated\n"
+            "  \"headers_ticks\": xxxxxx,      (numeric) the current number of headers as measured in ticks (seconds)\n"
             "  \"bestblockhash\": \"...\",       (string) the hash of the "
             "currently best block\n"
-            "  \"difficulty\": xxxxxx,         (numeric) the current "
-            "difficulty\n"
+            "  \"difficulty\": xxxxxx,         (numeric) the current difficulty\n"
+            "  \"target_time\" : n,            (numeric) The target time in seconds used to mine the current chain tip\n"
+            "  \"next_target_time\" : n,       (numeric) The target time in seconds which will be used for the next block\n"
             "  \"mediantime\": xxxxxx,         (numeric) median time for the "
             "current best block\n"
             "  \"verificationprogress\": xxxx, (numeric) estimate of "
@@ -1549,13 +1572,17 @@ UniValue getblockchaininfo(const Config &config,
     const CBlockIndex *tip = ::ChainActive().Tip();
     bool automatic_pruning = fPruneMode && gArgs.GetArg("-prune", 0) != 1;
     UniValue::Object obj;
-    obj.reserve(fPruneMode ? automatic_pruning ? 16 : 15 : 13);
+    obj.reserve(fPruneMode ? automatic_pruning ? 20 : 19 : 17);
 
     obj.emplace_back("chain", config.GetChainParams().NetworkIDString());
     obj.emplace_back("blocks", ::ChainActive().Height());
+    obj.emplace_back("blocks_ticks", ::ChainActive().Tip()->GetBlockTicks().toSecs());
     obj.emplace_back("headers", pindexBestHeader ? pindexBestHeader->nHeight : -1);
+    obj.emplace_back("headers_ticks", (pindexBestHeader ? pindexBestHeader->GetBlockTicks() : BlockTicks{}).toSecs());
     obj.emplace_back("bestblockhash", tip->GetBlockHash().GetHex());
     obj.emplace_back("difficulty", GetDifficulty(tip));
+    obj.emplace_back("target_time", tip->GetTickDeltaForThisBlock().toSecs());
+    obj.emplace_back("next_target_time", tip->GetTickDeltaForNextBlock().toSecs());
     obj.emplace_back("mediantime", tip->GetMedianTimePast());
     obj.emplace_back("verificationprogress", GuessVerificationProgress(Params().TxData(), tip));
     obj.emplace_back("initialblockdownload", IsInitialBlockDownload());
@@ -2089,10 +2116,6 @@ static UniValue getchaintxstats(const Config &config,
 
     const CBlockIndex *pindex;
 
-    // By default: 1 month
-    int blockcount = 30 * 24 * 60 * 60 /
-                     config.GetChainParams().GetConsensus().nPowTargetSpacing;
-
     if (request.params[1].isNull()) {
         LOCK(cs_main);
         pindex = ::ChainActive().Tip();
@@ -2111,7 +2134,12 @@ static UniValue getchaintxstats(const Config &config,
 
     assert(pindex != nullptr);
 
+    int blockcount{};
+
     if (request.params[0].isNull()) {
+        // By default: 1 month
+        const auto *pindexPast = pindex->FindAncestorWithTickDepth(BlockTicks{30 * 24 * 60 * 60});
+        blockcount = pindex->nHeight - (pindexPast ? pindexPast->nHeight : 0);
         blockcount = std::max(0, std::min(blockcount, pindex->nHeight - 1));
     } else {
         blockcount = request.params[0].get_int();
@@ -2477,8 +2505,7 @@ static UniValue getblockstats(const Config &config,
                                                              : minfeerate));
     ret.emplace_back("mintxsize", mintxsize == thisBlockMaxBlockSize ? 0 : mintxsize);
     ret.emplace_back("outs", outputs);
-    ret.emplace_back("subsidy", ValueFromAmount(GetBlockSubsidy(
-                                  pindex->nHeight, Params().GetConsensus())));
+    ret.emplace_back("subsidy", ValueFromAmount(GetBlockSubsidy(pindex->pprev, Params().GetConsensus())));
     ret.emplace_back("time", pindex->GetBlockTime());
     ret.emplace_back("total_out", ValueFromAmount(total_out));
     ret.emplace_back("total_size", total_size);
@@ -2627,7 +2654,7 @@ static std::optional<token::Id> ParseTokenScanObject(std::string_view sv) {
     return ret;
 }
 
-static UniValue scantxoutset(const Config &, const JSONRPCRequest &request) {
+static UniValue scantxoutset(const Config &config, const JSONRPCRequest &request) {
     if (request.fHelp || request.params.size() < 1 ||
         request.params.size() > 2) {
         throw std::runtime_error(
@@ -2680,8 +2707,10 @@ static UniValue scantxoutset(const Config &, const JSONRPCRequest &request) {
             "    \"amount\" : x.xxx,             (numeric) The total amount in " + CURRENCY_UNIT + " of the unspent output\n"
             "    \"coinbase\" : b,               (boolean) Whether this is a coinbase output\n"
             "    \"height\" : n,                 (numeric) Height of the unspent transaction output\n"
+            "    \"ticks\"  : n,                 (numeric) Block ticks (seconds) of the unspent transaction output\n"
             "    \"blockhash\" : \"hex\",          (string) Blockhash of the unspent transaction output\n"
             "    \"confirmations\" : n,          (numeric) Number of confirmations of the unspent transaction output when the scan was done\n"
+            "    \"confirmations_ticks\" : n,    (numeric) The confirmations as measured in ticks (seconds)\n"
             "    \"tokenData\" : {               (json object optional)\n"
             "      \"category\" : \"hex\",         (string) token id\n"
             "      \"amount\" : \"xxx\",           (string) fungible amount (is a string to support >53-bit amounts)\n"
@@ -2820,15 +2849,17 @@ static UniValue scantxoutset(const Config &, const JSONRPCRequest &request) {
             total_in += txo.nValue;
 
             UniValue::Object unspent;
-            unspent.reserve(8u + bool(txo.tokenDataPtr));
+            unspent.reserve(10u + bool(txo.tokenDataPtr));
             unspent.emplace_back("txid", outpoint.GetTxId().GetHex());
             unspent.emplace_back("vout", outpoint.GetN());
             unspent.emplace_back("scriptPubKey", HexStr(txo.scriptPubKey));
             unspent.emplace_back("amount", ValueFromAmount(txo.nValue));
             unspent.emplace_back("coinbase", coin.IsCoinBase());
             unspent.emplace_back("height", coin.GetHeight());
+            unspent.emplace_back("ticks", coinBlockIndex.GetBlockTicks().toSecs());
             unspent.emplace_back("blockhash", coinBlockIndex.GetBlockHash().ToString());
             unspent.emplace_back("confirmations", static_cast<uint32_t>(chainTip.nHeight) - coin.GetHeight() + 1u);
+            unspent.emplace_back("confirmations_ticks", (chainTip.TickDiff(&coinBlockIndex) + chainTip.GetTickDeltaForThisBlock()).toSecs());
             if (txo.tokenDataPtr) {
                 unspent.emplace_back("tokenData", TokenDataToUniv(*txo.tokenDataPtr));
                 if (txo.tokenDataPtr->HasAmount()) {
@@ -2924,15 +2955,18 @@ static UniValue fillmempool(const Config &config, const JSONRPCRequest &request)
 
     // Mine over 100 blocks to get `nCB` valid coinbases we can spend using our "anyone can spend" p2sh
     {
-        const auto reward = GetBlockSubsidy(WITH_LOCK(cs_main, return ::ChainActive().Height() + 1), consensusParams);
-        assert( reward > Amount::zero());
+        auto GetTip = []{ return Assume(WITH_LOCK(cs_main, return ::ChainActive().Tip())); };
+        const CBlockIndex *tip = GetTip();
+        const auto reward = GetBlockSubsidy(tip, consensusParams);
+        if (reward <= Amount::zero()) [[unlikely]] {
+            // With no block subsidy, there's not much we can do
+            throw JSONRPCError(RPC_INTERNAL_ERROR, "Block subsidy is 0, cannot proceed");
+        }
         const size_t nCB = std::max<size_t>(1, (50 * COIN) / reward); // scale nCB to block reward size
         auto reserve_script = std::make_shared<CReserveScript>();
         reserve_script->reserveScript = destination_spk;
-        const auto nBlocks = COINBASE_MATURITY + nCB;
-        LogPrint(BCLog::MEMPOOL, "fillmempool: Generating %i blocks, of which %i coinbases will be used ...\n",
-                 nBlocks, nCB);
-        const auto blockhashes = generateBlocks(config, reserve_script, nBlocks, ~uint64_t{}, false);
+        LogPrint(BCLog::MEMPOOL, "fillmempool: Generating %i blocks for their coinbase coins ...\n", nCB);
+        const auto blockhashes = generateBlocks(config, reserve_script, nCB, ~uint64_t{}, false);
         for (size_t i = 0; i < nCB; ++i) {
             const BlockHash bh{ParseHashV(blockhashes.at(i), "blockhash")};
             LOCK(cs_main);
@@ -2946,6 +2980,17 @@ static UniValue fillmempool(const Config &config, const JSONRPCRequest &request)
             const auto &out = ptx->vout.at(0);
             utxos.emplace_back(COutPoint{txid, 0}, out.nValue);
         }
+        // mature the coinbases
+        LogPrint(BCLog::MEMPOOL, "fillmempool: Maturing coinbases ...\n");
+        tip = GetTip();
+        const BlockTicks maturesAfter = tip->GetBlockTicks() + kCoinbaseMaturityTicks;
+        size_t nMaturityBlocks = 0;
+        while (tip->GetBlockTicks() < maturesAfter) {
+            generateBlocks(config, reserve_script, 1, ~uint64_t{}, false);
+            ++nMaturityBlocks;
+            tip = GetTip();
+        }
+        LogPrint(BCLog::MEMPOOL, "fillmempool: Generated %i blocks to mature coinbases\n", nMaturityBlocks);
     }
 
     const size_t op_return_size = std::max<size_t>(3u, ::nMaxDatacarrierBytes) - 3;
