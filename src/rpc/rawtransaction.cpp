@@ -10,6 +10,7 @@
 #include <compat/byteswap.h>
 #include <config.h>
 #include <consensus/activation.h>
+#include <consensus/consensus.h>
 #include <consensus/validation.h>
 #include <core_io.h>
 #include <feerate.h>
@@ -58,7 +59,7 @@ static UniValue::Object TxToJSON(const Config &config, const CTransaction &tx, c
         pindex = LookupBlockIndex(hashBlock);
         tip = ::ChainActive().Tip();
         inActiveChain = pindex && ::ChainActive().Contains(pindex);
-        extraReserve = 1u + (pindex ? (inActiveChain ? 3u : 1u) : 0u);
+        extraReserve = 1u + (pindex ? (inActiveChain ? 4u : 2u) : 0u);
     }
     // Call into TransactionToUniv() in core_io to decode transaction and prevout data.
     //
@@ -73,10 +74,13 @@ static UniValue::Object TxToJSON(const Config &config, const CTransaction &tx, c
             if (inActiveChain) {
                 tip = CHECK_NONFATAL(tip); // ensure not nullptr (should never happen)
                 entry.emplace_back("confirmations", 1 + tip->nHeight - pindex->nHeight);
+                const auto depthTicks = tip->TickDiff(pindex) + pindex->GetTickDeltaForThisBlock();
+                entry.emplace_back("confirmations_ticks", depthTicks.toSecs());
                 entry.emplace_back("time", pindex->GetBlockTime());
                 entry.emplace_back("blocktime", pindex->GetBlockTime());
             } else {
                 entry.emplace_back("confirmations", 0);
+                entry.emplace_back("confirmations_ticks", 0);
             }
         }
     }
@@ -321,6 +325,7 @@ static UniValue getrawtransaction(const Config &config,
             "  \"fee\" : x.xxx,                     (numeric) Transaction fee in " + CURRENCY_UNIT + " (available at verbosity level 2)\n"
             "  \"blockhash\" : \"hash\",              (string) the block hash\n"
             "  \"confirmations\" : n,               (numeric) The confirmations\n"
+            "  \"confirmations_ticks\" : n,         (numeric) The confirmations as measured in block ticks (seconds)\n"
             "  \"time\" : ttt,                      (numeric) The transaction time in seconds since epoch (Jan 1 1970 GMT)\n"
             "  \"blocktime\" : ttt,                 (numeric) The block time in seconds since epoch (Jan 1 1970 GMT)\n"
             "  \"in_active_chain\": b               (bool) Whether specified block is in the active chain or not (only presentwith explicit \"blockhash\" argument)\n"

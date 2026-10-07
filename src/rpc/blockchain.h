@@ -14,6 +14,7 @@
 
 extern RecursiveMutex cs_main;
 
+class BlockTicks;
 class CBlock;
 class CBlockIndex;
 class Config;
@@ -50,7 +51,7 @@ UniValue MempoolToJSON(const CTxMemPool &pool, bool verbose = false);
 UniValue::Object blockheaderToJSON(const Config &config, const CBlockIndex *tip, const CBlockIndex *blockindex) LOCKS_EXCLUDED(cs_main);
 
 /** ABLA state to JSON */
-UniValue::Object ablaStateToJSON(const Config &config, const abla::State &ablaState);
+UniValue::Object ablaStateToJSON(const Config &config, const abla::State &ablaState, const BlockTicks &powTargetSpacingForNextBlock);
 
 /** Used by getblockstats to get feerates at different percentiles by weight  */
 void CalculatePercentilesBySize(Amount result[NUM_GETBLOCKSTATS_PERCENTILES], std::vector<std::pair<Amount, int64_t>>& scores, int64_t total_size);
