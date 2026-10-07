@@ -26,6 +26,7 @@
 #include <threadsafety.h>
 #include <timedata.h>
 #include <txmempool.h>
+#include <util/check.h>
 #include <util/moneystr.h>
 #include <util/saltedhashers.h>
 #include <util/system.h>
@@ -95,7 +96,8 @@ static BlockAssembler::Options DefaultOptions(const Config &config, const CBlock
     BlockAssembler::Options options;
 
     options.nConsensusCurrentBlockSizeLimit = GetNextBlockSizeLimit(config, pindexPrev);
-    options.nMaxGeneratedBlockSize = config.GetGeneratedBlockSize(options.nConsensusCurrentBlockSizeLimit);
+    options.nMaxGeneratedBlockSize = config.GetGeneratedBlockSize(Assert(pindexPrev)->GetTickDeltaForNextBlock(),
+                                                                  options.nConsensusCurrentBlockSizeLimit);
 
     if (Amount n = Amount::zero();
             gArgs.IsArgSet("-blockmintxfee") && ParseMoney(gArgs.GetArg("-blockmintxfee", ""), n)) {
@@ -211,7 +213,7 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn, double timeLimitSe
     coinbaseTx.vin[0].prevout = COutPoint();
     coinbaseTx.vout.resize(1);
     coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
-    coinbaseTx.vout[0].nValue = nFees + GetBlockSubsidy(nHeight, consensusParams);
+    coinbaseTx.vout[0].nValue = nFees + GetBlockSubsidy(pindexPrev, consensusParams);
     coinbaseTx.vin[0].scriptSig = CScript() << ScriptInt::fromIntUnchecked(nHeight) << OP_0;
 
     if (const uint64_t minTxSize = GetMinimumTxSize(consensusParams, pindexPrev)) {
