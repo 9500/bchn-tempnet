@@ -124,6 +124,8 @@ static void WalletTxToJSON(interfaces::Chain &chain,
                            const CWalletTx &wtx, UniValue::Object &entry) {
     int confirms = wtx.GetDepthInMainChain(locked_chain);
     entry.emplace_back("confirmations", confirms);
+    auto res = wtx.GetTickDepthInMainChain(locked_chain);
+    entry.emplace_back("confirmations_ticks", !res.conflicts && !res.mempool ? res.tickDepth.toSecs() : 0);
     if (wtx.IsCoinBase()) {
         entry.emplace_back("generated", true);
     }
@@ -1226,6 +1228,7 @@ static UniValue addmultisigaddress(const Config &config,
 struct tallyitem {
     Amount nAmount{Amount::zero()};
     int nConf{std::numeric_limits<int>::max()};
+    std::optional<BlockTicks> tickDepth;
     std::vector<uint256> txids;
     bool fIsWatchonly{false};
     tallyitem() {}
@@ -1287,6 +1290,8 @@ static UniValue::Array ListReceived(const Config &config, interfaces::Chain::Loc
             continue;
         }
 
+        const auto resDepth = wtx.GetTickDepthInMainChain(locked_chain);
+
         for (const CTxOut &txout : wtx.tx->vout) {
             CTxDestination address;
             if (!ExtractDestination(txout.scriptPubKey, address, scriptFlags)) {
@@ -1305,6 +1310,15 @@ static UniValue::Array ListReceived(const Config &config, interfaces::Chain::Loc
             tallyitem &item = mapTally[address];
             item.nAmount += txout.nValue;
             item.nConf = std::min(item.nConf, nDepth);
+            if (!resDepth.conflicts && !resDepth.mempool && resDepth.tickDepth > BlockTicks{0}) {
+                if (!item.tickDepth) {
+                    item.tickDepth = resDepth.tickDepth;
+                } else {
+                    item.tickDepth = std::min(*item.tickDepth, resDepth.tickDepth);
+                }
+            } else {
+                item.tickDepth.reset();
+            }
             item.txids.push_back(wtx.GetId());
             if (mine & ISMINE_WATCH_ONLY) {
                 item.fIsWatchonly = true;
@@ -1339,27 +1353,31 @@ static UniValue::Array ListReceived(const Config &config, interfaces::Chain::Loc
 
         Amount nAmount = Amount::zero();
         int nConf = std::numeric_limits<int>::max();
+        std::optional<BlockTicks> tickDepth;
         bool fIsWatchonly = false;
         if (it != mapTally.end()) {
             nAmount = (*it).second.nAmount;
             nConf = (*it).second.nConf;
             fIsWatchonly = (*it).second.fIsWatchonly;
+            tickDepth = it->second.tickDepth;
         }
 
         if (by_label) {
             tallyitem &_item = label_tally[label];
             _item.nAmount += nAmount;
             _item.nConf = std::min(_item.nConf, nConf);
+            _item.tickDepth = std::min(_item.tickDepth, tickDepth);
             _item.fIsWatchonly = fIsWatchonly;
         } else {
             UniValue::Object obj;
-            obj.reserve(5 + fIsWatchonly);
+            obj.reserve(6 + fIsWatchonly);
             if (fIsWatchonly) {
                 obj.emplace_back("involvesWatchonly", true);
             }
             obj.emplace_back("address", EncodeDestination(address, config));
             obj.emplace_back("amount", ValueFromAmount(nAmount));
             obj.emplace_back("confirmations", nConf == std::numeric_limits<int>::max() ? 0 : nConf);
+            obj.emplace_back("confirmations_ticks", tickDepth.value_or(BlockTicks{}).toSecs());
             obj.emplace_back("label", label);
             UniValue::Array transactions;
             if (it != mapTally.end()) {
@@ -1378,13 +1396,15 @@ static UniValue::Array ListReceived(const Config &config, interfaces::Chain::Loc
         for (const auto &entry : label_tally) {
             Amount nAmount = entry.second.nAmount;
             int nConf = entry.second.nConf;
+            const auto &tickDepth = entry.second.tickDepth;
             UniValue::Object obj;
-            obj.reserve(3 + entry.second.fIsWatchonly);
+            obj.reserve(5 + entry.second.fIsWatchonly);
             if (entry.second.fIsWatchonly) {
                 obj.emplace_back("involvesWatchonly", true);
             }
             obj.emplace_back("amount", ValueFromAmount(nAmount));
             obj.emplace_back("confirmations", nConf == std::numeric_limits<int>::max() ? 0 : nConf);
+            obj.emplace_back("confirmations_ticks", tickDepth.value_or(BlockTicks{}).toSecs());
             obj.emplace_back("label", entry.first);
             ret.emplace_back(std::move(obj));
         }
@@ -1426,6 +1446,7 @@ static UniValue listreceivedbyaddress(const Config &config,
             " received by the address\n"
             "    \"confirmations\" : n,               (numeric) The number of "
             "confirmations of the most recent transaction included\n"
+            "    \"confirmations_ticks\": n,          (numeric) The number of confirmations in terms of block ticks (seconds)\n"
             "    \"label\" : \"label\",               (string) The label of "
             "the receiving address. The default label is \"\".\n"
             "    \"txids\": [\n"
@@ -1484,6 +1505,7 @@ static UniValue listreceivedbylabel(const Config &config,
             "received by addresses with this label\n"
             "    \"confirmations\" : n,          (numeric) The number of "
             "confirmations of the most recent transaction included\n"
+            "    \"confirmations_ticks\": n,     (numeric) The number of confirmations in terms of block ticks (seconds)\n"
             "    \"label\" : \"label\"           (string) The label of the "
             "receiving address. The default label is \"\".\n"
             "  }\n"
@@ -1650,6 +1672,7 @@ UniValue listtransactions(const Config &config, const JSONRPCRequest &request) {
             "indicate the\n"
             "                                         transaction conflicts "
             "with the block chain\n"
+            "    \"confirmations_ticks\": n, (numeric) The number of confirmations in terms of block ticks (seconds)\n"
             "    \"trusted\": xxx,           (bool) Whether we consider the "
             "outputs of this unconfirmed transaction safe to spend.\n"
             "    \"blockhash\": \"hashvalue\", (string) The block hash "
@@ -1809,6 +1832,7 @@ static UniValue listsinceblock(const Config &config,
             "'receive' category of transactions.\n"
             "                                          When it's < 0, it means "
             "the transaction conflicted that many blocks ago.\n"
+            "    \"confirmations_ticks\": n, (numeric) The number of confirmations in terms of block ticks (seconds)\n"
             "    \"blockhash\": \"hashvalue\",     (string) The block hash "
             "containing the transaction. Available for 'send' and 'receive' "
             "category of transactions.\n"
@@ -1985,8 +2009,8 @@ static UniValue gettransaction(const Config &config,
             CURRENCY_UNIT +
             ". This is negative and only available for the\n"
             "                              'send' category of transactions.\n"
-            "  \"confirmations\" : n,     (numeric) The number of "
-            "confirmations\n"
+            "  \"confirmations\" : n,     (numeric) The number of confirmations in terms of blocks\n"
+            "  \"confirmations_ticks\" : n, (numeric) The number of confirmations in terms of block ticks (seconds)\n"
             "  \"blockhash\" : \"hash\",  (string) The block hash\n"
             "  \"blockheight\": n,        (numeric) The block height containing the transaction.\n"
             "  \"blockindex\" : xx,       (numeric) The index of the "
@@ -3220,6 +3244,7 @@ static UniValue listunspent(const Config &config,
             "    \"tokenData\" : { ... },    (object optional) token data\n"
             "    \"confirmations\" : n,      (numeric) The number of "
             "confirmations\n"
+            "    \"confirmations_ticks\": n, (numeric) The number of confirmations in terms of block ticks (seconds)\n"
             "    \"redeemScript\" : n        (string) The redeemScript if "
             "scriptPubKey is P2SH\n"
             "    \"spendable\" : xxx,        (bool) Whether we have the "
@@ -3393,7 +3418,8 @@ static UniValue listunspent(const Config &config,
         if (tokenDataPtr) {
             entry.emplace_back("tokenData", TokenDataToUniv(*tokenDataPtr));
         }
-        entry.emplace_back("confirmations", out.nDepth);
+        entry.emplace_back("confirmations", out.depthInfo.first);
+        entry.emplace_back("confirmations_ticks", out.depthInfo.second.toSecs());
         entry.emplace_back("spendable", out.fSpendable);
         entry.emplace_back("solvable", out.fSolvable);
         entry.emplace_back("safe", out.fSafe);

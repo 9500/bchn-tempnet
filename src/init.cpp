@@ -1757,10 +1757,9 @@ bool AppInitParameterInteraction(Config &config) {
         LogPrintf("Skipping checkpoint verification.\n");
     }
 
-    if (gArgs.GetBoolArg("-finalizeheaders", DEFAULT_FINALIZE_HEADERS)
-            && gArgs.GetArg("-maxreorgdepth", DEFAULT_MAX_REORG_DEPTH) > -1) {
-        LogPrintf("New block headers below finalized block (maxreorgdepth=%d) will be rejected.\n",
-                gArgs.GetArg("-maxreorgdepth", DEFAULT_MAX_REORG_DEPTH));
+    if (int64_t mrt{}; gArgs.GetBoolArg("-finalizeheaders", DEFAULT_FINALIZE_HEADERS)
+                       && (mrt = gArgs.GetArg("-maxreorgticks", DEFAULT_MAX_REORG_TICKS.toSecs())) > -1) {
+        LogPrintf("New block headers below finalized block (maxreorgticks=%d) will be rejected.\n", mrt);
         const auto nFinalizeHeadersPenalty = gArgs.GetArg("-finalizeheaderspenalty", DEFAULT_FINALIZE_HEADERS_PENALTY);
         if (nFinalizeHeadersPenalty < 0 || nFinalizeHeadersPenalty > 100) {
                 return InitError(strprintf(
