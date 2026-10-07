@@ -117,7 +117,9 @@ static UniValue::Object blockToJSONCommon(const Config &config, const CBlockInde
     result.emplace_back("hash", blockindex->GetBlockHash().GetHex());
     result.emplace_back("confirmations", res.confirmations);
     if (block) {
-        result.emplace_back("size", ::GetSerializeSize(*block, PROTOCOL_VERSION));
+        const uint64_t blockSize = ablaStateOpt ? ablaStateOpt->GetBlockSize()
+                                                : ::GetSerializeSize(*block, PROTOCOL_VERSION);
+        result.emplace_back("size", blockSize);
     }
     result.emplace_back("height", blockindex->nHeight);
     result.emplace_back("version", block ? block->nVersion : blockindex->nVersion);
