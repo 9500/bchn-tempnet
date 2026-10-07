@@ -1,5 +1,5 @@
 // Copyright (c) 2020-2022 The Bitcoin Core developers
-// Copyright (c) 2024 The Bitcoin developers
+// Copyright (c) 2024-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -189,7 +189,7 @@ bool CoinStatsIndex::WriteBlock(const CBlock &block, const CBlockIndex *pindex) 
 
     // update stats, accumulate for this block
     CBlockUndo undo;
-    const auto block_subsidy = GetBlockSubsidy(pindex->nHeight, ::Params().GetConsensus());
+    const auto block_subsidy = GetBlockSubsidy(pindex->pprev, ::Params().GetConsensus());
     stats->nHeight = pindex->nHeight;
     stats->blockHash = pindex->GetBlockHash();
     stats->total_subsidy += block_subsidy;
