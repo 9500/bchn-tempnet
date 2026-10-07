@@ -61,7 +61,6 @@ ALLOWED_LIBRARIES = {
     'libanl.so.1',  # DNS resolve
     'libm.so.6',  # math library
     'librt.so.1',  # real-time (clock)
-    'libatomic.so.1',
     'ld-linux-x86-64.so.2',  # 64-bit dynamic linker
     'ld-linux.so.2',  # 32-bit dynamic linker
     'ld-linux-aarch64.so.1',  # 64-bit ARM dynamic linker

@@ -650,7 +650,15 @@ target_link_libraries(server
 # Nothing is required on clang, in which case no target is defined.
 find_package(Atomic REQUIRED)
 if(TARGET Atomic::Atomic)
-  target_link_libraries(server Atomic::Atomic)
+  if(ENABLE_STATIC_LIBSTDCXX)
+    # Release builds must run without the GCC runtime installed, so link the
+    # archive. It sits in the compiler's private lib dir, which only the
+    # driver searches. push/pop-state limit -Bstatic to this one library and
+    # restore the linker's previous mode, whatever it was.
+    target_link_libraries(server -Wl,--push-state,-Bstatic atomic -Wl,--pop-state)
+  else()
+    target_link_libraries(server Atomic::Atomic)
+  endif()
 endif()
 
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
