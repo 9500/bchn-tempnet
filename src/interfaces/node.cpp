@@ -1,6 +1,6 @@
 // Copyright (c) 2018 The Bitcoin Core developers
 // Copyright (c) 2021-2023 The Bitcoin developers
-// Copyright (c) 2024 The Bitcoin Cash Node developers
+// Copyright (c) 2024-present The Bitcoin Cash Node developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -12,6 +12,7 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <config.h>
+#include <consensus/consensus.h>
 #include <init.h>
 #include <interfaces/chain.h>
 #include <interfaces/handler.h>
@@ -181,11 +182,13 @@ namespace {
         size_t getMempoolDynamicUsage() override {
             return g_mempool.DynamicMemoryUsage();
         }
-        bool getHeaderTip(int &height, int64_t &block_time) override {
+        bool getHeaderTip(int &height, int64_t &block_time, BlockTicks &tickCount, BlockTicks &blockTimeInterval) override {
             LOCK(::cs_main);
             if (::pindexBestHeader) {
                 height = ::pindexBestHeader->nHeight;
                 block_time = ::pindexBestHeader->GetBlockTime();
+                tickCount = ::pindexBestHeader->GetBlockTicks();
+                blockTimeInterval = ::pindexBestHeader->GetTickDeltaForNextBlock();
                 return true;
             }
             return false;
@@ -193,6 +196,14 @@ namespace {
         int getNumBlocks() override {
             LOCK(::cs_main);
             return ::ChainActive().Height();
+        }
+        int getNumBlocksForCoinbaseMaturity() override {
+            LOCK(::cs_main);
+            if (CBlockIndex *tip = ::ChainActive().Tip()) {
+                return kCoinbaseMaturityTicks / std::max(BlockTicks{1}, tip->GetTickDeltaForNextBlock());
+            }
+            // Default if no blockchain
+            return kCoinbaseMaturityTicks / legacy::POW_TARGET_SPACING_TICKS;
         }
         int64_t getLastBlockTime() override {
             LOCK(::cs_main);
@@ -313,7 +324,8 @@ namespace {
             return MakeHandler(::uiInterface.NotifyBlockTip_connect(
                 [fn](bool initial_download, const CBlockIndex *block) {
                     fn(initial_download, block->nHeight, block->GetBlockTime(), block->GetBlockHash(),
-                       GuessVerificationProgress(Params().TxData(), block));
+                       GuessVerificationProgress(Params().TxData(), block),
+                       block->GetBlockTicks(), block->GetTickDeltaForNextBlock());
                 }));
         }
         std::unique_ptr<Handler>
@@ -321,7 +333,8 @@ namespace {
             return MakeHandler(::uiInterface.NotifyHeaderTip_connect(
                 [fn](bool initial_download, const CBlockIndex *block) {
                     fn(initial_download, block->nHeight, block->GetBlockTime(), block->GetBlockHash(),
-                       GuessVerificationProgress(Params().TxData(), block));
+                       GuessVerificationProgress(Params().TxData(), block), block->GetBlockTicks(),
+                       block->GetTickDeltaForNextBlock());
                 }));
         }
         std::unique_ptr<Handler>

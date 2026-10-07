@@ -1,11 +1,12 @@
 // Copyright (c) 2018 The Bitcoin Core developers
 // Copyright (c) 2021-2022 The Bitcoin developers
-// Copyright (c) 2022 The Bitcoin Cash Node developers
+// Copyright (c) 2022-present The Bitcoin Cash Node developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #pragma once
 
+#include <consensus/blockticks.h>
 #include <dsproof/dspid.h>
 #include <primitives/txid.h>
 
@@ -143,11 +144,14 @@ public:
     //! Get mempool dynamic usage.
     virtual size_t getMempoolDynamicUsage() = 0;
 
-    //! Get header tip height and time.
-    virtual bool getHeaderTip(int &height, int64_t &block_time) = 0;
+    //! Get header tip height, time, tick count, and block time interval
+    virtual bool getHeaderTip(int &height, int64_t &block_time, BlockTicks &tickCount, BlockTicks &blockTimeInterval) = 0;
 
     //! Get num blocks.
     virtual int getNumBlocks() = 0;
+
+    //! Get num blocks needed for coinbase maturity (100 for 10 min blocks, 1000 for 1 min blocks)
+    virtual int getNumBlocksForCoinbaseMaturity() = 0;
 
     //! Get last block time.
     virtual int64_t getLastBlockTime() = 0;
@@ -258,14 +262,16 @@ public:
     //! Register handler for block tip messages.
     using NotifyBlockTipFn =
         std::function<void(bool initial_download, int height,
-                           int64_t block_time, BlockHash block_hash, double verification_progress)>;
+                           int64_t block_time, BlockHash block_hash, double verification_progress,
+                           BlockTicks block_ticks, BlockTicks next_block_interval)>;
     virtual std::unique_ptr<Handler>
     handleNotifyBlockTip(NotifyBlockTipFn fn) = 0;
 
     //! Register handler for header tip messages.
     using NotifyHeaderTipFn =
         std::function<void(bool initial_download, int height,
-                           int64_t block_time, BlockHash block_hash, double verification_progress)>;
+                           int64_t block_time, BlockHash block_hash, double verification_progress,
+                           BlockTicks block_ticks, BlockTicks next_block_interval)>;
     virtual std::unique_ptr<Handler>
     handleNotifyHeaderTip(NotifyHeaderTipFn fn) = 0;
 

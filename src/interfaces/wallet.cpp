@@ -111,7 +111,8 @@ namespace {
         CBlockIndex *block = LookupBlockIndex(wtx.hashBlock);
         result.block_height =
             (block ? block->nHeight : std::numeric_limits<int>::max());
-        result.blocks_to_maturity = wtx.GetBlocksToMaturity(locked_chain);
+        const auto tickInterval = std::max<int64_t>(1, locked_chain.getTickInterval().value_or(BlockTicks{}).toSecs());
+        result.blocks_to_maturity = wtx.GetBlockTicksToMaturity(locked_chain).toSecs() / tickInterval;
         result.depth_in_main_chain = wtx.GetDepthInMainChain(locked_chain);
         result.time_received = wtx.nTimeReceived;
         result.lock_time = wtx.tx->nLockTime;
@@ -414,7 +415,7 @@ namespace {
                     group.emplace_back(COutPoint(coin.tx->GetId(), coin.i),
                                        MakeWalletTxOut(*locked_chain, m_wallet,
                                                        *coin.tx, coin.i,
-                                                       coin.nDepth));
+                                                       coin.depthInfo.first));
                 }
             }
             return result;

@@ -9,6 +9,7 @@
 
 #include <amount.h>
 #include <config.h>
+#include <consensus/blockticks.h>
 #include <dsproof/dsproof.h>
 #include <interfaces/chain.h>
 #include <outputtype.h>
@@ -339,12 +340,30 @@ public:
         return GetDepthInMainChain(locked_chain) > 0;
     }
 
+    /// Return value for GetTickDepthInMainChain()
+    struct TickDepthResult {
+        BlockTicks tickDepth;   ///< BlockTicks > 0 means at or behind the tip, BlockTicks == 0 is not confirmed
+        bool mempool = false;   ///< If true, then this txn is in mempool
+        bool conflicts = false; ///< if true, then this txn conflicts with a txn either in mempool or at `depth`.
+    };
+
     /**
-     * @return number of blocks to maturity for this transaction:
-     *  0 : is not a coinbase transaction, or is a mature coinbase transaction
-     * >0 : is a coinbase transaction which matures in this many blocks
+     * @brief GetTickDepthInMainChain - Returns the depth, in block ticks, of transaction in blockchain
+     * @param locked_chain
+     * @return Returns a `TickDepthResult`
+     *  .tickDepth         : this many block ticks deep. Even for chain tip will be BlockTicks > 0
+     *                       (includes block time interval used to mine txn).
+     *  .conflicts = true  : conflicts with a transaction `.tickDepth` deep in the blockchain (or in memory pool)
+     *    .mempool = true  : in memory pool, waiting to be included in a block
      */
-    int GetBlocksToMaturity(interfaces::Chain::Lock &locked_chain) const;
+    TickDepthResult GetTickDepthInMainChain(interfaces::Chain::Lock &locked_chain) const;
+
+    /**
+     * @return number of block ticks to maturity for this transaction:
+     *  0 : is not a coinbase transaction, or is a mature coinbase transaction
+     * >0 : is a coinbase transaction which matures in this many block ticks
+     */
+    BlockTicks GetBlockTicksToMaturity(interfaces::Chain::Lock &locked_chain) const;
     bool hashUnset() const {
         return (hashBlock.IsNull() || hashBlock == ABANDON_HASH);
     }
@@ -603,7 +622,7 @@ class COutput {
 public:
     const CWalletTx *tx;
     int i;
-    int nDepth;
+    std::pair<int, BlockTicks> depthInfo; // .first is depth in blocks, .second is in terms of ticks
 
     /**
      * Pre-computed estimated size of this output as a fully-signed input in a
@@ -631,11 +650,11 @@ public:
      */
     bool fSafe;
 
-    COutput(const CWalletTx *txIn, int iIn, int nDepthIn, bool fSpendableIn,
+    COutput(const CWalletTx *txIn, int iIn, std::pair<int, BlockTicks> depthInfoIn, bool fSpendableIn,
             bool fSolvableIn, bool fSafeIn, bool use_max_sig_in = false) {
         tx = txIn;
         i = iIn;
-        nDepth = nDepthIn;
+        depthInfo = depthInfoIn;
         fSpendable = fSpendableIn;
         fSolvable = fSolvableIn;
         fSafe = fSafeIn;
