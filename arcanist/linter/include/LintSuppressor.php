@@ -45,7 +45,9 @@ function getLineAtOffset($fileContent, $offset) {
 function getPreviousLineAtOffset($fileContent, $offset) {
   $prefix = substr($fileContent, 0, $offset);
   $lineStart = strrpos($prefix, "\n");
-  if ($lineStart === false) return '';
+  if ($lineStart === false) {
+    return '';
+  }
   $beforeCurrentLine = substr($fileContent, 0, $lineStart);
   $previousLineStart = strrpos($beforeCurrentLine, "\n");
   $previousLineStart = ($previousLineStart === false) ? 0 : $previousLineStart + 1;
