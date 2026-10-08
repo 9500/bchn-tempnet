@@ -1,5 +1,5 @@
 // Copyright (c) 2011-2019 The Bitcoin Core developers
-// Copyright (c) 2020-2025 The Bitcoin developers
+// Copyright (c) 2020-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -638,9 +638,11 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel) {
             _clientModel->getHeaderTipHeight(),
             GUIUtil::dateTimeFromTime(_clientModel->getHeaderTipTime()));
         setNumBlocks(m_node.getNumBlocks(), GUIUtil::dateTimeFromTime(m_node.getLastBlockTime()),
-                     QString::fromStdString(m_node.getLastBlockHash().ToString()), m_node.getVerificationProgress(), false);
-        connect(_clientModel, &ClientModel::numBlocksChanged, this,
-                &BitcoinGUI::setNumBlocks);
+                     QString::fromStdString(m_node.getLastBlockHash().ToString()), m_node.getVerificationProgress(),
+                     _clientModel->getHeaderTipTickCount().toSecs<quint64>(),
+                     _clientModel->getHeaderTipNextBlockInterval().toSecs<quint64>(),
+                     false);
+        connect(_clientModel, &ClientModel::numBlocksChanged, this, &BitcoinGUI::setNumBlocks);
 
         // Receive and report messages from client model
         connect(_clientModel, &ClientModel::message,
@@ -996,9 +998,8 @@ void BitcoinGUI::setNetworkActive(bool networkActive) {
 void BitcoinGUI::updateHeadersSyncProgressLabel() {
     int64_t headersTipTime = clientModel->getHeaderTipTime();
     int headersTipHeight = clientModel->getHeaderTipHeight();
-    int estHeadersLeft =
-        (GetTime() - headersTipTime) /
-        config->GetChainParams().GetConsensus().nPowTargetSpacing;
+    int64_t blockTimeInterval = clientModel->getHeaderTipNextBlockInterval().toSecs();
+    int estHeadersLeft = (GetTime() - headersTipTime) / std::max<int64_t>(1, blockTimeInterval);
     if (estHeadersLeft > HEADER_HEIGHT_DELTA_SYNC) {
         progressBarLabel->setText(
             tr("Syncing Headers (%1%)...")
@@ -1017,8 +1018,8 @@ void BitcoinGUI::openOptionsDialogWithTab(OptionsDialog::Tab tab) {
     dlg.exec();
 }
 
-void BitcoinGUI::setNumBlocks(int count, const QDateTime &blockDate, const QString &,
-                              double nVerificationProgress, bool header) {
+void BitcoinGUI::setNumBlocks(int count, const QDateTime &blockDate, const QString &, double nVerificationProgress,
+                              quint64 blockTicks, quint64 nextBlockInterval, bool header) {
 // Disabling macOS App Nap on initial sync, disk and reindex operations.
 #ifdef Q_OS_MAC
     (m_node.isInitialBlockDownload() || m_node.getReindex() ||
@@ -1031,7 +1032,7 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime &blockDate, const QStri
         if (header) {
             modalOverlay->setKnownBestHeight(count, blockDate);
         } else {
-            modalOverlay->tipUpdate(count, blockDate, nVerificationProgress);
+            modalOverlay->tipUpdate(count, blockDate, nVerificationProgress, blockTicks, nextBlockInterval);
         }
     }
     if (!clientModel) {

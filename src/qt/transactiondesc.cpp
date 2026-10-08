@@ -1,6 +1,6 @@
 // Copyright (c) 2011-2016 The Bitcoin Core developers
 // Copyright (c) 2022 The Bitcoin Cash Node developers
-// Copyright (c) 2017-2022 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -323,7 +323,7 @@ QString TransactionDesc::toHTML(interfaces::Node &node,
     }
 
     if (wtx.is_coinbase) {
-        quint32 numBlocksToMaturity = COINBASE_MATURITY + 1;
+        quint32 numBlocksToMaturity = node.getNumBlocksForCoinbaseMaturity() + 1;
         strHTML +=
             "<br>" +
             tr("Generated coins must mature %1 blocks before they can be "
