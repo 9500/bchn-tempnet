@@ -48,7 +48,7 @@
 static UniValue::Object TxToJSON(const Config &config, const CTransaction &tx, const BlockHash &hashBlock,
                                  const CTxUndo *txundo, const TransactionFormatOptions &options) {
     const bool hasHash = !hashBlock.IsNull();
-    const CBlockIndex *pindex{};
+    const CBlockIndex *pindex{}, *tip{};
     bool inActiveChain{};
     size_t extraReserve = 0;
 
@@ -56,6 +56,7 @@ static UniValue::Object TxToJSON(const Config &config, const CTransaction &tx, c
         LOCK(cs_main);
 
         pindex = LookupBlockIndex(hashBlock);
+        tip = ::ChainActive().Tip();
         inActiveChain = pindex && ::ChainActive().Contains(pindex);
         extraReserve = 1u + (pindex ? (inActiveChain ? 3u : 1u) : 0u);
     }
@@ -70,7 +71,8 @@ static UniValue::Object TxToJSON(const Config &config, const CTransaction &tx, c
         entry.emplace_back("blockhash", hashBlock.GetHex());
         if (pindex) {
             if (inActiveChain) {
-                entry.emplace_back("confirmations", 1 + ::ChainActive().Height() - pindex->nHeight);
+                tip = CHECK_NONFATAL(tip); // ensure not nullptr (should never happen)
+                entry.emplace_back("confirmations", 1 + tip->nHeight - pindex->nHeight);
                 entry.emplace_back("time", pindex->GetBlockTime());
                 entry.emplace_back("blocktime", pindex->GetBlockTime());
             } else {
