@@ -1,6 +1,6 @@
 // Copyright (c) 2011-2016 The Bitcoin Core developers
 // Copyright (c) 2020-2022 The Bitcoin developers
-// Copyright (c) 2022 The Bitcoin Cash Node developers
+// Copyright (c) 2022-present The Bitcoin Cash Node developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -11,6 +11,7 @@
 #include <checkpoints.h>
 #include <clientversion.h>
 #include <config.h>
+#include <consensus/blockticks.h>
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
 #include <net.h>
@@ -66,30 +67,47 @@ int ClientModel::getNumConnections(NumConnections flags) const {
     return m_node.getNodeCount(connections);
 }
 
+void ClientModel::refreshHeaderTipCacheVars() const {
+    // make sure we initially populate the cache via a cs_main lock
+    // otherwise we need to wait for a tip update
+    int height;
+    int64_t blockTime;
+    BlockTicks tickCount;
+    BlockTicks interval;
+    if (m_node.getHeaderTip(height, blockTime, tickCount, interval)) {
+        cachedBestHeaderHeight = height;
+        cachedBestHeaderTime = blockTime;
+        cachedBestBlockTicks = tickCount.toSecs();
+        cachedBestNextBlockInterval = interval.toSecs();
+    }
+}
+
 int ClientModel::getHeaderTipHeight() const {
     if (cachedBestHeaderHeight == -1) {
-        // make sure we initially populate the cache via a cs_main lock
-        // otherwise we need to wait for a tip update
-        int height;
-        int64_t blockTime;
-        if (m_node.getHeaderTip(height, blockTime)) {
-            cachedBestHeaderHeight = height;
-            cachedBestHeaderTime = blockTime;
-        }
+        refreshHeaderTipCacheVars();
     }
     return cachedBestHeaderHeight;
 }
 
 int64_t ClientModel::getHeaderTipTime() const {
     if (cachedBestHeaderTime == -1) {
-        int height;
-        int64_t blockTime;
-        if (m_node.getHeaderTip(height, blockTime)) {
-            cachedBestHeaderHeight = height;
-            cachedBestHeaderTime = blockTime;
-        }
+        refreshHeaderTipCacheVars();
     }
     return cachedBestHeaderTime;
+}
+
+BlockTicks ClientModel::getHeaderTipTickCount() const {
+    if (cachedBestBlockTicks == -1) {
+        refreshHeaderTipCacheVars();
+    }
+    return BlockTicks{static_cast<uint64_t>(cachedBestBlockTicks)};
+}
+
+BlockTicks ClientModel::getHeaderTipNextBlockInterval() const {
+    if (cachedBestNextBlockInterval == -1) {
+        refreshHeaderTipCacheVars();
+    }
+    return BlockTicks{static_cast<uint64_t>(cachedBestNextBlockInterval)};;
 }
 
 void ClientModel::updateTimer() {
@@ -204,7 +222,7 @@ static void BannedListChanged(ClientModel *clientmodel) {
 
 static void BlockTipChanged(ClientModel *clientmodel, bool initialSync,
                             int height, int64_t blockTime, BlockHash blockHash,
-                            double verificationProgress, bool fHeader) {
+                            double verificationProgress, BlockTicks blockTicks, BlockTicks nextBlockInterval, bool fHeader) {
     // lock free async UI updates in case we have a new block tip
     // during initial sync, only update the UI if the last update
     // was > 250ms (MODEL_UPDATE_DELAY) ago
@@ -221,6 +239,8 @@ static void BlockTipChanged(ClientModel *clientmodel, bool initialSync,
         // cache best headers time and height to reduce future cs_main locks
         clientmodel->cachedBestHeaderHeight = height;
         clientmodel->cachedBestHeaderTime = blockTime;
+        clientmodel->cachedBestBlockTicks = blockTicks.toSecs();
+        clientmodel->cachedBestNextBlockInterval = nextBlockInterval.toSecs();
     }
     // if we are in-sync, update the UI regardless of last update time
     if (!initialSync || now - nLastUpdateNotification > MODEL_UPDATE_DELAY) {
@@ -230,7 +250,9 @@ static void BlockTipChanged(ClientModel *clientmodel, bool initialSync,
             Q_ARG(int, height),
             Q_ARG(QDateTime, GUIUtil::dateTimeFromTime(blockTime)),
             Q_ARG(QString, QString::fromStdString(blockHash.ToString())),
-            Q_ARG(double, verificationProgress), Q_ARG(bool, fHeader));
+            Q_ARG(double, verificationProgress),
+            Q_ARG(quint64, blockTicks.toSecs<quint64>()), Q_ARG(quint64, nextBlockInterval.toSecs<quint64>()),
+            Q_ARG(bool, fHeader));
         nLastUpdateNotification = now;
     }
 }
@@ -255,11 +277,11 @@ void ClientModel::subscribeToCoreSignals() {
     m_handler_banned_list_changed =
         m_node.handleBannedListChanged(std::bind(BannedListChanged, this));
     m_handler_notify_block_tip = m_node.handleNotifyBlockTip(std::bind(
-        BlockTipChanged, this, std::placeholders::_1, std::placeholders::_2,
-        std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, false));
+        BlockTipChanged, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3,
+        std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, std::placeholders::_7, false));
     m_handler_notify_header_tip = m_node.handleNotifyHeaderTip(std::bind(
-        BlockTipChanged, this, std::placeholders::_1, std::placeholders::_2,
-        std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, true));
+        BlockTipChanged, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3,
+        std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, std::placeholders::_7, true));
     m_handler_notify_transaction_double_spent = m_node.handleNotifyTransactionDoubleSpent(std::bind(
         NotifyDspDetected, this, std::placeholders::_1, std::placeholders::_2));
 }
