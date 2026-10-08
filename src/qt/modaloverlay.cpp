@@ -69,8 +69,8 @@ void ModalOverlay::setKnownBestHeight(int count, const QDateTime &blockDate) {
     }
 }
 
-void ModalOverlay::tipUpdate(int count, const QDateTime &blockDate,
-                             double nVerificationProgress) {
+void ModalOverlay::tipUpdate(int count, const QDateTime &blockDate, double nVerificationProgress,
+                             quint64, quint64 nextBlockInterval) {
     QDateTime currentDate = QDateTime::currentDateTime();
 
     // keep a vector of samples of verification progress at height
@@ -131,10 +131,10 @@ void ModalOverlay::tipUpdate(int count, const QDateTime &blockDate,
         return;
     }
 
-    // estimate the number of headers left based on nPowTargetSpacing
+    // estimate the number of headers left based on nextBlockInterval
     // and check if the gui is not aware of the best header (happens rarely)
     int estimateNumHeadersLeft = bestHeaderDate.secsTo(currentDate) /
-                                 Params().GetConsensus().nPowTargetSpacing;
+                                 static_cast<qint64>(nextBlockInterval);
     bool hasBestHeader = bestHeaderHeight >= count;
 
     // show remaining number of blocks

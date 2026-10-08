@@ -1,11 +1,12 @@
 // Copyright (c) 2011-2016 The Bitcoin Core developers
 // Copyright (c) 2020-2022 The Bitcoin developers
-// Copyright (c) 2022 The Bitcoin Cash Node developers
+// Copyright (c) 2022-present The Bitcoin Cash Node developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #pragma once
 
+#include <consensus/blockticks.h>
 #include <dsproof/dspid.h>
 #include <primitives/txid.h>
 
@@ -57,6 +58,8 @@ public:
     int getNumConnections(NumConnections flags = CONNECTIONS_ALL) const;
     int getHeaderTipHeight() const;
     int64_t getHeaderTipTime() const;
+    BlockTicks getHeaderTipTickCount() const;
+    BlockTicks getHeaderTipNextBlockInterval() const;
 
     //! Returns enum BlockSource of the current importing/syncing state
     enum BlockSource getBlockSource() const;
@@ -75,6 +78,8 @@ public:
     // caches for the best header
     mutable std::atomic<int> cachedBestHeaderHeight;
     mutable std::atomic<int64_t> cachedBestHeaderTime;
+    mutable std::atomic<int64_t> cachedBestBlockTicks = -1; ///< tick count of the best header
+    mutable std::atomic<int64_t> cachedBestNextBlockInterval = -1; ///< the block interval for the next block in ticks
 
 private:
     interfaces::Node &m_node;
@@ -96,10 +101,12 @@ private:
 
     void subscribeToCoreSignals();
     void unsubscribeFromCoreSignals();
+    void refreshHeaderTipCacheVars() const;
 
 Q_SIGNALS:
     void numConnectionsChanged(int count);
-    void numBlocksChanged(int count, const QDateTime &blockDate, const QString &blockHash, double nVerificationProgress, bool header);
+    void numBlocksChanged(int count, const QDateTime &blockDate, const QString &blockHash, double nVerificationProgress,
+                          quint64 blockTicks, quint64 blockInterval, bool header);
     void mempoolSizeChanged(size_t count, size_t totalSize, size_t dynamicUsage);
     void networkActiveChanged(bool networkActive);
     void alertsChanged(const QString &warnings);
