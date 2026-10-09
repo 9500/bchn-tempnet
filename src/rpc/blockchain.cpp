@@ -1467,7 +1467,7 @@ UniValue gettxout(const Config &config, const JSONRPCRequest &request) {
     ret.emplace_back("confirmations", coin.GetHeight() == MEMPOOL_HEIGHT ? 0 : pindex->nHeight - coin.GetHeight() + 1);
     ret.emplace_back("confirmations_ticks", !pindexCoin ? /* mempool */ int64_t{0}
                                                         : /* onchain */ (pindex->TickDiff(pindexCoin)
-                                                                         + pindex->GetTickDeltaForThisBlock()).toSecs());
+                                                                         + CHECK_NONFATAL(pindexCoin)->GetTickDeltaForThisBlock()).toSecs());
     ret.emplace_back("value", ValueFromAmount(txout.nValue));
     ret.emplace_back("scriptPubKey", ScriptPubKeyToUniv(config, txout.scriptPubKey, true, false, fPatterns));
     if (txout.tokenDataPtr) {
