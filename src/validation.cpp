@@ -991,8 +991,8 @@ Amount GetBlockSubsidy(const CBlockIndex *pindexPrev, const Consensus::Params &c
                                              : legacy::POW_TARGET_SPACING_TICKS;
     assert(consensusParams.subsidyHalvingInterval > BlockTicks{0u}); // Prevent divide by zero below
     assert(blockTimeInterval <= legacy::POW_TARGET_SPACING_TICKS); // Below expression doesn't support >10 min blocks
-    // The below numerator is an expression required to "round down" coin emissions schedule slightly
-    // See: https://bitcoincashresearch.org/t/chip-2025-03-faster-blocks-for-bitcoin-cash/1513/211
+    // The below numerator is an expression required to enforce coin emission changes happen on historical 10-min
+    // block boundaries. See: https://bitcoincashresearch.org/t/chip-2025-03-faster-blocks-for-bitcoin-cash/1513/211
     const uint64_t halvings = (blockTickCount + legacy::POW_TARGET_SPACING_TICKS - blockTimeInterval)
                               / consensusParams.subsidyHalvingInterval;
     // Force block reward to zero when right shift is undefined.
