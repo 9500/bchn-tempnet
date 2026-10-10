@@ -42,6 +42,7 @@
 #include <algorithm>
 #include <cassert>
 #include <optional>
+#include <utility>
 #include <variant>
 
 static RecursiveMutex cs_wallets;
@@ -3074,8 +3075,9 @@ static bool IsCurrentForAntiFeeSniping(interfaces::Chain::Lock &locked_chain) {
 }
 
 /**
- * Return a height-based locktime for new transactions (uses the height of the
- * current chain tip unless we are not synced with the current chain
+ * Return a scaled locktime for new transactions (uses the tick count of the
+ * current chain tip divided by 600) unless we are not synced with the current
+ * chain, in which case 0 is returned (locktime disabled).
  */
 static uint32_t
 GetLocktimeForNewTransaction(interfaces::Chain::Lock &locked_chain) {
@@ -3101,7 +3103,13 @@ GetLocktimeForNewTransaction(interfaces::Chain::Lock &locked_chain) {
     // now we ensure code won't be written that makes assumptions about
     // nLockTime that preclude a fix later.
     if (IsCurrentForAntiFeeSniping(locked_chain)) {
-        locktime = locked_chain.getHeight().value_or(0);
+        // Note that after activation of the FABLOUS CHIP, we must scale locktime "as if" we were still on 10 min
+        // blocks, so we do this truncating division here; i.e. for 1-min blocks, every 10th block has this value
+        // increase by 1. (This scaling is backwards compatible: For 10-min blocks, this value is simple height.)
+        static_assert(legacy::POW_TARGET_SPACING_TICKS > BlockTicks{0});
+        const auto val = locked_chain.getTicks().value_or(BlockTicks{0}) / legacy::POW_TARGET_SPACING_TICKS;
+        assert(std::in_range<uint32_t>(val));
+        locktime = val;
     } else {
         // If our chain is lagging behind, we can't discourage fee sniping. To
         // avoid leaking a potentially unique "nLockTime fingerprint", set
