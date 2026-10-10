@@ -395,6 +395,9 @@ public:
     //! Return the tick delta for the next block. Should always equal: `pnext->GetBlockTicks() - this->GetBlockTicks()`
     BlockTicks GetTickDeltaForNextBlock() const { return BlockTicks{tickInfo.nextBlockTickDelta}; }
 
+    //! Convenience: Returns the next block's tick count, e.g. GetBlockTicks() + GetTickDeltaForNextBlock()
+    BlockTicks GetNextBlockTicks() const { return GetBlockTicks() + GetTickDeltaForNextBlock(); }
+
     void SetBlockTicks(const BlockTicks ticks) {
         const uint64_t val = ticks.value(); // Assumption: ticks.value() is scaled to seconds (should always be true)
         assert(val <= TickInfo::kMaxTicks); // ensure it fits

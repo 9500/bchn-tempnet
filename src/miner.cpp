@@ -141,6 +141,7 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn, double timeLimitSe
     assert(pindexPrev != nullptr);
     if (ppindexPrev) *ppindexPrev = pindexPrev;
     nHeight = pindexPrev->nHeight + 1;
+    blockTicks = pindexPrev->GetNextBlockTicks();
 
     // Read block creation options either from override (for tests) or based on config and latest tip
     if (overrideOptions) {
@@ -304,7 +305,7 @@ void BlockAssembler::AddToBlock(CTxMemPool::txiter iter) {
 bool BlockAssembler::CheckTx(const CTransaction &tx) const {
     CValidationState state;
     return ContextualCheckTransaction(chainparams.GetConsensus(),
-                                      tx, state, nHeight, nLockTimeCutoff, nMedianTimePast);
+                                      tx, state, nHeight, nLockTimeCutoff, nMedianTimePast, blockTicks);
 }
 
 /**

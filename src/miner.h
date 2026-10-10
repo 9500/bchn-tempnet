@@ -1,11 +1,12 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2023 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #pragma once
 
+#include <consensus/blockticks.h>
 #include <primitives/block.h>
 #include <txmempool.h>
 
@@ -74,6 +75,7 @@ private:
 
     // Chain context for the block
     int nHeight{};
+    BlockTicks blockTicks{}; ///< the block's tick count as would be returned by pthisBlockIndex->GetBlockTicks()
     int64_t nLockTimeCutoff{};
     int64_t nMedianTimePast{};
 
