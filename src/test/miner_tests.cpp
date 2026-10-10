@@ -364,6 +364,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         pcoinsTip->SetBestBlock(next->GetBlockHash());
         next->pprev = prev;
         next->nHeight = prev->nHeight + 1;
+        next->SetBlockTicks(prev ? prev->GetNextBlockTicks() : BlockTicks{0});
+        next->SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS); /* TODO: update this for blocktime CHIP? */
         next->BuildSkip();
         ::ChainActive().SetTip(next);
     }
@@ -377,6 +379,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         pcoinsTip->SetBestBlock(next->GetBlockHash());
         next->pprev = prev;
         next->nHeight = prev->nHeight + 1;
+        next->SetBlockTicks(prev ? prev->GetNextBlockTicks() : BlockTicks{0});
+        next->SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS); /* TODO: update this for blocktime CHIP? */
         next->BuildSkip();
         ::ChainActive().SetTip(next);
     }
@@ -517,9 +521,10 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         // Locktime passes on 2nd block.
         CValidationState state;
         int64_t nMedianTimePast = ::ChainActive().Tip()->GetMedianTimePast();
+        const BlockTicks ticksTipPlus2 = ::ChainActive().Tip()->GetBlockTicks() + (2 * ::ChainActive().Tip()->GetTickDeltaForNextBlock());
         BOOST_CHECK(ContextualCheckTransaction(
             params, CTransaction(tx), state, ::ChainActive().Tip()->nHeight + 2,
-            nMedianTimePast, nMedianTimePast));
+            nMedianTimePast, nMedianTimePast, ticksTipPlus2));
     }
 
     // Absolute time locked.
@@ -546,9 +551,10 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         CValidationState state;
         int64_t nMedianTimePast =
             ::ChainActive().Tip()->GetMedianTimePast() + 1;
+        const BlockTicks ticksNext = ::ChainActive().Tip()->GetNextBlockTicks();
         BOOST_CHECK(ContextualCheckTransaction(
             params, CTransaction(tx), state, ::ChainActive().Tip()->nHeight + 1,
-            nMedianTimePast, nMedianTimePast));
+            nMedianTimePast, nMedianTimePast, ticksNext));
     }
 
     // mempool-dependent transactions (not added)
@@ -636,21 +642,23 @@ static void CheckBlockMaxSizePercent(Config &config, std::optional<double> optPe
 BOOST_AUTO_TEST_CASE(BlockAssembler_construction) {
     GlobalConfig config;
 
+    const BlockTicks blockInterval = legacy::POW_TARGET_SPACING_TICKS; // TODO: update this for blocktime CHIP?
+
     // check that generated block size can never exceed default max block size
     {
-        const auto defbs = config.GetDefaultConsensusBlockSize();
-        BOOST_CHECK_LE(config.GetGeneratedBlockSize(defbs), defbs);
-        const size_t prevVal = config.GetGeneratedBlockSize(defbs),
+        const auto defbs = config.GetDefaultConsensusBlockSize(blockInterval);
+        BOOST_CHECK_LE(config.GetGeneratedBlockSize(blockInterval, defbs), defbs);
+        const size_t prevVal = config.GetGeneratedBlockSize(blockInterval, defbs),
                      largerVal = defbs + 100;
         BOOST_CHECK_NE(prevVal, largerVal); // ensure not equal for thoroughness
         // try and set generated block size beyond the conf. max block size (should fail)
         config.SetGeneratedBlockSizeBytes(largerVal);
         // check that we really did not raise the value until we actually grow the maxBlockSize
-        BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(defbs), prevVal);
-        BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(defbs + 1), prevVal + 1);
-        BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(defbs + 2), prevVal + 2);
-        BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(largerVal), largerVal);
-        BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(largerVal + 1), largerVal);
+        BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(blockInterval, defbs), prevVal);
+        BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(blockInterval, defbs + 1), prevVal + 1);
+        BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(blockInterval, defbs + 2), prevVal + 2);
+        BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(blockInterval, largerVal), largerVal);
+        BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(blockInterval, largerVal + 1), largerVal);
         // reset back
         config.SetGeneratedBlockSizeBytes(prevVal);
         // check bad percentages
@@ -658,7 +666,7 @@ BOOST_AUTO_TEST_CASE(BlockAssembler_construction) {
         BOOST_CHECK(!config.SetGeneratedBlockSizePercent(100.1));
         BOOST_CHECK(!config.SetGeneratedBlockSizePercent(-0.001));
         // check that the failure really did not set the value
-        BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(defbs), prevVal);
+        BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(blockInterval, defbs), prevVal);
     }
 
     // We are working on a fake chain and need to protect ourselves.

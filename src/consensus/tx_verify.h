@@ -39,13 +39,16 @@ bool CheckTxInputs(const CTransaction &tx, CValidationState &state,
  * that are susceptible to change over time such as feature
  * activation/deactivation and CLTV.
  *
- * Note that while `nHeight` is the height of the current block for the
- * transaction, `nMedianTimePastPrev` is the MTP of the previous block.
+ * Note that while `nHeight` and `blockTicks` are the height and tick count of the
+ * current block for the transaction, `nMedianTimePastPrev` is the MTP of the
+ * previous block.
  */
 bool ContextualCheckTransaction(const Consensus::Params &params,
                                 const CTransaction &tx, CValidationState &state,
-                                int nHeight, int64_t nLockTimeCutoff,
-                                int64_t nMedianTimePastPrev);
+                                int nHeight,
+                                int64_t nLockTimeCutoff,
+                                int64_t nMedianTimePastPrev,
+                                const BlockTicks &blockTicks);
 
 /**
  * Calculates the block height and previous block's median time past at which

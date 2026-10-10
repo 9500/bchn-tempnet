@@ -18,17 +18,23 @@
 #include <util/moneystr.h> // For FormatMoney
 #include <version.h>       // For PROTOCOL_VERSION
 
-static bool IsFinalTx(const CTransaction &tx, int nBlockHeight,
-                      int64_t nBlockTime) {
+static bool IsFinalTx(const CTransaction &tx, const BlockTicks &blockTicks, const int64_t nBlockTime) {
     if (tx.nLockTime == 0) {
         return true;
     }
 
-    int64_t lockTime = tx.nLockTime;
-    int64_t lockTimeLimit =
-        (lockTime < LOCKTIME_THRESHOLD) ? nBlockHeight : nBlockTime;
-    if (lockTime < lockTimeLimit) {
-        return true;
+    if (tx.nLockTime < LOCKTIME_THRESHOLD) {
+        // Height-based locktime -- as per the FABLOUS CHIP, we must translate txn locktime into ticks for this
+        // comparison. Note that this change is backward compatible with legacy 10-min blocks.
+        const BlockTicks lockTimeAsTicks = legacy::POW_TARGET_SPACING_TICKS * tx.nLockTime;
+        if (lockTimeAsTicks < blockTicks) {
+            return true;
+        }
+    } else {
+        // Time-based locktime -- no translation necessary, compare with block time.
+        if (static_cast<int64_t>(tx.nLockTime) < nBlockTime) {
+            return true;
+        }
     }
 
     for (const auto &txin : tx.vin) {
@@ -56,9 +62,10 @@ uint64_t GetMinimumTxSize(const Consensus::Params &params, const CBlockIndex *pi
 
 bool ContextualCheckTransaction(const Consensus::Params &params,
                                 const CTransaction &tx, CValidationState &state,
-                                int nHeight, int64_t nLockTimeCutoff,
-                                int64_t nMedianTimePastPrev [[maybe_unused]]) {
-    if (!IsFinalTx(tx, nHeight, nLockTimeCutoff)) {
+                                const int nHeight, const int64_t nLockTimeCutoff,
+                                const int64_t nMedianTimePastPrev [[maybe_unused]],
+                                const BlockTicks &blockTicks) {
+    if (!IsFinalTx(tx, blockTicks, nLockTimeCutoff)) {
         // While this is only one transaction, we use txns in the error to
         // ensure continuity with other clients.
         return state.DoS(10, false, REJECT_INVALID, "bad-txns-nonfinal", false,

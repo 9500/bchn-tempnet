@@ -14,6 +14,7 @@
 #include <core_io.h>
 #include <key.h>
 #include <keystore.h>
+#include <node/blockheighttotickmapper.h>
 #include <policy/policy.h>
 #include <script/script.h>
 #include <script/script_error.h>
@@ -946,7 +947,10 @@ BOOST_AUTO_TEST_CASE(txsize_activation_test) {
     // ContextualCheckTransaction expects nHeight of next block and MTP for previous block.
     // But the hard-coded chain params are for previous block, hence why we increment the height here.
     const int32_t magneticAnomalyActivationHeight = params.magneticAnomalyHeight + 1;
+    const BlockTicks interval = legacy::POW_TARGET_SPACING_TICKS; // TODO: see if we need to update these for blocktime CHIP
+    const BlockTicks magneticAnomalyActivationTicks = magneticAnomalyActivationHeight * interval;
     const int32_t upgrade9ActivationHeight = params.upgrade9Height + 1;
+    const BlockTicks upgrade9ActivationTicks = upgrade9ActivationHeight * interval;
     BOOST_CHECK_LT(magneticAnomalyActivationHeight, upgrade9ActivationHeight);
     const int64_t unusedMTP = 0;
 
@@ -955,10 +959,10 @@ BOOST_AUTO_TEST_CASE(txsize_activation_test) {
     BOOST_CHECK(::GetSerializeSize(minTx) < MIN_TX_SIZE_MAGNETIC_ANOMALY);
     CValidationState state;
 
-    BOOST_CHECK(ContextualCheckTransaction(
-        params, minTx, state, magneticAnomalyActivationHeight - 1, 5678, unusedMTP));
-    BOOST_CHECK(!ContextualCheckTransaction(
-        params, minTx, state, magneticAnomalyActivationHeight, 5678, unusedMTP));
+    BOOST_CHECK(ContextualCheckTransaction(params, minTx, state, magneticAnomalyActivationHeight - 1, 5678, unusedMTP,
+                                           magneticAnomalyActivationTicks - interval));
+    BOOST_CHECK(!ContextualCheckTransaction(params, minTx, state, magneticAnomalyActivationHeight, 5678, unusedMTP,
+                                            magneticAnomalyActivationTicks));
     BOOST_CHECK_EQUAL(state.GetRejectCode(), REJECT_INVALID);
     BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-undersize");
 
@@ -976,11 +980,11 @@ BOOST_AUTO_TEST_CASE(txsize_activation_test) {
     BOOST_CHECK_LT(::GetSerializeSize(smallTx), MIN_TX_SIZE_MAGNETIC_ANOMALY);
     state = CValidationState{};
     BOOST_CHECK(!ContextualCheckTransaction(
-        params, smallTx, state, upgrade9ActivationHeight - 1, 5678, unusedMTP));
+        params, smallTx, state, upgrade9ActivationHeight - 1, 5678, unusedMTP, upgrade9ActivationTicks - interval));
     BOOST_CHECK_EQUAL(state.GetRejectCode(), REJECT_INVALID);
     BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-undersize");
     BOOST_CHECK(ContextualCheckTransaction(
-        params, smallTx, state, upgrade9ActivationHeight, 5678, unusedMTP));
+        params, smallTx, state, upgrade9ActivationHeight, 5678, unusedMTP, upgrade9ActivationTicks));
 }
 
 BOOST_FIXTURE_TEST_CASE(checktxinput_test, TestChain100Setup) {
@@ -1033,6 +1037,8 @@ BOOST_FIXTURE_TEST_CASE(checktxinput_test, TestChain100Setup) {
         funding_tx_2.vin[0].scriptSig << fundingVchSig;
     }
 
+    // TODO: see if we need to update this for blocktime CHIP
+    const auto mapper = MakeHeightToTickMapperForPrev(GetConfig().GetChainParams().GetConsensus(), ::ChainActive().Tip());
     {
         CMutableTransaction spend_tx;
         spend_tx.nVersion = 1;
@@ -1056,10 +1062,10 @@ BOOST_FIXTURE_TEST_CASE(checktxinput_test, TestChain100Setup) {
         txout.nValue = Amount::zero();
         pcoinsTip->AddCoin(spend_tx.vin[1].prevout, Coin(txout, 1, false), true);
 
-        BOOST_CHECK(Consensus::CheckTxInputs(tx, state, pcoinsTip.get(), 0, txfee));
+        BOOST_CHECK(Consensus::CheckTxInputs(tx, state, pcoinsTip.get(), BlockTicks{0}, mapper, txfee));
 
         pcoinsTip->SpendCoin(spend_tx.vin[1].prevout);
-        BOOST_CHECK( ! Consensus::CheckTxInputs(tx, state, pcoinsTip.get(), 0, txfee));
+        BOOST_CHECK( ! Consensus::CheckTxInputs(tx, state, pcoinsTip.get(), BlockTicks{0}, mapper, txfee));
     }
 }
 
