@@ -2315,11 +2315,10 @@ bool CChainState::DisconnectTip(const Config &config,
     // If this block is deactivating a fork, we move all mempool transactions
     // in front of disconnectpool for reprocessing in a future
     // updateMempoolForReorg call
-    if (pindexDelete->pprev != nullptr &&
-        GetNextBlockScriptFlags(consensusParams, pindexDelete) !=
-            GetNextBlockScriptFlags(consensusParams, pindexDelete->pprev)) {
-        LogPrint(BCLog::MEMPOOL,
-                 "Disconnecting mempool due to rewind of upgrade block\n");
+    if (pindexDelete->GetTickDeltaForThisBlock() != pindexDelete->GetTickDeltaForNextBlock()
+        || (pindexDelete->pprev != nullptr && GetNextBlockScriptFlags(consensusParams, pindexDelete)
+                                              != GetNextBlockScriptFlags(consensusParams, pindexDelete->pprev))) {
+        LogPrint(BCLog::MEMPOOL, "Disconnecting mempool due to rewind of upgrade block\n");
         if (disconnectpool) {
             disconnectpool->importMempool(g_mempool);
         }
@@ -2619,11 +2618,10 @@ bool CChainState::ConnectTip(const Config &config, CValidationState &state,
     // If this block is activating a fork, we move all mempool transactions
     // in front of disconnectpool for reprocessing in a future
     // updateMempoolForReorg call
-    if (pindexNew->pprev != nullptr &&
-        GetNextBlockScriptFlags(consensusParams, pindexNew) !=
-            GetNextBlockScriptFlags(consensusParams, pindexNew->pprev)) {
-        LogPrint(BCLog::MEMPOOL,
-                 "Disconnecting mempool due to acceptance of upgrade block\n");
+    if (pindexNew->GetTickDeltaForThisBlock() != pindexNew->GetTickDeltaForNextBlock()
+        || (pindexNew->pprev != nullptr && GetNextBlockScriptFlags(consensusParams, pindexNew)
+                                           != GetNextBlockScriptFlags(consensusParams, pindexNew->pprev))) {
+        LogPrint(BCLog::MEMPOOL, "Disconnecting mempool due to acceptance of upgrade block\n");
         disconnectpool.importMempool(g_mempool);
     }
 
