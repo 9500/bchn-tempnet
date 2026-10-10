@@ -1,5 +1,5 @@
 // Copyright (c) 2011-2016 The Bitcoin Core developers
-// Copyright (c) 2021-2026 The Bitcoin developers
+// Copyright (c) 2021-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -288,7 +288,7 @@ CTxMemPoolEntry TestMemPoolEntryHelper::FromTx(const CMutableTransaction &tx) {
 }
 
 CTxMemPoolEntry TestMemPoolEntryHelper::FromTx(const CTransactionRef &tx) {
-    CTxMemPoolEntry ret(tx, nFee, nTime, spendsCoinbase, nSigChecks, LockPoints());
+    CTxMemPoolEntry ret(tx, nFee, nTime, spendsCoinbase, nSigChecks);
     ret.SetEntryId(entryId);
     return ret;
 }

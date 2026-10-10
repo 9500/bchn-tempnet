@@ -1,5 +1,5 @@
 // Copyright (c) 2022 The Bitcoin Core developers
-// Copyright (c) 2024 The Bitcoin developers
+// Copyright (c) 2024-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -25,5 +25,5 @@ CTxMemPoolEntry ConsumeTxMemPoolEntry(FuzzedDataProvider& fuzzed_data_provider, 
     const int64_t time = fuzzed_data_provider.ConsumeIntegral<int64_t>();
     const bool spends_coinbase = fuzzed_data_provider.ConsumeBool();
     const int64_t sig_checks = fuzzed_data_provider.ConsumeIntegralInRange<int64_t>(0, MAX_TX_SIGCHECKS);
-    return CTxMemPoolEntry{MakeTransactionRef(CMutableTransaction{tx}), fee, time, spends_coinbase, sig_checks, {}};
+    return CTxMemPoolEntry{MakeTransactionRef(CMutableTransaction{tx}), fee, time, spends_coinbase, sig_checks};
 }
