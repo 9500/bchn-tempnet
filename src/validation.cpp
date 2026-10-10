@@ -375,7 +375,7 @@ bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, int flag
     // want to know if a transaction can be part of the *next* block, we need to
     // use one more than ::ChainActive().Height()
     index.nHeight = tip->nHeight + 1;
-    index.SetBlockTicks(tip->GetBlockTicks() + tip->GetTickDeltaForNextBlock()); // maintain correct tick count
+    index.SetBlockTicks(tip->GetNextBlockTicks()); // maintain correct tick count
     index.SetTickDeltaForNextBlock(tip->GetTickDeltaForNextBlock()); // this is a dummy value (unused by below)
 
     // pcoinsTip contains the UTXO set for ::ChainActive().Tip()
@@ -982,9 +982,7 @@ bool GetTransaction(const TxId &txid, CTransactionRef &txOut,
 }
 
 Amount GetBlockSubsidy(const CBlockIndex *pindexPrev, const Consensus::Params &consensusParams) {
-    const BlockTicks blockTickCount = pindexPrev
-                                          ? pindexPrev->GetBlockTicks() + pindexPrev->GetTickDeltaForNextBlock()
-                                          : BlockTicks{0u};
+    const BlockTicks blockTickCount = pindexPrev ? pindexPrev->GetNextBlockTicks() : BlockTicks{0u};
     static_assert(legacy::POW_TARGET_SPACING_TICKS.value() > 0u);
     const BlockTicks blockTimeInterval = pindexPrev
                                              ? pindexPrev->GetTickDeltaForNextBlock()
@@ -1262,7 +1260,7 @@ BlockTicks GetSpendTicks(const Consensus::Params &params, const CCoinsViewCache 
         // Caller wants a mapper, so give it to him
         *mapperOut = MakeHeightToTickMapperForPrev(params, pindexPrev);
     }
-    return pindexPrev->GetBlockTicks() + pindexPrev->GetTickDeltaForNextBlock();
+    return pindexPrev->GetNextBlockTicks();
 }
 
 bool CheckInputs(const CTransaction &tx, CValidationState &state,
@@ -3523,7 +3521,7 @@ CBlockIndex *CChainState::AddToBlockIndex(const Consensus::Params &params, const
         pindexNew->pprev = &miPrev->second;
         pindexNew->nHeight = pindexNew->pprev->nHeight + 1;
         pindexNew->BuildSkip();
-        pindexNew->SetBlockTicks(pindexNew->pprev->GetBlockTicks() + pindexNew->pprev->GetTickDeltaForNextBlock());
+        pindexNew->SetBlockTicks(pindexNew->pprev->GetNextBlockTicks());
     }
     pindexNew->nTimeReceived = GetTime();
     pindexNew->nTimeMax =
@@ -3853,16 +3851,16 @@ bool ContextualCheckTransactionForCurrentBlock(const Consensus::Params &params,
     // When the next block is created its previous block will be the current
     // chain tip, so we use that to calculate the median time passed to
     // ContextualCheckTransaction() if LOCKTIME_MEDIAN_TIME_PAST is set.
-    const int64_t nMedianTimePast =
-        ::ChainActive().Tip() == nullptr
-            ? 0
-            : ::ChainActive().Tip()->GetMedianTimePast();
+    const CBlockIndex *const tip = ::ChainActive().Tip();
+    const int64_t nMedianTimePast = tip == nullptr ? 0 : tip->GetMedianTimePast();
     const int64_t nLockTimeCutoff = (flags & LOCKTIME_MEDIAN_TIME_PAST)
                                         ? nMedianTimePast
                                         : GetAdjustedTime();
+    // For similar reasons as to why we use ::ChainActive().Height() + 1, we
+    // also use the current tip's next block tick count here.
+    const BlockTicks blockTicks = tip == nullptr ? BlockTicks{0} : tip->GetNextBlockTicks();
 
-    return ContextualCheckTransaction(params, tx, state, nBlockHeight,
-                                      nLockTimeCutoff, nMedianTimePast);
+    return ContextualCheckTransaction(params, tx, state, nBlockHeight, nLockTimeCutoff, nMedianTimePast, blockTicks);
 }
 
 /**
@@ -3884,15 +3882,12 @@ static bool ContextualCheckBlock(const CBlock &block, CValidationState &state,
         nLockTimeFlags |= LOCKTIME_MEDIAN_TIME_PAST;
     }
 
-    const int64_t nMedianTimePast =
-        pindexPrev == nullptr ? 0 : pindexPrev->GetMedianTimePast();
-
+    const int64_t nMedianTimePast = pindexPrev == nullptr ? 0 : pindexPrev->GetMedianTimePast();
     const int64_t nLockTimeCutoff = (nLockTimeFlags & LOCKTIME_MEDIAN_TIME_PAST)
                                         ? nMedianTimePast
                                         : block.GetBlockTime();
-
-    const bool fIsMagneticAnomalyEnabled =
-        IsMagneticAnomalyEnabled(params, pindexPrev);
+    const BlockTicks blockTicks = pindexPrev ? pindexPrev->GetNextBlockTicks() : BlockTicks{0};
+    const bool fIsMagneticAnomalyEnabled = IsMagneticAnomalyEnabled(params, pindexPrev);
 
     // Check transactions:
     // - canonical ordering
@@ -3921,8 +3916,7 @@ static bool ContextualCheckBlock(const CBlock &block, CValidationState &state,
             }
         }
 
-        if (!ContextualCheckTransaction(params, tx, state, nHeight,
-                                        nLockTimeCutoff, nMedianTimePast)) {
+        if (!ContextualCheckTransaction(params, tx, state, nHeight, nLockTimeCutoff, nMedianTimePast, blockTicks)) {
             // state set by ContextualCheckTransaction.
             return false;
         }
@@ -4323,7 +4317,7 @@ bool TestBlockValidity(CValidationState &state, const CChainParams &params,
     indexDummy.pprev = pindexPrev;
     indexDummy.nHeight = pindexPrev->nHeight + 1;
     indexDummy.phashBlock = &block_hash;
-    indexDummy.SetBlockTicks(pindexPrev->GetBlockTicks() + pindexPrev->GetTickDeltaForNextBlock());
+    indexDummy.SetBlockTicks(pindexPrev->GetNextBlockTicks());
     indexDummy.SetTickDeltaForNextBlock(GetPowTargetSpacing(params.GetConsensus(), pindexPrev));
 
     // NOTE: CheckBlockHeader is called by CheckBlock
@@ -6073,14 +6067,14 @@ uint64_t GetNextBlockSizeLimit(const Config &config, const CBlockIndex *pindexPr
     const auto &params = config.GetChainParams().GetConsensus();
     const BlockTicks nextBlockInterval = pindexPrev ? pindexPrev->GetTickDeltaForNextBlock()
                                                     : legacy::POW_TARGET_SPACING_TICKS;
-    const uint64_t confMaxBlockSize = config.GetDefaultConsensusBlockSize(nextBlockInterval);
+    const uint64_t maxBlockSizeFloor = config.GetDefaultConsensusBlockSize(nextBlockInterval);
     if (!IsUpgrade10Enabled(params, pindexPrev)) {
-        return confMaxBlockSize;
+        return maxBlockSizeFloor;
     }
-    const auto ablaStateOpt = pindexPrev->GetAblaStateOpt();
+    const auto ablaStateOpt = Assert(pindexPrev)->GetAblaStateOpt();
     assert(ablaStateOpt);
-    // std::max here to ensure the block size floor is what the user overrode from config, if anything
-    return std::max(confMaxBlockSize, ablaStateOpt->GetNextBlockSizeLimit(params.ablaConfig, pindexPrev->GetTickDeltaForNextBlock()));
+    // std::max here to ensure the block size floor is respected
+    return std::max(maxBlockSizeFloor, ablaStateOpt->GetNextBlockSizeLimit(params.ablaConfig, nextBlockInterval));
 }
 
 bool IsBIP30Repeat(const CBlockIndex &index) {
