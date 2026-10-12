@@ -85,10 +85,10 @@ static CBlockIndexPtr CreateBlockIndex(int nHeight) {
     return index;
 }
 
-static bool TestSequenceLocks(const CTransaction &tx, int flags)
+static bool TestSequenceLocks(const CTransaction &tx)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     LOCK(::g_mempool.cs);
-    return CheckSequenceLocks(::g_mempool, tx, flags, BlockHeightToTickMapper{} /* <-- TODO: upddate this for blocktime CHIP? */);
+    return CheckSequenceLocks(::g_mempool, tx, BlockHeightToTickMapper{} /* <-- TODO: upddate this for blocktime CHIP? */);
 }
 
 // Test suite for feerate transaction selection.
@@ -422,7 +422,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
 
     // non-final txs in mempool
     SetMockTime(::ChainActive().Tip()->GetMedianTimePast() + 1);
-    uint32_t flags = LOCKTIME_VERIFY_SEQUENCE | LOCKTIME_MEDIAN_TIME_PAST;
+    const uint32_t flags = LOCKTIME_VERIFY_SEQUENCE | LOCKTIME_MEDIAN_TIME_PAST;
     // height map
     std::vector<int> prevheights;
 
@@ -454,7 +454,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     }
 
     // Sequence locks fail.
-    BOOST_CHECK(!TestSequenceLocks(CTransaction(tx), flags));
+    BOOST_CHECK(!TestSequenceLocks(CTransaction(tx)));
     // Sequence locks pass on 2nd block.
     BOOST_CHECK(
         SequenceLocks(CTransaction(tx), flags, prevheights,
@@ -481,7 +481,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     }
 
     // Sequence locks fail.
-    BOOST_CHECK(!TestSequenceLocks(CTransaction(tx), flags));
+    BOOST_CHECK(!TestSequenceLocks(CTransaction(tx)));
 
     for (size_t i = 0; i < CBlockIndex::nMedianTimeSpan; ++i) {
         // Trick the MedianTimePast.
@@ -518,7 +518,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     }
 
     // Sequence locks pass.
-    BOOST_CHECK(TestSequenceLocks(CTransaction(tx), flags));
+    BOOST_CHECK(TestSequenceLocks(CTransaction(tx)));
 
     {
         // Locktime passes on 2nd block.
@@ -547,7 +547,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     }
 
     // Sequence locks pass.
-    BOOST_CHECK(TestSequenceLocks(CTransaction(tx), flags));
+    BOOST_CHECK(TestSequenceLocks(CTransaction(tx)));
 
     {
         // Locktime passes 1 second later.
@@ -574,16 +574,16 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     }
 
     // Sequence locks pass.
-    BOOST_CHECK(TestSequenceLocks(CTransaction(tx), flags));
+    BOOST_CHECK(TestSequenceLocks(CTransaction(tx)));
     tx.vin[0].nSequence = 1;
     // Sequence locks fail.
-    BOOST_CHECK(!TestSequenceLocks(CTransaction(tx), flags));
+    BOOST_CHECK(!TestSequenceLocks(CTransaction(tx)));
     tx.vin[0].nSequence = CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG;
     // Sequence locks pass.
-    BOOST_CHECK(TestSequenceLocks(CTransaction(tx), flags));
+    BOOST_CHECK(TestSequenceLocks(CTransaction(tx)));
     tx.vin[0].nSequence = CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG | 1;
     // Sequence locks fail.
-    BOOST_CHECK(!TestSequenceLocks(CTransaction(tx), flags));
+    BOOST_CHECK(!TestSequenceLocks(CTransaction(tx)));
 
     pblocktemplate =
         AssemblerForTest(config, g_mempool).CreateNewBlock(scriptPubKey);
