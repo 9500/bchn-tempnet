@@ -360,8 +360,8 @@ static void FindFilesToPrune(std::set<int> &setFilesToPrune,
 static uint32_t GetNextBlockScriptFlags(const Consensus::Params &params,
                                         const CBlockIndex *pindex);
 
-bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, int flags,
-                        const BlockHeightToTickMapper &mapper) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, const BlockHeightToTickMapper &mapper)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     AssertLockHeld(cs_main);
     AssertLockHeld(pool.cs);
 
@@ -398,7 +398,7 @@ bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, int flag
             prevheights[txinIndex] = coinHeight;
         }
     }
-    return SequenceLocks(tx, flags, &prevheights, index, mapper);
+    return SequenceLocks(tx, STANDARD_LOCKTIME_VERIFY_FLAGS, prevheights, index, mapper);
 }
 
 /** Convert CValidationState to a human-readable message for logging */
@@ -621,7 +621,7 @@ AcceptToMemoryPoolWorker(const Config &config, CTxMemPool &pool,
         // that can't be mined yet. Must keep pool.cs for this unless we change
         // CheckSequenceLocks to take a CoinsViewCache instead of create its
         // own.
-        if (!CheckSequenceLocks(pool, tx, STANDARD_LOCKTIME_VERIFY_FLAGS, height2TickMapper)) {
+        if (!CheckSequenceLocks(pool, tx, height2TickMapper)) {
             return state.DoS(0, false, REJECT_NONSTANDARD, "non-BIP68-final");
         }
 

@@ -551,15 +551,11 @@ void UpdateCoins(CCoinsViewCache &view, const CTransaction &tx, CTxUndo &txundo,
                  int nHeight);
 
 /**
- * Check if transaction will be BIP 68 final in the next block to be created.
- *
- * Simulates calling SequenceLocks() with data from the tip of the current
- * active chain.
- *
- * See consensus/consensus.h for flag definitions.
+ * Check if a mempool transaction will be BIP 68 final in the next block to be created. Simulates calling
+ * SequenceLocks() with data from the tip of the current active chain.
  */
-bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, int flags,
-                        const BlockHeightToTickMapper &mapper) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, const BlockHeightToTickMapper &mapper)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 /**
  * Closure representing one script verification.
