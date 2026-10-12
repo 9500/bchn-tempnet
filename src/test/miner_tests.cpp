@@ -13,6 +13,7 @@
 #include <consensus/merkle.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
+#include <node/blockheighttotickmapper.h>
 #include <policy/policy.h>
 #include <pubkey.h>
 #include <script/standard.h>
@@ -87,7 +88,7 @@ static CBlockIndexPtr CreateBlockIndex(int nHeight) {
 static bool TestSequenceLocks(const CTransaction &tx, int flags)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     LOCK(::g_mempool.cs);
-    return CheckSequenceLocks(::g_mempool, tx, flags);
+    return CheckSequenceLocks(::g_mempool, tx, flags, BlockHeightToTickMapper{} /* <-- TODO: upddate this for blocktime CHIP? */);
 }
 
 // Test suite for feerate transaction selection.
@@ -456,8 +457,9 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     BOOST_CHECK(!TestSequenceLocks(CTransaction(tx), flags));
     // Sequence locks pass on 2nd block.
     BOOST_CHECK(
-        SequenceLocks(CTransaction(tx), flags, &prevheights,
-                      *CreateBlockIndex(::ChainActive().Tip()->nHeight + 2)));
+        SequenceLocks(CTransaction(tx), flags, prevheights,
+                      *CreateBlockIndex(::ChainActive().Tip()->nHeight + 2),
+                      BlockHeightToTickMapper{} /* TODO: Maybe test 1-min blockstimes here too? */));
 
     // Relative time locked.
     tx.vin[0].prevout = COutPoint(txFirst[1]->GetId(), 0);
@@ -489,8 +491,9 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     }
     // Sequence locks pass 512 seconds later.
     BOOST_CHECK(
-        SequenceLocks(CTransaction(tx), flags, &prevheights,
-                      *CreateBlockIndex(::ChainActive().Tip()->nHeight + 1)));
+        SequenceLocks(CTransaction(tx), flags, prevheights,
+                      *CreateBlockIndex(::ChainActive().Tip()->nHeight + 1),
+                      BlockHeightToTickMapper{} /* TODO: Maybe test 1-min blockstimes here too? */));
     for (size_t i = 0; i < CBlockIndex::nMedianTimeSpan; ++i) {
         // Undo tricked MTP.
         CBlockIndex * const pindex = ::ChainActive().Tip()->GetAncestor(::ChainActive().Tip()->nHeight - i);

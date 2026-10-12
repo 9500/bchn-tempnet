@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2019 The Bitcoin Core developers
-# Copyright (c) 2026 The Bitcoin developers
+# Copyright (c) 2026-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the pruning code.
@@ -92,17 +92,17 @@ class PruneTest(BitcoinTestFramework):
         # Create nodes 0 and 1 to mine.
         # Create node 2 to test pruning.
         self.full_node_default_args = ["-maxreceivebuffer=20000", "-blockmaxsize=999000",
-                                       "-checkblocks=5", "-noparkdeepreorg", "-maxreorgdepth=-1"]
+                                       "-checkblocks=5", "-noparkdeepreorg", "-maxreorgticks=-1"]
         # Create nodes 3 and 4 to test manual pruning (they will be re-started with manual pruning later)
         # Create nodes 5 to test wallet in prune mode, but do not connect
         self.extra_args = [self.full_node_default_args,
                            self.full_node_default_args,
                            ["-maxreceivebuffer=20000", "-prune=550",
-                               "-noparkdeepreorg", "-maxreorgdepth=-1"],
+                               "-noparkdeepreorg", "-maxreorgticks=-1"],
                            ["-maxreceivebuffer=20000", "-blockmaxsize=999000",
-                               "-noparkdeepreorg", "-maxreorgdepth=-1"],
+                               "-noparkdeepreorg", "-maxreorgticks=-1"],
                            ["-maxreceivebuffer=20000", "-blockmaxsize=999000",
-                               "-noparkdeepreorg", "-maxreorgdepth=-1"],
+                               "-noparkdeepreorg", "-maxreorgticks=-1"],
                            ["-prune=550"]]
         self.rpc_timeout = 120
 
@@ -395,7 +395,7 @@ class PruneTest(BitcoinTestFramework):
         self.log.info("Stop and start pruning node to trigger wallet rescan")
         self.stop_node(2)
         self.start_node(
-            2, extra_args=["-prune=550", "-noparkdeepreorg", "-maxreorgdepth=-1"])
+            2, extra_args=["-prune=550", "-noparkdeepreorg", "-maxreorgticks=-1"])
         self.log.info("Success")
 
         # check that wallet loads successfully when restarting a pruned node after IBD.
@@ -407,7 +407,7 @@ class PruneTest(BitcoinTestFramework):
         # Stop and start to trigger rescan
         self.stop_node(5)
         self.start_node(
-            5, extra_args=["-prune=550", "-noparkdeepreorg", "-maxreorgdepth=-1"])
+            5, extra_args=["-prune=550", "-noparkdeepreorg", "-maxreorgticks=-1"])
         self.log.info("Success")
 
     def run_test(self):

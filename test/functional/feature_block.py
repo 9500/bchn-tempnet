@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2015-2017 The Bitcoin Core developers
-# Copyright (c) 2017-2022 The Bitcoin developers
+# Copyright (c) 2017-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test block processing."""
@@ -72,7 +72,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         # This is a consensus block test, we don't care about tx policy
         self.extra_args = [['-noparkdeepreorg',
-                            '-maxreorgdepth=-1', '-acceptnonstdtxn=1']]
+                            '-maxreorgticks=-1', '-acceptnonstdtxn=1']]
 
     def run_test(self):
         node = self.nodes[0]  # convenience reference to the node

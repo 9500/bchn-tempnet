@@ -360,23 +360,26 @@ static void FindFilesToPrune(std::set<int> &setFilesToPrune,
 static uint32_t GetNextBlockScriptFlags(const Consensus::Params &params,
                                         const CBlockIndex *pindex);
 
-bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, int flags) {
+bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, int flags,
+                        const BlockHeightToTickMapper &mapper) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     AssertLockHeld(cs_main);
     AssertLockHeld(pool.cs);
 
     CBlockIndex *tip = ::ChainActive().Tip();
     assert(tip != nullptr);
+    const int mempoolHeight = tip->nHeight + 1;
+    const auto mempoolTicks = tip->GetNextBlockTicks();
 
-    CBlockIndex index;
+    CBlockIndex index; // fake block to represent the mempool's hypothetical next block
     index.pprev = tip;
     // SequenceLocks() uses ::ChainActive().Height()+1 to evaluate height
     // based locks because when SequenceLocks() is called within ConnectBlock(),
     // the height of the block *being* evaluated is what is used. Thus if we
     // want to know if a transaction can be part of the *next* block, we need to
     // use one more than ::ChainActive().Height()
-    index.nHeight = tip->nHeight + 1;
-    index.SetBlockTicks(tip->GetNextBlockTicks()); // maintain correct tick count
-    index.SetTickDeltaForNextBlock(tip->GetTickDeltaForNextBlock()); // this is a dummy value (unused by below)
+    index.nHeight = mempoolHeight;
+    index.SetBlockTicks(mempoolTicks); // maintain correct tick count
+    index.SetTickDeltaForNextBlock(tip->GetTickDeltaForNextBlock()); // We set this to a dummy value; nothing below uses this value.
 
     // pcoinsTip contains the UTXO set for ::ChainActive().Tip()
     CCoinsViewMemPool viewMemPool(pcoinsTip.get(), pool);
@@ -388,14 +391,14 @@ bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, int flag
         if (!viewMemPool.GetCoin(txin.prevout, coin)) {
             return error("%s: Missing input", __func__);
         }
-        if (coin.GetHeight() == MEMPOOL_HEIGHT) {
+        if (const auto coinHeight = coin.GetHeight(); coinHeight == MEMPOOL_HEIGHT) {
             // Assume all mempool transaction confirm in the next block
-            prevheights[txinIndex] = tip->nHeight + 1;
+            prevheights[txinIndex] = mempoolHeight;
         } else {
-            prevheights[txinIndex] = coin.GetHeight();
+            prevheights[txinIndex] = coinHeight;
         }
     }
-    return SequenceLocks(tx, flags, &prevheights, index);
+    return SequenceLocks(tx, flags, &prevheights, index, mapper);
 }
 
 /** Convert CValidationState to a human-readable message for logging */
@@ -610,18 +613,19 @@ AcceptToMemoryPoolWorker(const Config &config, CTxMemPool &pool,
         // need to keep lock on mempool.
         view.SetBackend(dummy);
 
+        BlockHeightToTickMapper height2TickMapper;
+        const BlockTicks spendTicks = GetSpendTicks(consensusParams, view, &height2TickMapper);
+
         // Only accept BIP68 sequence locked transactions that can be mined in
         // the next block; we don't want our mempool filled up with transactions
         // that can't be mined yet. Must keep pool.cs for this unless we change
         // CheckSequenceLocks to take a CoinsViewCache instead of create its
         // own.
-        if (!CheckSequenceLocks(pool, tx, STANDARD_LOCKTIME_VERIFY_FLAGS)) {
+        if (!CheckSequenceLocks(pool, tx, STANDARD_LOCKTIME_VERIFY_FLAGS, height2TickMapper)) {
             return state.DoS(0, false, REJECT_NONSTANDARD, "non-BIP68-final");
         }
 
         Amount nFees = Amount::zero();
-        BlockHeightToTickMapper height2TickMapper;
-        const BlockTicks spendTicks = GetSpendTicks(consensusParams, view, &height2TickMapper);
         if (!Consensus::CheckTxInputs(tx, state, view, spendTicks, height2TickMapper, nFees)) {
             return error("%s: Consensus::CheckTxInputs: %s, %s", __func__,
                          tx.GetId().ToString(), FormatStateMessage(state));
@@ -1801,18 +1805,13 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state, CBl
         nLockTimeFlags |= LOCKTIME_VERIFY_SEQUENCE;
     }
 
-    const uint32_t flags =
-        GetNextBlockScriptFlags(consensusParams, pindex->pprev);
+    const uint32_t flags = GetNextBlockScriptFlags(consensusParams, pindex->pprev);
 
     int64_t nTime2 = GetTimeMicros();
     nTimeForks += nTime2 - nTime1;
     LogPrint(BCLog::BENCH, "    - Fork checks: %.2fms [%.2fs (%.2fms/blk)]\n",
              MILLI * (nTime2 - nTime1), nTimeForks * MICRO,
              nTimeForks * MILLI / nBlocksTotal);
-
-    std::vector<int> prevheights;
-    Amount nFees = Amount::zero();
-    int nInputs = 0;
 
     // Limit the total executed signature operations in the block, a consensus
     // rule. Tracking during the CPU-consuming part (validation of uncached
@@ -1861,6 +1860,9 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state, CBl
     const BlockHeightToTickMapper height2TickMapper = MakeHeightToTickMapperForPrev(consensusParams, pindex->pprev);
     const BlockTicks spendTicks = pindex->GetBlockTicks();
 
+    std::vector<int> prevheights;
+    Amount nFees = Amount::zero();
+    size_t nInputs = 0;
     size_t txIndex = 0;
     for (const auto &ptx : block.vtx) {
         const CTransaction &tx = *ptx;
@@ -1902,7 +1904,7 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state, CBl
             prevheights[j] = view.AccessCoin(tx.vin[j].prevout).GetHeight();
         }
 
-        if (!SequenceLocks(tx, nLockTimeFlags, &prevheights, *pindex)) {
+        if (!SequenceLocks(tx, nLockTimeFlags, prevheights, *pindex, height2TickMapper)) {
             return state.DoS(
                 100,
                 error("%s: contains a non-BIP68-final transaction", __func__),
@@ -1948,7 +1950,7 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state, CBl
         // inputs in the same transaction (cf. CVE-2018-17144) -- that check is
         // done in CheckBlock (CheckRegularTransaction).
         SpendCoins(view, tx, blockundo.vtxundo.at(txIndex), pindex->nHeight);
-        txIndex++;
+        ++txIndex;
     }
 
     int64_t nTime3 = GetTimeMicros();
