@@ -157,11 +157,14 @@ CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int> &prev
                     1);
         } else {
             // We need to scale the raw locktime "as if" we were still on 10-mins blocks in order to calculate in terms
-            // of ticks. NOTE: We subtract 1 here as well to maintain semantics.
+            // of ticks.
             const int rawLockTime = static_cast<int>(txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_MASK);
             const int64_t locktimeScaled = rawLockTime * legacy::POW_TARGET_SPACING_TICKS.toSecs();
             const BlockTicks coinTicks = mapper.HeightToTick(nCoinHeight);
 
+            // We subtract 1 in the below expression to transform the failure threshold into the `>=` relationship
+            // that `EvaluateSequenceLocks()` expects (rather than keeping it as `>` which is what it would be without
+            // the below -1).
             minTicks = std::max(minTicks, coinTicks.toSecs() + locktimeScaled - 1);
         }
     }
