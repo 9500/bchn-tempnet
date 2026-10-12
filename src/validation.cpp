@@ -369,7 +369,7 @@ bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, int flag
 
     CBlockIndex index;
     index.pprev = tip;
-    // CheckSequenceLocks() uses ::ChainActive().Height()+1 to evaluate height
+    // SequenceLocks() uses ::ChainActive().Height()+1 to evaluate height
     // based locks because when SequenceLocks() is called within ConnectBlock(),
     // the height of the block *being* evaluated is what is used. Thus if we
     // want to know if a transaction can be part of the *next* block, we need to
@@ -378,7 +378,6 @@ bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, int flag
     index.SetBlockTicks(tip->GetNextBlockTicks()); // maintain correct tick count
     index.SetTickDeltaForNextBlock(tip->GetTickDeltaForNextBlock()); // this is a dummy value (unused by below)
 
-    std::pair<int, int64_t> lockPair;
     // pcoinsTip contains the UTXO set for ::ChainActive().Tip()
     CCoinsViewMemPool viewMemPool(pcoinsTip.get(), pool);
     std::vector<int> prevheights;
@@ -396,8 +395,7 @@ bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, int flag
             prevheights[txinIndex] = coin.GetHeight();
         }
     }
-    lockPair = CalculateSequenceLocks(tx, flags, &prevheights, index);
-    return EvaluateSequenceLocks(index, lockPair);
+    return SequenceLocks(tx, flags, &prevheights, index);
 }
 
 /** Convert CValidationState to a human-readable message for logging */

@@ -90,6 +90,7 @@ bool ContextualCheckTransaction(const Consensus::Params &params,
     return true;
 }
 
+namespace {
 /**
  * Calculates the block height and previous block's median time past at
  * which the transaction will be considered final in the context of BIP 68.
@@ -177,6 +178,7 @@ bool EvaluateSequenceLocks(const CBlockIndex &block,
 
     return true;
 }
+} // namespace
 
 bool SequenceLocks(const CTransaction &tx, int flags,
                    std::vector<int> *prevHeights, const CBlockIndex &block) {

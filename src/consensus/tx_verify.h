@@ -51,20 +51,6 @@ bool ContextualCheckTransaction(const Consensus::Params &params,
                                 const BlockTicks &blockTicks);
 
 /**
- * Calculates the block height and previous block's median time past at which
- * the transaction will be considered final in the context of BIP 68.
- * Also removes from the vector of input heights any entries which did not
- * correspond to sequence locked inputs as they do not affect the calculation.
- */
-std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx,
-                                               int flags,
-                                               std::vector<int> *prevHeights,
-                                               const CBlockIndex &block);
-
-bool EvaluateSequenceLocks(const CBlockIndex &block,
-                           std::pair<int, int64_t> lockPair);
-
-/**
  * Check if transaction is final per BIP 68 sequence numbers and can be included
  * in a block. Consensus critical. Takes as input a list of heights at which
  * tx's inputs (in order) confirmed.
