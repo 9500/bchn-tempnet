@@ -97,10 +97,8 @@ namespace {
  * Also removes from the vector of input heights any entries which did not
  * correspond to sequence locked inputs as they do not affect the calculation.
  */
-std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx,
-                                               int flags,
-                                               std::vector<int> *prevHeights,
-                                               const CBlockIndex &block) {
+std::pair<int, int64_t>
+CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int> *prevHeights, const CBlockIndex &block) {
     assert(prevHeights->size() == tx.vin.size());
 
     // Will be set to the equivalent height- and time-based nLockTime
@@ -168,8 +166,7 @@ std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx,
     return std::make_pair(nMinHeight, nMinTime);
 }
 
-bool EvaluateSequenceLocks(const CBlockIndex &block,
-                           std::pair<int, int64_t> lockPair) {
+bool EvaluateSequenceLocks(const CBlockIndex &block, std::pair<int, int64_t> lockPair) {
     assert(block.pprev);
     int64_t nBlockTime = block.pprev->GetMedianTimePast();
     if (lockPair.first >= block.nHeight || lockPair.second >= nBlockTime) {
@@ -180,10 +177,8 @@ bool EvaluateSequenceLocks(const CBlockIndex &block,
 }
 } // namespace
 
-bool SequenceLocks(const CTransaction &tx, int flags,
-                   std::vector<int> *prevHeights, const CBlockIndex &block) {
-    return EvaluateSequenceLocks(
-        block, CalculateSequenceLocks(tx, flags, prevHeights, block));
+bool SequenceLocks(const CTransaction &tx, int flags, std::vector<int> *prevHeights, const CBlockIndex &block) {
+    return EvaluateSequenceLocks(block, CalculateSequenceLocks(tx, flags, prevHeights, block));
 }
 
 namespace Consensus {

@@ -55,8 +55,7 @@ bool ContextualCheckTransaction(const Consensus::Params &params,
  * in a block. Consensus critical. Takes as input a list of heights at which
  * tx's inputs (in order) confirmed.
  */
-bool SequenceLocks(const CTransaction &tx, int flags,
-                   std::vector<int> *prevHeights, const CBlockIndex &block);
+bool SequenceLocks(const CTransaction &tx, int flags, std::vector<int> *prevHeights, const CBlockIndex &block);
 
 /// Returns the minimum transaction size (100 for post-MagneticAnomaly, 65 for post-Upgrade9), or 0 if before those
 /// two upgrades have activated (no enforced minimum).
