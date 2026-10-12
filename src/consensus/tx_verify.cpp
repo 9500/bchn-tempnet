@@ -100,7 +100,7 @@ namespace {
  */
 std::pair<std::optional<BlockTicks>, int64_t>
 CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int> &prevheights, const CBlockIndex &block,
-                       const BlockHeightToTickMapper &mapper, CBlockIndex *fakeMempoolBlockIndex = nullptr) {
+                       const BlockHeightToTickMapper &mapper) {
     assert(prevheights.size() == tx.vin.size());
 
     // tx.nVersion is signed integer so requires cast to unsigned otherwise
@@ -138,12 +138,6 @@ CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int> &prev
         const int nCoinHeightMinus1 = std::max(nCoinHeight - 1, 0);
 
         if (txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG) {
-            if (fakeMempoolBlockIndex == &block && !fakeMempoolBlockIndex->pskip) {
-                // Caller-supplied `block` has no skip list. Before calling block.GetAncestor() below we should build
-                // it, to save on having block.GetAncestor() be reduced to iterating backward 1 block at a time.
-                fakeMempoolBlockIndex->BuildSkip();
-                fakeMempoolBlockIndex = nullptr;
-            }
             const int64_t nCoinTime = Assert(block.GetAncestor(nCoinHeightMinus1))->GetMedianTimePast();
             // NOTE: Subtract 1 to maintain nLockTime semantics.
             // BIP 68 relative lock times have the semantics of calculating the
