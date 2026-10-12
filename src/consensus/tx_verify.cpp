@@ -134,11 +134,10 @@ CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int> &prev
             continue;
         }
 
-        const int nCoinHeight = std::max(prevheights[txinIndex], 0);
-        const int nCoinHeightMinus1 = std::max(nCoinHeight - 1, 0);
+        const int nCoinHeight = std::max(prevheights[txinIndex], 0); // Negative heights here make no sense; force min 0
 
         if (txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG) {
-            const int64_t nCoinTime = Assert(block.GetAncestor(nCoinHeightMinus1))->GetMedianTimePast();
+            const int64_t nCoinTime = Assert(block.GetAncestor(std::max(nCoinHeight - 1, 0)))->GetMedianTimePast();
             // NOTE: Subtract 1 to maintain nLockTime semantics.
             // BIP 68 relative lock times have the semantics of calculating the
             // first block or time at which the transaction would be valid. When
@@ -158,21 +157,12 @@ CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int> &prev
                     1);
         } else {
             // We need to scale the raw locktime "as if" we were still on 10-mins blocks in order to calculate in terms
-            // of ticks.
+            // of ticks. NOTE: We subtract 1 here as well to maintain semantics.
             const int rawLockTime = static_cast<int>(txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_MASK);
             const int64_t locktimeScaled = rawLockTime * legacy::POW_TARGET_SPACING_TICKS.toSecs();
             const BlockTicks coinTicks = mapper.HeightToTick(nCoinHeight);
-            const BlockTicks coinBlockInterval = mapper.GetBlockTickIntervalForHeight(nCoinHeightMinus1);
 
-            minTicks = std::max(minTicks, coinTicks.toSecs() + locktimeScaled
-                                              // Deduct this coin's own contribution to its confirmations in terms of
-                                              // ticks. This emulates "-1" from the legacy height calc, but it also
-                                              // ensures correct behavior around the boundary between blocktime changes.
-                                              // For example, a raw locktime value of "1" would be accepted on the 1st
-                                              // 1-min block after the coin was confirmed in a 10-min block, but if it
-                                              // was confirmed in a 1-min block, it would be accepted on the 10th 1-min
-                                              // block after its confirmation.
-                                              - coinBlockInterval.toSecs());
+            minTicks = std::max(minTicks, coinTicks.toSecs() + locktimeScaled - 1);
         }
     }
 
