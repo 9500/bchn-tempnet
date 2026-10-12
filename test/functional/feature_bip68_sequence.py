@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2019 The Bitcoin Core developers
+# Copyright (c) 2019-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test BIP68 implementation."""
@@ -45,8 +46,8 @@ NOT_FINAL_ERROR = "non-BIP68-final (code 64)"
 class BIP68Test(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
-        self.extra_args = [["-noparkdeepreorg", "-maxreorgdepth=-1", "-acceptnonstdtxn=1"],
-                           ["-acceptnonstdtxn=0", "-maxreorgdepth=-1"]]
+        self.extra_args = [["-noparkdeepreorg", "-maxreorgticks=-1", "-acceptnonstdtxn=1"],
+                           ["-acceptnonstdtxn=0", "-maxreorgticks=-1"]]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()

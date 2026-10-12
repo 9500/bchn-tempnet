@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2018-2021 The Bitcoin developers
+# Copyright (c) 2018-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the parckblock and unparkblock RPC calls."""
@@ -16,7 +16,7 @@ class ParkedChainTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.extra_args = [["-noparkdeepreorg",
-                            "-noautomaticunparking", "-whitelist=noban@127.0.0.1"], ["-maxreorgdepth=-1"]]
+                            "-noautomaticunparking", "-whitelist=noban@127.0.0.1"], ["-maxreorgticks=-1"]]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
