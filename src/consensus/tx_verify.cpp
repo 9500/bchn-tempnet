@@ -15,6 +15,7 @@
 #include <node/blockheighttotickmapper.h>
 #include <primitives/transaction.h>
 #include <script/script_flags.h>
+#include <util/check.h>
 #include <util/moneystr.h> // For FormatMoney
 #include <version.h>       // For PROTOCOL_VERSION
 
@@ -92,36 +93,36 @@ bool ContextualCheckTransaction(const Consensus::Params &params,
 
 namespace {
 /**
- * Calculates the block height and previous block's median time past at
+ * Calculates the block ticks and previous block's median time past at
  * which the transaction will be considered final in the context of BIP 68.
  * Also removes from the vector of input heights any entries which did not
  * correspond to sequence locked inputs as they do not affect the calculation.
  */
-std::pair<int, int64_t>
-CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int> *prevHeights, const CBlockIndex &block) {
-    assert(prevHeights->size() == tx.vin.size());
-
-    // Will be set to the equivalent height- and time-based nLockTime
-    // values that would be necessary to satisfy all relative lock-
-    // time constraints given our view of block chain history.
-    // The semantics of nLockTime are the last invalid height/time, so
-    // use -1 to have the effect of any height or time being valid.
-    int nMinHeight = -1;
-    int64_t nMinTime = -1;
+std::pair<std::optional<BlockTicks>, int64_t>
+CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int> &prevheights, const CBlockIndex &block,
+                       const BlockHeightToTickMapper &mapper, CBlockIndex *fakeMempoolBlockIndex = nullptr) {
+    assert(prevheights.size() == tx.vin.size());
 
     // tx.nVersion is signed integer so requires cast to unsigned otherwise
     // we would be doing a signed comparison and half the range of nVersion
     // wouldn't support BIP 68.
-    bool fEnforceBIP68 = static_cast<uint32_t>(tx.nVersion) >= 2 &&
-                         flags & LOCKTIME_VERIFY_SEQUENCE;
+    const bool fEnforceBIP68 = static_cast<uint32_t>(tx.nVersion) >= 2 && flags & LOCKTIME_VERIFY_SEQUENCE;
 
     // Do not enforce sequence numbers as a relative lock time
     // unless we have been instructed to
     if (!fEnforceBIP68) {
-        return std::make_pair(nMinHeight, nMinTime);
+        return {std::nullopt, -1};
     }
 
-    for (size_t txinIndex = 0; txinIndex < tx.vin.size(); txinIndex++) {
+    // Will be set to the equivalent ticks- and time-based nLockTime
+    // values that would be necessary to satisfy all relative lock-
+    // time constraints given our view of block chain history.
+    // The semantics of nLockTime are the last invalid ticks/time, so
+    // -1 to have the effect of any ticks or time being valid.
+    int64_t minTicks = -1;
+    int64_t nMinTime = -1;
+
+    for (size_t txinIndex = 0; txinIndex < tx.vin.size(); ++txinIndex) {
         const CTxIn &txin = tx.vin[txinIndex];
 
         // Sequence numbers with the most significant bit set are not
@@ -129,15 +130,21 @@ CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int> *prev
         // consensus-enforced meaning at this point.
         if (txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_DISABLE_FLAG) {
             // The height of this input is not relevant for sequence locks
-            (*prevHeights)[txinIndex] = 0;
+            prevheights[txinIndex] = 0;
             continue;
         }
 
-        int nCoinHeight = (*prevHeights)[txinIndex];
+        const int nCoinHeight = std::max(prevheights[txinIndex], 0);
+        const int nCoinHeightMinus1 = std::max(nCoinHeight - 1, 0);
 
         if (txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG) {
-            int64_t nCoinTime = block.GetAncestor(std::max(nCoinHeight - 1, 0))
-                                    ->GetMedianTimePast();
+            if (fakeMempoolBlockIndex == &block && !fakeMempoolBlockIndex->pskip) {
+                // Caller-supplied `block` has no skip list. Before calling block.GetAncestor() below we should build
+                // it, to save on having block.GetAncestor() be reduced to iterating backward 1 block at a time.
+                fakeMempoolBlockIndex->BuildSkip();
+                fakeMempoolBlockIndex = nullptr;
+            }
+            const int64_t nCoinTime = Assert(block.GetAncestor(nCoinHeightMinus1))->GetMedianTimePast();
             // NOTE: Subtract 1 to maintain nLockTime semantics.
             // BIP 68 relative lock times have the semantics of calculating the
             // first block or time at which the transaction would be valid. When
@@ -156,20 +163,36 @@ CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int> *prev
                             << CTxIn::SEQUENCE_LOCKTIME_GRANULARITY) -
                     1);
         } else {
-            nMinHeight = std::max(
-                nMinHeight,
-                nCoinHeight +
-                    int(txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_MASK) - 1);
+            // We need to scale the raw locktime "as if" we were still on 10-mins blocks in order to calculate in terms
+            // of ticks.
+            const int rawLockTime = static_cast<int>(txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_MASK);
+            const int64_t locktimeScaled = rawLockTime * legacy::POW_TARGET_SPACING_TICKS.toSecs();
+            const BlockTicks coinTicks = mapper.HeightToTick(nCoinHeight);
+            const BlockTicks coinBlockInterval = mapper.GetBlockTickIntervalForHeight(nCoinHeightMinus1);
+
+            minTicks = std::max(minTicks, coinTicks.toSecs() + locktimeScaled
+                                              // Deduct this coin's own contribution to its confirmations in terms of
+                                              // ticks. This emulates "-1" from the legacy height calc, but it also
+                                              // ensures correct behavior around the boundary between blocktime changes.
+                                              // For example, a raw locktime value of "1" would be accepted on the 1st
+                                              // 1-min block after the coin was confirmed in a 10-min block, but if it
+                                              // was confirmed in a 1-min block, it would be accepted on the 10th 1-min
+                                              // block after its confirmation.
+                                              - coinBlockInterval.toSecs());
         }
     }
 
-    return std::make_pair(nMinHeight, nMinTime);
+    std::optional<BlockTicks> optMinTicks;
+    if (minTicks >= 0) {
+        optMinTicks = BlockTicks{static_cast<uint64_t>(minTicks)};
+    }
+    return {optMinTicks, nMinTime};
 }
 
-bool EvaluateSequenceLocks(const CBlockIndex &block, std::pair<int, int64_t> lockPair) {
+bool EvaluateSequenceLocks(const CBlockIndex &block, const std::pair<std::optional<BlockTicks>, int64_t> &lockPair) {
     assert(block.pprev);
-    int64_t nBlockTime = block.pprev->GetMedianTimePast();
-    if (lockPair.first >= block.nHeight || lockPair.second >= nBlockTime) {
+    const int64_t nBlockTime = block.pprev->GetMedianTimePast();
+    if (lockPair.first >= block.GetBlockTicks() || lockPair.second >= nBlockTime) {
         return false;
     }
 
@@ -177,8 +200,9 @@ bool EvaluateSequenceLocks(const CBlockIndex &block, std::pair<int, int64_t> loc
 }
 } // namespace
 
-bool SequenceLocks(const CTransaction &tx, int flags, std::vector<int> *prevHeights, const CBlockIndex &block) {
-    return EvaluateSequenceLocks(block, CalculateSequenceLocks(tx, flags, prevHeights, block));
+bool SequenceLocks(const CTransaction &tx, int flags, std::vector<int> &prevheights,
+                   const CBlockIndex &block, const BlockHeightToTickMapper &mapper) {
+    return EvaluateSequenceLocks(block, CalculateSequenceLocks(tx, flags, prevheights, block, mapper));
 }
 
 namespace Consensus {
