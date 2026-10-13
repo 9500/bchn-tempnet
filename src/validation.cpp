@@ -246,7 +246,7 @@ private:
 
     void InvalidBlockFound(CBlockIndex *pindex, const CValidationState &state)
         EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-    CBlockIndex *FindMostWorkChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    CBlockIndex *FindMostWorkChain(const Consensus::Params &params) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     void ReceivedBlockTransactions(const CBlock &block, CBlockIndex *pindexNew,
                                    const FlatFilePos &pos)
         EXCLUSIVE_LOCKS_REQUIRED(cs_main);
@@ -2650,7 +2650,7 @@ bool CChainState::ConnectTip(const Config &config, CValidationState &state,
  * Return the tip of the chain with the most work in it, that isn't known to be
  * invalid (it's however far from certain to be valid).
  */
-CBlockIndex *CChainState::FindMostWorkChain() {
+CBlockIndex *CChainState::FindMostWorkChain(const Consensus::Params &params) {
     AssertLockHeld(cs_main);
     do {
         CBlockIndex *pindexNew = nullptr;
@@ -2703,16 +2703,7 @@ CBlockIndex *CChainState::FindMostWorkChain() {
 
                 arith_uint256 requiredWork = pindexTip->nChainWork;
 
-                auto OurChainIsOn10MinBlocks = [&] {
-                    const int tipHeightDiff = pindexTip->nHeight - pindexFork->nHeight;
-                    // If the below is true, then we are on a 10-min block chain (height vs tick diff matches expected)
-                    return tipHeightDiff * legacy::POW_TARGET_SPACING_TICKS == pindexTip->TickDiff(pindexFork)
-                           // Extra paranoia check to ensure assumptions about the tip's interval, etc, match
-                           // what Amaury's algo expects.
-                           && pindexTip->GetTickDeltaForThisBlock() == legacy::POW_TARGET_SPACING_TICKS;
-                };
-
-                if (OurChainIsOn10MinBlocks()) {
+                if (!IsUpgrade2027Enabled(params, pindexTip->pprev)) {
                     // Old Amaury reorg protection heuristics (pre FABLOUS CHIP)
 
                     // A parked chain can be unparked if it has twice as much PoW
@@ -3065,7 +3056,7 @@ bool CChainState::ActivateBestChain(const Config &config,
                 ConnectTrace connectTrace(g_mempool);
 
                 if (pindexMostWork == nullptr) {
-                    pindexMostWork = FindMostWorkChain();
+                    pindexMostWork = FindMostWorkChain(params.GetConsensus());
                 }
 
                 // Whether we have anything to do at all.
