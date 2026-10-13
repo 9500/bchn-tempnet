@@ -4206,7 +4206,7 @@ bool CChainState::AcceptBlock(const Config &config,
                      block.GetHash().ToString());
     }
 
-    // If connecting the new block would require rewinding more than one block
+    // If connecting the new block would require rewinding more than one 10-min block (or >10 1-min blocks)
     // from the active chain (i.e., a "deep reorg"), then mark the new block as
     // parked. If it has enough work then it will be automatically unparked
     // later, during FindMostWorkChain. We mark the block as parked at the very
@@ -4214,9 +4214,8 @@ bool CChainState::AcceptBlock(const Config &config,
     // needed.
     if (gArgs.GetBoolArg("-parkdeepreorg", DEFAULT_PARK_DEEP_REORG)) {
         const CBlockIndex *pindexFork = m_chain.FindFork(pindex);
-        if (pindexFork && pindexFork->nHeight + 1 < m_chain.Height()) {
-            LogPrintf("Park block %s as it would cause a deep reorg.\n",
-                      pindex->GetBlockHash().ToString());
+        if (pindexFork && pindexFork->GetBlockTicks() + legacy::POW_TARGET_SPACING_TICKS < m_chain.Ticks()) {
+            LogPrintf("Park block %s as it would cause a deep reorg.\n", pindex->GetBlockHash().ToString());
             pindex->nStatus = pindex->nStatus.withParked();
             setDirtyBlockIndex.insert(pindex);
         }

@@ -644,6 +644,12 @@ public:
      */
     int Height() const { return vChain.size() - 1; }
 
+    /** Return the tip->GetBlockTicks() or BlockTicks{0} if no chain */
+    BlockTicks Ticks() const {
+        const auto *tip = Tip();
+        return tip ? tip->GetBlockTicks() : BlockTicks{0};
+    }
+
     /** Set/initialize a chain with a given tip. */
     void SetTip(CBlockIndex *pindex);
 
