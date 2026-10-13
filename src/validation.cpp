@@ -2675,7 +2675,7 @@ CBlockIndex *CChainState::FindMostWorkChain() {
             InvalidChainFound(pindexNew);
         }
 
-        const CBlockIndex *pindexFork = m_chain.FindFork(pindexNew);
+        const CBlockIndex * const pindexFork = m_chain.FindFork(pindexNew);
 
         // Check whether all blocks on the path between the currently active
         // chain and the candidate are valid. Just going until the active chain
@@ -2689,7 +2689,7 @@ CBlockIndex *CChainState::FindMostWorkChain() {
             // state.
             bool fParkedChain = pindexTest->nStatus.isOnParkedChain();
             if (fParkedChain && gArgs.GetBoolArg("-automaticunparking", DEFAULT_AUTOMATIC_UNPARKING)) {
-                const CBlockIndex *pindexTip = m_chain.Tip();
+                const CBlockIndex * const pindexTip = m_chain.Tip();
 
                 // During initialization, pindexTip and/or pindexFork may be
                 // null. In this case, we just ignore the fact that the chain is
@@ -2701,73 +2701,79 @@ CBlockIndex *CChainState::FindMostWorkChain() {
                     continue;
                 }
 
-                // A parked chain can be unparked if it has twice as much PoW
-                // accumulated as the main chain has since the fork block.
-                CBlockIndex const *pindexExtraPow = pindexTip;
                 arith_uint256 requiredWork = pindexTip->nChainWork;
-                // We pretend these were 10-min blocks and "emulate" 10 min block height diff, even if we are on a
-                // faster blocktime.
-                auto EmulateDepth = [](const CBlockIndex *hi, const CBlockIndex *lo) -> std::pair<uint64_t, uint64_t> {
-                    const auto a = hi->GetBlockTicks(), b = lo->GetBlockTicks();
-                    if (a < b) [[unlikely]] {
-                        // Defensive programming: In case calling code passes some impossible values here, we
-                        // should just return 0,0 rather than some wraped-around impossibly high "depth".
-                        // In that case the subsequent code will recover the situation as best it can but if we
-                        // take this branch it does indicate a programming error of some sort in surrounding code.
-                        LogPrintf("WARNING: FindMostWorkChain::EmulateDepth got passed some invalid parameters:"
-                                  " %u < %u!\n", a.value(), b.value());
-                        return {0, 0};
-                    }
-                    const auto tickDiff = a - b;
-                    static_assert(legacy::POW_TARGET_SPACING_TICKS.value() > 0);
-                    const auto div = tickDiff / legacy::POW_TARGET_SPACING_TICKS;
-                    const auto rem = tickDiff % legacy::POW_TARGET_SPACING_TICKS;
-                    return {div, rem};
+
+                auto OurChainIsOn10MinBlocks = [&] {
+                    const int tipHeightDiff = pindexTip->nHeight - pindexFork->nHeight;
+                    // If the below is true, then we are on a 10-min block chain (height vs tick diff matches expected)
+                    return tipHeightDiff * legacy::POW_TARGET_SPACING_TICKS == pindexTip->TickDiff(pindexFork)
+                           // Extra paranoia check to ensure assumptions about the tip's interval, etc, match
+                           // what Amaury's algo expects.
+                           && pindexTip->GetTickDeltaForThisBlock() == legacy::POW_TARGET_SPACING_TICKS;
                 };
-                const auto [emulatedDepth, remainder] = EmulateDepth(pindexTip, pindexFork);
-                switch (emulatedDepth) {
-                    // Impose a penalty in switching to another chain on a "deep" reorg (defined as >= 4 10-min blocks).
-                    // We limit the penality for emulated depth 1, 2 and 3 to under 1.5x to ensure we don't encourage
-                    // accidental chain splits. At emulated depth >= 4, we impose a 2x work penalty before we switch
-                    // to the other chain.
-                    case 3:
-                    case 2:
-                        // Emulate going back "1 full 10 min block" (= 10 blocks if 1-min blocks)
-                        for (;;) {
+
+                if (OurChainIsOn10MinBlocks()) {
+                    // Old Amaury reorg protection heuristics (pre FABLOUS CHIP)
+
+                    // A parked chain can be unparked if it has twice as much PoW
+                    // accumulated as the main chain has since the fork block.
+                    CBlockIndex const *pindexExtraPow = pindexTip;
+                    switch (pindexTip->nHeight - pindexFork->nHeight) {
+                        // Limit the penality for depth 1, 2 and 3 to half a block
+                        // worth of work to ensure we don't fork accidentally.
+                        case 3:
+                        case 2:
                             pindexExtraPow = pindexExtraPow->pprev;
-                            const auto [d, r] = EmulateDepth(pindexExtraPow, pindexFork);
-                            if ((d == emulatedDepth - 1 && r <= remainder)
-                                /* extra clause for unlikely corner case where we crossed a blocktime change boundary */
-                                || d <= emulatedDepth - 2 ) {
-                                // We went back "1 full 10 min block" worth of blocks; end for() loop
-                                break;
-                            }
+                            [[fallthrough]];
+                        case 1: {
+                            const arith_uint256 deltaWork = pindexExtraPow->nChainWork - pindexFork->nChainWork;
+                            requiredWork += (deltaWork >> 1);
+                            break;
                         }
-                        [[fallthrough]];
-                    case 1: {
-                        // 1 block height difference in 10-min block mode, or 10-19 blocks height difference in 1-min
-                        // block mode: to reorg to the other chain, its branch must have 1.5x the work from the common
-                        // fork block than this branch has.
-                        const arith_uint256 deltaWork = pindexExtraPow->nChainWork - pindexFork->nChainWork;
-                        requiredWork += (deltaWork >> 1);
-                        break;
+                        default:
+                            requiredWork += pindexExtraPow->nChainWork - pindexFork->nChainWork;
+                            break;
                     }
-                    case 0:
-                        // "0 blocks" worth of emulated height difference -- this branch is not taken on 10-min blocks.
-                        // However, on 1-min blocks is means the first 1-9 blocks in a split impose no reorg penalty;
-                        // we merely switch to the other chain iff it has more work (aka original Satoshi client logic).
-                        break;
-                    default:
-                        // >=4 blocks in 10-min mode or >=40 blocks in 1 min block mode; the other branch must have
-                        // 2x more work from the common fork block than this branch, otherwise we don't switch.
-                        requiredWork += pindexExtraPow->nChainWork - pindexFork->nChainWork;
-                        break;
+                } else {
+                    // New FABLOUS reorg protection heuristics -- at least part of the comparison involves 1-min
+                    // blocks so we scale everything to ticks, and use a modified formula that approximates Amaury's
+                    // heuristics but offers a smoother curve for the penalty around the 10-39 block span.
+                    //
+                    // With `D` the defending branch's work since fork, `E` the competing chain's work since fork, and
+                    // `d` the divergence depth in ticks, the competing chain is accepted only if `E > D + P`, where the
+                    // required excess `P` is:
+                    //
+                    // - `0`                 when `d < 600`         ; [0,9]   blocks ; no extra penalty
+                    // - `D * d^2 / 2400^2`  when `600 <= d < 2400` ; [10,39] blocks ; P ramps up from D * 0.0625 -> D * 0.950625
+                    // - `D`                 when `d >= 2400`       ; [40,∞]  blocks ; P == D (Amaury-identical), E > 2D
+                    //
+                    Assume(pindexTip->GetBlockTicks() >= pindexFork->GetBlockTicks());
+                    const BlockTicks tickDeltaSinceFork = pindexTip->TickDiff(pindexFork);
+
+                    // If the difference between the 2 chains is 10 or more 1-min blocks, impose an extra penalty
+                    if (tickDeltaSinceFork >= legacy::POW_TARGET_SPACING_TICKS) {
+                        const arith_uint256 defendingTipWorkSinceFork = pindexTip->nChainWork - pindexFork->nChainWork;
+                        if (constexpr BlockTicks four10MinBlocks = legacy::POW_TARGET_SPACING_TICKS * 4;
+                                tickDeltaSinceFork < four10MinBlocks) {
+                            static_assert(four10MinBlocks.toSecs() > 0, "Prevent divide by 0 or negative");
+                            // Note that we don't guard against overflow here. We assume that defendingTipWorkSinceFork
+                            // when multiplied by tickDeltaSinceFork² will not overflow. This should be the case always
+                            // unless somehow the chain we are on has some crazy impossiblly high difficulty where we
+                            // somehow got 2^224 worth of work since pindexFork (if that occurs it means Bitcoin breaks
+                            // since nChainWork has wrapped around or will wrap around soon anyway; so we have bigger
+                            // problems than this reorg protection algo not working to spec).
+                            requiredWork += defendingTipWorkSinceFork * (tickDeltaSinceFork.toSecs() * tickDeltaSinceFork.toSecs())
+                                            / (four10MinBlocks.toSecs() * four10MinBlocks.toSecs());
+                        } else {
+                            // >= 40 1-min blocks -> new chain must have 2x the work of this chain since the fork
+                            requiredWork += defendingTipWorkSinceFork;
+                        }
+                    }
                 }
 
                 if (pindexNew->nChainWork > requiredWork) {
                     // We have enough, clear the parked state.
-                    LogPrintf("Unpark chain up to block %s as it has "
-                              "accumulated enough PoW.\n",
+                    LogPrintf("Unpark chain up to block %s as it has accumulated enough PoW.\n",
                               pindexNew->GetBlockHash().ToString());
                     fParkedChain = false;
                     UnparkBlock(pindexTest);
