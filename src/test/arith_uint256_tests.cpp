@@ -1,21 +1,25 @@
 // Copyright (c) 2011-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2020 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <arith_uint256.h>
 
 #include <uint256.h>
+#include <util/defer.h>
 #include <version.h>
 
 #include <test/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
 #include <limits>
+#include <memory>
+#include <new>
 #include <sstream>
 #include <string>
 
@@ -674,6 +678,35 @@ BOOST_AUTO_TEST_CASE(getmaxcoverage) {
     CHECKBITWISEOPERATOR(R1, ~R2, |)
     CHECKBITWISEOPERATOR(R1, ~R2, ^)
     CHECKBITWISEOPERATOR(R1, ~R2, &)
+}
+
+// Use of the new Uninitialized c'tor
+BOOST_AUTO_TEST_CASE(uninitialized_vs_default_ctor) {
+    std::allocator<arith_uint256> allocator;
+    arith_uint256 *uninitialized = allocator.allocate(1);
+    Defer d = [&] { allocator.deallocate(uninitialized, 1); }; // free mem on scope end
+
+    uint8_t *rawmem = std::launder(reinterpret_cast<uint8_t *>(uninitialized));
+    static constexpr uint8_t uninitializedByte = 0xfa;
+    const auto end = rawmem + sizeof(arith_uint256);
+    // fill raw memory with a known byte
+    std::fill(rawmem, end, uninitializedByte);
+
+    // construct using the `Uninitialized` tag to tel the class not to clear mem
+    arith_uint256 *a = std::construct_at(uninitialized, arith_uint256::Uninitialized);
+    // We want to do this, but it's UB: BOOST_CHECK_EQUAL(a->GetHex(), "fafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafa");
+    std::destroy_at(a);
+    // So, we just verify that the raw memory remains untouched
+    rawmem = std::launder(rawmem);
+    BOOST_CHECK(std::all_of(rawmem, end, [](const uint8_t val){ return val == uninitializedByte; }));
+
+    // while we are here, do the same with the default c'tor to verify that it zeroes out memory
+    a = std::construct_at(uninitialized);
+    BOOST_CHECK_EQUAL(a->GetHex(), "0000000000000000000000000000000000000000000000000000000000000000");
+    std::destroy_at(a);
+    // verify that the raw memory remains cleared
+    rawmem = std::launder(rawmem);
+    BOOST_CHECK(std::all_of(rawmem, end, [](const uint8_t val){ return val == 0; }));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
