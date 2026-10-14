@@ -1808,7 +1808,7 @@ bool AppInitParameterInteraction(Config &config) {
         if (!chainparams.GetConsensus().fPowNoRetargeting) {
             return InitError("-forceblocksize argument is only for regtest");
         }
-        const auto oldVal = config.GetDefaultConsensusBlockSize();
+        const auto oldVal = config.GetDefaultConsensusBlockSize(legacy::POW_TARGET_SPACING_TICKS); // always in terms of 10min blocks
         const auto val = gArgs.GetArg("-forceblocksize", -1);
         if (val < 0 || !config.SetBlockSizeOverride(static_cast<uint64_t>(val))) {
             return InitError("-forceblocksize: bad value specified");
@@ -1832,7 +1832,8 @@ bool AppInitParameterInteraction(Config &config) {
             }
             // Warn if blockmaxsize does exceed the default block size.
             config.SetGeneratedBlockSizeBytes(nProposedMaxGeneratedBlockSize);
-            if (auto def = config.GetDefaultConsensusBlockSize(); uint64_t(nProposedMaxGeneratedBlockSize) > def) {
+            if (auto def = config.GetDefaultConsensusBlockSize(legacy::POW_TARGET_SPACING_TICKS); /* in terms of 10 min blocks */
+                    uint64_t(nProposedMaxGeneratedBlockSize) > def) {
                 LogPrintf("Warning: Max generated block size (blockmaxsize) specified (%d) exceeds the chain default of"
                           " %u. Blocks will be mined with the default %u limit unless ABLA raises the max block size"
                           " beyond the default (based on demand), at which time block sizes will be capped at the"
@@ -1852,9 +1853,10 @@ bool AppInitParameterInteraction(Config &config) {
         }
     }
 
-    // mempool limits
+    // mempool limits (this is calculated in terms of 10-min blocks)
     const int64_t nMempoolSizeMax =
-        ONE_MEGABYTE * gArgs.GetArg("-maxmempool", DEFAULT_MAX_MEMPOOL_SIZE_PER_MB * config.GetDefaultConsensusBlockSize()
+        ONE_MEGABYTE * gArgs.GetArg("-maxmempool", DEFAULT_MAX_MEMPOOL_SIZE_PER_MB
+                                                   * config.GetDefaultConsensusBlockSize(legacy::POW_TARGET_SPACING_TICKS)
                                                    / ONE_MEGABYTE);
     if (nMempoolSizeMax < 0) {
         return InitError("-maxmempool must be at least 0 MB");
