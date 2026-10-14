@@ -33,7 +33,7 @@ public:
         The returned value is scaled based on `blockInterval`.
         Note: If ABLA is enabled, this is the max block size floor for ABLA.
         Note2: May return the value (if any) set by SetBlockSizeOverride(), scaled for `blockInterval` (functional tests only). */
-    virtual uint64_t GetDefaultConsensusBlockSize(BlockTicks blockInterval = legacy::POW_TARGET_SPACING_TICKS) const = 0;
+    virtual uint64_t GetDefaultConsensusBlockSize(BlockTicks blockInterval) const = 0;
 
     /** Functional tests only: corresponds to the hidden CLI arg: -forceblocksize */
     virtual bool SetBlockSizeOverride(std::optional<uint64_t> overrideBlockSize10Mins) = 0;
@@ -91,7 +91,7 @@ public:
 class GlobalConfig final : public Config {
 public:
     GlobalConfig();
-    uint64_t GetDefaultConsensusBlockSize(BlockTicks blockInterval = legacy::POW_TARGET_SPACING_TICKS) const override;
+    uint64_t GetDefaultConsensusBlockSize(BlockTicks blockInterval) const override;
     bool SetBlockSizeOverride(std::optional<uint64_t> blockSize10Mins) override;
     uint64_t GetMaxBlockSizeLookAheadGuess() const override;
     void NotifyMaxBlockSizeLookAheadGuessChanged(uint64_t) const override;
@@ -160,7 +160,7 @@ public:
     DummyConfig();
     DummyConfig(const std::string &net);
     DummyConfig(std::unique_ptr<CChainParams> chainParamsIn);
-    uint64_t GetDefaultConsensusBlockSize(BlockTicks = legacy::POW_TARGET_SPACING_TICKS) const override { return 0; }
+    uint64_t GetDefaultConsensusBlockSize(BlockTicks) const override { return 0; }
     bool SetBlockSizeOverride(std::optional<uint64_t>) override { return false; }
     uint64_t GetMaxBlockSizeLookAheadGuess() const override { return 0; }
     void NotifyMaxBlockSizeLookAheadGuessChanged(uint64_t) const override {}

@@ -46,7 +46,8 @@ void GlobalConfig::NotifyMaxBlockSizeLookAheadGuessChanged(uint64_t nSize10Mins)
 }
 
 uint64_t GlobalConfig::GetMaxBlockSizeLookAheadGuess() const {
-    return std::clamp(nMaxBlockSizeWorstCaseGuess10Mins.load(), GetDefaultConsensusBlockSize(), MAX_CONSENSUS_BLOCK_SIZE);
+    return std::clamp(nMaxBlockSizeWorstCaseGuess10Mins.load(), GetDefaultConsensusBlockSize(legacy::POW_TARGET_SPACING_TICKS),
+                      MAX_CONSENSUS_BLOCK_SIZE);
 }
 
 uint64_t GlobalConfig::GetDefaultConsensusBlockSize(const BlockTicks blockInterval) const {
