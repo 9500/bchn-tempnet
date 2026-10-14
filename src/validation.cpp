@@ -2741,31 +2741,35 @@ CBlockIndex *CChainState::FindMostWorkChain(const Consensus::Params &params) {
                     Assume(pindexTip->GetBlockTicks() >= pindexFork->GetBlockTicks());
                     const BlockTicks tickDeltaSinceFork = pindexTip->TickDiff(pindexFork);
 
-                    const arith_uint256 defendingTipWorkSinceFork = pindexTip->nChainWork - pindexFork->nChainWork;
+                    arith_uint256 deltaWork = pindexTip->nChainWork - pindexFork->nChainWork; // may be modified below
                     constexpr BlockTicks four10MinBlocks = legacy::POW_TARGET_SPACING_TICKS * 4;
-                    static_assert(four10MinBlocks.toSecs() > 0, "Paranoia against divide by 0 or negative");
-                    static_assert(std::in_range<uint32_t>(four10MinBlocks.toSecs() * four10MinBlocks.toSecs()), "Overflow paranoia");
-                    constexpr uint32_t four10MinBlocksSquared = four10MinBlocks.toSecs() * four10MinBlocks.toSecs();
-                    constexpr uint32_t legacyPowSpacingSquared = legacy::POW_TARGET_SPACING_TICKS.toSecs()
-                                                                 * legacy::POW_TARGET_SPACING_TICKS.toSecs();
 
-                    // Note that we don't guard against overflow here. We assume that `defendingTipWorkSinceFork`
-                    // when multiplied by tickDeltaSinceFork² and/or legacyPowSpacingSquared will not overflow.
-                    // This should be the case always unless somehow the chain we are on has some crazy impossibly
-                    // high difficulty where we somehow got 2^224 worth of work since pindexFork (if that occurs it
-                    // means Bitcoin breaks since nChainWork has wrapped around or will wrap around soon anyway; so
-                    // we have bigger problems than this reorg protection algo not working to spec in that case).
                     if (tickDeltaSinceFork < legacy::POW_TARGET_SPACING_TICKS) {
-                        // Minimum penalty: 6.25% of defendingTipWorkSinceFork
-                        requiredWork += defendingTipWorkSinceFork * legacyPowSpacingSquared
-                                        / four10MinBlocksSquared;
+                        // Minimum penalty: 6.25% of deltaWork
+                        static_assert(four10MinBlocks.toSecs() == 2400 && legacy::POW_TARGET_SPACING_TICKS.toSecs() == 600,
+                                      "Assumption being made here for the below right-shift to be equivalent to"
+                                      " the full-form expression we are optimizing away.");
+                        // This right-shift is equivalent to D * (600² / 2400²) since (600² / 2400²) == 0.0625 == 1/16
+                        deltaWork >>= 4;
+                        requiredWork += deltaWork;
                     } else if (tickDeltaSinceFork < four10MinBlocks) {
+                        // Note that we don't guard against overflow here. We assume that `deltaWork` when multiplied by
+                        // `tickDeltaSinceForkSquared` will not overflow. This should be the case always unless somehow
+                        // the chain we are on has some crazy impossibly high difficulty where we somehow got 2^224
+                        // worth of work since pindexFork (if that occurs it means Bitcoin breaks since nChainWork has
+                        // wrapped around or will wrap around soon anyway; so we have bigger problems than this reorg
+                        // protection algo not working to spec in that case).
+                        static_assert(four10MinBlocks.toSecs() > 0, "Paranoia against divide by 0 or negative");
+                        static_assert(std::in_range<uint32_t>(four10MinBlocks.toSecs() * four10MinBlocks.toSecs()), "Overflow paranoia");
+                        constexpr uint32_t four10MinBlocksSquared = four10MinBlocks.toSecs() * four10MinBlocks.toSecs();
                         // Gradual increase in penalty: Ramp up from 6.25% -> 95.0625%
-                        requiredWork += defendingTipWorkSinceFork * (tickDeltaSinceFork.toSecs() * tickDeltaSinceFork.toSecs())
-                                        / four10MinBlocksSquared;
+                        const uint32_t tickDeltaSinceForkSquared = tickDeltaSinceFork.toSecs() * tickDeltaSinceFork.toSecs();
+                        deltaWork *= tickDeltaSinceForkSquared; // use uint32_t to pick the faster operator*=(uint32_t)
+                        deltaWork /= four10MinBlocksSquared;
+                        requiredWork += deltaWork;
                     } else {
-                        // >= 40 1-min blocks -> new chain must have 2x the work of this chain since the fork
-                        requiredWork += defendingTipWorkSinceFork;
+                        // >= 40 1-min blocks -> new chain (since fork) must have 2x the work of this chain since the fork
+                        requiredWork += deltaWork;
                     }
                 }
 
