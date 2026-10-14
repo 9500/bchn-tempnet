@@ -2859,7 +2859,7 @@ static UniValue scantxoutset(const Config &config, const JSONRPCRequest &request
             unspent.emplace_back("ticks", coinBlockIndex.GetBlockTicks().toSecs());
             unspent.emplace_back("blockhash", coinBlockIndex.GetBlockHash().ToString());
             unspent.emplace_back("confirmations", static_cast<uint32_t>(chainTip.nHeight) - coin.GetHeight() + 1u);
-            unspent.emplace_back("confirmations_ticks", (chainTip.TickDiff(&coinBlockIndex) + chainTip.GetTickDeltaForThisBlock()).toSecs());
+            unspent.emplace_back("confirmations_ticks", (chainTip.TickDiff(&coinBlockIndex) + coinBlockIndex.GetTickDeltaForThisBlock()).toSecs());
             if (txo.tokenDataPtr) {
                 unspent.emplace_back("tokenData", TokenDataToUniv(*txo.tokenDataPtr));
                 if (txo.tokenDataPtr->HasAmount()) {
