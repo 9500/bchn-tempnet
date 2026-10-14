@@ -170,7 +170,7 @@ bool IsUpgrade12Enabled(const Consensus::Params &params, const CBlockIndex *pind
 // Upgrade 2027
 std::optional<int64_t> g_Upgrade2027TimeOverride;
 
-static bool IsUpgrade2027Enabled(const Consensus::Params &params, const int64_t nMedianTimePast) {
+bool IsUpgrade2027EnabledForMTPPrev(const Consensus::Params &params, const int64_t nMedianTimePastPrev) {
     // Implementation note: This upgrade shortens the block time from 10 mins -> 1 min. In the future,
     // any upgrade that wants to shorten or lengthen the block time must satisfy the following
     // constraints for the upgrade block and for the new interval chosen:
@@ -189,7 +189,7 @@ static bool IsUpgrade2027Enabled(const Consensus::Params &params, const int64_t 
     // If the above constraints are not satisfied when changing the block time either up or down, then economic
     // properties of the chain (as they stood under the original 10-minute block paradigm), such as block subsidy
     // halving schedule, may end up being violated.
-    return nMedianTimePast >= g_Upgrade2027TimeOverride.value_or(params.upgrade2027ActivationTime);
+    return nMedianTimePastPrev >= g_Upgrade2027TimeOverride.value_or(params.upgrade2027ActivationTime);
 }
 
 bool IsUpgrade2027Enabled(const Consensus::Params &params, const CBlockIndex *pindexPrev) {
@@ -197,5 +197,5 @@ bool IsUpgrade2027Enabled(const Consensus::Params &params, const CBlockIndex *pi
         return false;
     }
 
-    return IsUpgrade2027Enabled(params, pindexPrev->GetMedianTimePast());
+    return IsUpgrade2027EnabledForMTPPrev(params, pindexPrev->GetMedianTimePast());
 }

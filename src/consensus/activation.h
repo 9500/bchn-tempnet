@@ -99,4 +99,5 @@ int32_t GetUpgrade12ActivationHeight(const Consensus::Params &params);
 extern std::optional<int64_t> g_Upgrade2027TimeOverride;
 
 /** Check if May 15th, 2027 protocol upgrade has activated. */
+bool IsUpgrade2027EnabledForMTPPrev(const Consensus::Params &params, const int64_t nMedianTimePastPrev);
 bool IsUpgrade2027Enabled(const Consensus::Params &params, const CBlockIndex *pindexPrev);
