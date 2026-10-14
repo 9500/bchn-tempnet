@@ -2734,31 +2734,38 @@ CBlockIndex *CChainState::FindMostWorkChain(const Consensus::Params &params) {
                     // `d` the divergence depth in ticks, the competing chain is accepted only if `E > D + P`, where the
                     // required excess `P` is:
                     //
-                    // - `0`                 when `d < 600`         ; [0,9]   blocks ; no extra penalty
-                    // - `D * d^2 / 2400^2`  when `600 <= d < 2400` ; [10,39] blocks ; P ramps up from D * 0.0625 -> D * 0.950625
-                    // - `D`                 when `d >= 2400`       ; [40,∞]  blocks ; P == D (Amaury-identical), E > 2D
+                    // - `D * 600² / 2400²` when `d < 600`         ; [0,9]   blocks ; A slight penalty of 6.25% (to preserve first-seen)
+                    // - `D * d² / 2400²`   when `600 <= d < 2400` ; [10,39] blocks ; P ramps up from D * 0.0625 -> D * 0.950625
+                    // - `D`                when `d >= 2400`       ; [40,∞]  blocks ; P == D (Amaury-identical), E > 2D
                     //
                     Assume(pindexTip->GetBlockTicks() >= pindexFork->GetBlockTicks());
                     const BlockTicks tickDeltaSinceFork = pindexTip->TickDiff(pindexFork);
 
-                    // If the difference between the 2 chains is 10 or more 1-min blocks, impose an extra penalty
-                    if (tickDeltaSinceFork >= legacy::POW_TARGET_SPACING_TICKS) {
-                        const arith_uint256 defendingTipWorkSinceFork = pindexTip->nChainWork - pindexFork->nChainWork;
-                        if (constexpr BlockTicks four10MinBlocks = legacy::POW_TARGET_SPACING_TICKS * 4;
-                                tickDeltaSinceFork < four10MinBlocks) {
-                            static_assert(four10MinBlocks.toSecs() > 0, "Prevent divide by 0 or negative");
-                            // Note that we don't guard against overflow here. We assume that defendingTipWorkSinceFork
-                            // when multiplied by tickDeltaSinceFork² will not overflow. This should be the case always
-                            // unless somehow the chain we are on has some crazy impossiblly high difficulty where we
-                            // somehow got 2^224 worth of work since pindexFork (if that occurs it means Bitcoin breaks
-                            // since nChainWork has wrapped around or will wrap around soon anyway; so we have bigger
-                            // problems than this reorg protection algo not working to spec).
-                            requiredWork += defendingTipWorkSinceFork * (tickDeltaSinceFork.toSecs() * tickDeltaSinceFork.toSecs())
-                                            / (four10MinBlocks.toSecs() * four10MinBlocks.toSecs());
-                        } else {
-                            // >= 40 1-min blocks -> new chain must have 2x the work of this chain since the fork
-                            requiredWork += defendingTipWorkSinceFork;
-                        }
+                    const arith_uint256 defendingTipWorkSinceFork = pindexTip->nChainWork - pindexFork->nChainWork;
+                    constexpr BlockTicks four10MinBlocks = legacy::POW_TARGET_SPACING_TICKS * 4;
+                    static_assert(four10MinBlocks.toSecs() > 0, "Paranoia against divide by 0 or negative");
+                    static_assert(std::in_range<uint32_t>(four10MinBlocks.toSecs() * four10MinBlocks.toSecs()), "Overflow paranoia");
+                    constexpr uint32_t four10MinBlocksSquared = four10MinBlocks.toSecs() * four10MinBlocks.toSecs();
+                    constexpr uint32_t legacyPowSpacingSquared = legacy::POW_TARGET_SPACING_TICKS.toSecs()
+                                                                 * legacy::POW_TARGET_SPACING_TICKS.toSecs();
+
+                    // Note that we don't guard against overflow here. We assume that `defendingTipWorkSinceFork`
+                    // when multiplied by tickDeltaSinceFork² and/or legacyPowSpacingSquared will not overflow.
+                    // This should be the case always unless somehow the chain we are on has some crazy impossibly
+                    // high difficulty where we somehow got 2^224 worth of work since pindexFork (if that occurs it
+                    // means Bitcoin breaks since nChainWork has wrapped around or will wrap around soon anyway; so
+                    // we have bigger problems than this reorg protection algo not working to spec in that case).
+                    if (tickDeltaSinceFork < legacy::POW_TARGET_SPACING_TICKS) {
+                        // Minimum penalty: 6.25% of defendingTipWorkSinceFork
+                        requiredWork += defendingTipWorkSinceFork * legacyPowSpacingSquared
+                                        / four10MinBlocksSquared;
+                    } else if (tickDeltaSinceFork < four10MinBlocks) {
+                        // Gradual increase in penalty: Ramp up from 6.25% -> 95.0625%
+                        requiredWork += defendingTipWorkSinceFork * (tickDeltaSinceFork.toSecs() * tickDeltaSinceFork.toSecs())
+                                        / four10MinBlocksSquared;
+                    } else {
+                        // >= 40 1-min blocks -> new chain must have 2x the work of this chain since the fork
+                        requiredWork += defendingTipWorkSinceFork;
                     }
                 }
 
@@ -4206,7 +4213,7 @@ bool CChainState::AcceptBlock(const Config &config,
                      block.GetHash().ToString());
     }
 
-    // If connecting the new block would require rewinding more than one 10-min block (or >10 1-min blocks)
+    // If connecting the new block would require rewinding more than one block
     // from the active chain (i.e., a "deep reorg"), then mark the new block as
     // parked. If it has enough work then it will be automatically unparked
     // later, during FindMostWorkChain. We mark the block as parked at the very
@@ -4214,7 +4221,18 @@ bool CChainState::AcceptBlock(const Config &config,
     // needed.
     if (gArgs.GetBoolArg("-parkdeepreorg", DEFAULT_PARK_DEEP_REORG)) {
         const CBlockIndex *pindexFork = m_chain.FindFork(pindex);
-        if (pindexFork && pindexFork->GetBlockTicks() + legacy::POW_TARGET_SPACING_TICKS < m_chain.Ticks()) {
+        // Note: Regardless of block time interval, we always consider a "deep reorg" anything that is >= 2 blocks --
+        // this allow for the "stickyness" of our chain to be preserved and maintains "first seen" semantics in spite of
+        // our ASERT DAA's tendency to drift the difficulty slightly after 1 block. Were we to not do this, the chain
+        // tip we are on could be unstable and/or gameable by miners and "first seen" would be weak or almost
+        // non-existant (again, due to our DAA's tendency to drift the difficulty from block-to-block). In summary, the
+        // parking strategy we use disincentivizes short block races in cases where one of the equal-height racing
+        // chains has 0.01% "more work" due to DAA drift. See the FABLOUS CHIP and/or this bitcoin talk discussion:
+        //
+        //    https://bitcointalk.org/index.php?topic=355644.msg3814317
+        //
+        // See also: CChainState::FindMostWorkChain for the logic and criteria we use to unpark very short forks.
+        if (pindexFork && pindexFork->nHeight + 1 < m_chain.Height()) {
             LogPrintf("Park block %s as it would cause a deep reorg.\n", pindex->GetBlockHash().ToString());
             pindex->nStatus = pindex->nStatus.withParked();
             setDirtyBlockIndex.insert(pindex);
