@@ -107,11 +107,17 @@ static constexpr unsigned int BLOCK_STALLING_TIMEOUT = 2;
  * Number of headers sent in one getheaders result. We rely on the assumption
  * that if a peer sends less than this number, we reached its tip. Changing this
  * value is a protocol upgrade.
+ *
+ * TODO: This should probably scale once the blocktime is 1 min but it requires
+ * a protocol upgrade.
  */
 static constexpr unsigned int MAX_HEADERS_RESULTS = 2000;
 /**
  * Maximum depth of blocks we're willing to serve as compact blocks to peers
  * when requested. For older blocks, a regular BLOCK response will be sent.
+ *
+ * TODO: (blocktime) Do we keep this or scale it to ticks? Intuition says
+ * keep it as-is.. but needs revisiting. -Calin
  */
 static constexpr int MAX_CMPCTBLOCK_DEPTH = 5;
 /**
@@ -120,6 +126,8 @@ static constexpr int MAX_CMPCTBLOCK_DEPTH = 5;
  * peer, but increase the potential degree of disordering of blocks on disk
  * (which make reindexing and in the future perhaps pruning harder). We'll
  * probably want to make this a per-peer adaptive value at some point.
+ *
+ * TODO: (blocktime) scale this to use ticks?
  */
 static constexpr unsigned int BLOCK_DOWNLOAD_WINDOW = 1024;
 /** Time to wait (in seconds) between writing blocks/block index to disk. */
