@@ -24,9 +24,11 @@ Explorer: <https://tempnet.chaingraph.cash>.
   [gitlab.com/cculianu/bitcoin-cash-node](https://gitlab.com/cculianu/bitcoin-cash-node) at commit
   `77dec2d2` (2026-10-15), **plus one commit** that adds the `tempnet` chain: the `-tempnet` option, chain
   id `temp`, data directory `tempnet/`, the activation time, DNS seeds and a checkpoint at the fork
-  block. Four files, about 40 lines, no consensus code
-  (`src/chainparams.cpp`, `src/chainparamsbase.{h,cpp}`, `src/util/system.cpp`); see `git log` or
-  `contrib/tempnet/tempnet-patch.py`, the script that produced it.
+  block, and a second commit giving tempnet its own software expiry (2026-11-15 12:00 UTC, the
+  chipnet activation) so the node's "software outdated" logic does not fire on tempnet's activation
+  time, which is already in the past. About 55 lines in five files, no consensus code
+  (`src/chainparams.{h,cpp}`, `src/chainparamsbase.{h,cpp}`, `src/util/system.cpp`, `src/init.cpp`);
+  see `git log` or the scripts in `contrib/tempnet/` that produced the commits.
 - [Releases](../../releases): `bitcoind` and `bitcoin-cli` for Linux x86-64, built on Ubuntu 24.04.
 - This is a **reconstruction**: bitjson's own build (`/Bitcoin Cash Node:29.2.1(tempnet-20261015)/`) had
   not been published when this was made. It was verified on 2026-10-18 by syncing the whole chain: the
@@ -48,9 +50,6 @@ Configuration (`~/.bitcoin/bitcoin.conf`, or any file given with `-conf=`):
 ```
 tempnet=1
 server=1
-# Required. BCHN disables its RPC interface once the next upgrade's activation time has passed,
-# and on tempnet that time (2026-10-15) is already in the past.
-expire=0
 # Optional: identify your node to its peers.
 uacomment=my-tempnet-node
 
@@ -109,7 +108,9 @@ four cores.
   on mainnet or for anything of value.
 - The consensus code is an upstream work in progress. If the implementation changes before the
   chipnet activation, nodes running this snapshot will fork off; follow the thread linked above.
-- With `expire=0` the node will not stop itself. Shut it down when tempnet ends (planned 2026-11-15).
+- The node treats itself as expiring on 2026-11-15 12:00 UTC, when tempnet ends: from 30 days before
+  it warns ("may fall out of network consensus in N days"), and at that time it disables its RPC
+  interface, as BCHN does on every network. `expire=0` overrides that if you need to keep it running.
 - The fixed `addnode` peers may disappear; if your node finds no peers, look for current ones in the
   thread or on the explorer's peers page.
 
