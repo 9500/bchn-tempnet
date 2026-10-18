@@ -1,3 +1,7 @@
+> **This fork: Bitcoin Cash Node for the 2026 tempnet** (CHIP-2025-03 Faster Blocks test network,
+> 2026-10-15 to 2026-11-15). See **[TEMPNET.md](TEMPNET.md)** for what it is, how to run the binary
+> from the Releases page, and how to build it. Everything below is the upstream BCHN README.
+
 Bitcoin Cash Node
 =================
 
