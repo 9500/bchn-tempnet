@@ -29,7 +29,8 @@ Explorer: <https://tempnet.chaingraph.cash>.
   time, which is already in the past. About 55 lines in five files, no consensus code
   (`src/chainparams.{h,cpp}`, `src/chainparamsbase.{h,cpp}`, `src/util/system.cpp`, `src/init.cpp`);
   see `git log` or the scripts in `contrib/tempnet/` that produced the commits.
-- [Releases](../../releases): `bitcoind` and `bitcoin-cli` for Linux x86-64, built on Ubuntu 24.04.
+- [Releases](../../releases): `bitcoind` and `bitcoin-cli` for Linux x86-64, with every library linked
+  in (`contrib/tempnet/build-static.sh`); the only requirement is glibc 2.38 or newer.
 - This is a **reconstruction**: bitjson's own build (`/Bitcoin Cash Node:29.2.1(tempnet-20261015)/`) had
   not been published when this was made. It was verified on 2026-10-18 by syncing the whole chain: the
   tip and the fork-point block hashes were identical to the explorer's. The upstream branch is work in
@@ -37,11 +38,8 @@ Explorer: <https://tempnet.chaingraph.cash>.
 
 ## Running the binary
 
-Requirements: x86-64 Linux with glibc 2.39 (Ubuntu 24.04 or equivalent) and these shared libraries:
-
-```
-sudo apt install libatomic1 libboost-filesystem1.83.0 libdb5.3t64 libevent-2.1-7t64 libgmp10 libssl3t64
-```
+Requirements: x86-64 Linux with glibc 2.38 or newer (Ubuntu 24.04, Debian 13, Fedora 39, or newer). No
+other packages: Boost, OpenSSL, libevent, GMP, zlib and Berkeley DB are linked into the binary.
 
 Download the tarball from the Releases page, check it against `SHA256SUMS.txt`, unpack it.
 
@@ -100,7 +98,9 @@ ninja bitcoind bitcoin-cli
 ```
 
 Add `-DBUILD_BITCOIN_WALLET=OFF` to skip the wallet and the Berkeley DB dependency. A few minutes on
-four cores.
+four cores. This gives a binary that uses the system's shared libraries. For a self-contained binary like
+the released one (all libraries linked in, only glibc needed), use `contrib/tempnet/build-static.sh`,
+which first builds the libraries with BCHN's `depends` system (about 10 more minutes).
 
 ## Caveats
 
