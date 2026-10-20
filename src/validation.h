@@ -128,7 +128,11 @@ static constexpr int MAX_CMPCTBLOCK_DEPTH = 5;
  * (which make reindexing and in the future perhaps pruning harder). We'll
  * probably want to make this a per-peer adaptive value at some point.
  *
- * TODO: (blocktime) scale this to use ticks?
+ * Note on blocktime CHIP: We explicitly decided not to scale this or
+ * MAX_HEADERS_RESULTS for the FABLOUS changes -- however this constant and
+ * in particular MAX_HEADERS_RESULTS does need to eventually be re-engineered
+ * since they may be too low, and are legacy values chosen out of thin air in
+ * an environment where internet speeds wer 10x or 100x slower than today.
  */
 static constexpr unsigned int BLOCK_DOWNLOAD_WINDOW = 1024;
 /** Time to wait (in seconds) between writing blocks/block index to disk. */
