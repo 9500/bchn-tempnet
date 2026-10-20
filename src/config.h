@@ -63,8 +63,8 @@ public:
     /** The maximum amount of RAM to be used in the mempool before TrimToSize is called. */
     virtual void SetMaxMemPoolSize(uint64_t maxMemPoolSize) = 0;
     virtual uint64_t GetMaxMemPoolSize() const = 0;
-    virtual bool SetInvBroadcastRate(uint64_t rate) = 0;
-    virtual uint64_t GetInvBroadcastRate() const = 0;
+    virtual bool SetInvBroadcastRatePerMbFor10MinBlocks(uint64_t ratePerMbPer10MinBlock) = 0;
+    virtual uint64_t GetInvBroadcastRatePerMbForBlockInterval(BlockTicks blockInterval) const = 0;
     virtual bool SetInvBroadcastInterval(uint64_t interval) = 0;
     virtual uint64_t GetInvBroadcastInterval() const = 0;
     virtual const CChainParams &GetChainParams() const = 0;
@@ -101,8 +101,8 @@ public:
     void SetMaxMemPoolSize(uint64_t maxMemPoolSize) override { nMaxMemPoolSize = maxMemPoolSize; }
     uint64_t GetMaxMemPoolSize() const override { return nMaxMemPoolSize; }
     //! Note: `rate` may not exceed MAX_INV_BROADCAST_RATE (1 million)
-    bool SetInvBroadcastRate(uint64_t rate) override;
-    uint64_t GetInvBroadcastRate() const override { return nInvBroadcastRate; }
+    bool SetInvBroadcastRatePerMbFor10MinBlocks(uint64_t ratePerMbPer10MinBlock) override;
+    uint64_t GetInvBroadcastRatePerMbForBlockInterval(BlockTicks blockInterval) const override;
     //! Note: `interval` may not exceed MAX_INV_BROADCAST_INTERVAL (1 million)
     bool SetInvBroadcastInterval(uint64_t interval) override;
     uint64_t GetInvBroadcastInterval() const override { return nInvBroadcastInterval; }
@@ -128,13 +128,13 @@ public:
     bool IsSignSchnorr() const override { return signSchnorr; }
 
 private:
-    bool useCashAddr;
-    bool gbtCheckValidity;
-    bool allowUnconnectedMining;
+    bool useCashAddr{};
+    bool gbtCheckValidity{};
+    bool allowUnconnectedMining{};
     bool signSchnorr = DEFAULT_SIGN_SCHNORR;
     Amount excessUTXOCharge;
-    uint64_t nInvBroadcastRate;
-    uint64_t nInvBroadcastInterval;
+    uint64_t nInvBroadcastRatePerMbPer10MinBlock{};
+    uint64_t nInvBroadcastInterval{};
 
     /** Override for the blockSize for functional tests (size is stored "as if" blocktime is 10 mins and is scaled by getter) */
     std::optional<uint64_t> blockSize10MinsOverride;
@@ -144,7 +144,7 @@ private:
     std::variant<uint64_t, double> varGeneratedBlockSizeParam;
 
     /** The maximum amount of RAM to be used in the mempool before TrimToSize is called. */
-    uint64_t nMaxMemPoolSize;
+    uint64_t nMaxMemPoolSize{};
 
     std::set<std::string> rejectSubVersions;
 
@@ -169,8 +169,8 @@ public:
     uint64_t GetGeneratedBlockSize(BlockTicks, std::optional<uint64_t>) const override { return 0; }
     void SetMaxMemPoolSize(uint64_t) override {}
     uint64_t GetMaxMemPoolSize() const override { return 0; }
-    bool SetInvBroadcastRate(uint64_t) override { return false; }
-    uint64_t GetInvBroadcastRate() const override { return 0; }
+    bool SetInvBroadcastRatePerMbFor10MinBlocks(uint64_t) override { return false; }
+    uint64_t GetInvBroadcastRatePerMbForBlockInterval(BlockTicks) const override { return 0; }
     bool SetInvBroadcastInterval(uint64_t) override { return false; }
     uint64_t GetInvBroadcastInterval() const override {return 0; }
 

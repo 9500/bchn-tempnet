@@ -1105,7 +1105,7 @@ void SetupServerArgs() {
                   "of the maximum block size. For example, a value of 7 with a "
                   "blocksize limit of 32 MB will result in a tx inv broadcast "
                   "rate of at most 224 tx/sec. (default: %d)",
-                  DEFAULT_INV_BROADCAST_RATE),
+                  DEFAULT_INV_BROADCAST_RATE_PER_MB_PER_10_MIN_BLOCK),
         ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
     gArgs.AddArg(
         "-whitelistrelay",
@@ -1936,11 +1936,12 @@ bool AppInitParameterInteraction(Config &config) {
         return InitError("Transaction broadcast interval out of range.");
     }
 
-    const int64_t nTxBroadcastRate = gArgs.GetArg("-txbroadcastrate", DEFAULT_INV_BROADCAST_RATE);
-    if (nTxBroadcastRate < 0) {
+    const int64_t nTxBroadcastRatePerMbPer10MinBlock = gArgs.GetArg("-txbroadcastrate",
+                                                                    DEFAULT_INV_BROADCAST_RATE_PER_MB_PER_10_MIN_BLOCK);
+    if (nTxBroadcastRatePerMbPer10MinBlock < 0) {
         return InitError(_("Transaction broadcast rate must not be configured with a negative value."));
     }
-    if ( ! config.SetInvBroadcastRate(nTxBroadcastRate)) {
+    if ( ! config.SetInvBroadcastRatePerMbFor10MinBlocks(nTxBroadcastRatePerMbPer10MinBlock)) {
         return InitError("Transaction broadcast rate out of range.");
     }
 
