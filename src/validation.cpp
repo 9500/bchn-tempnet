@@ -4222,7 +4222,7 @@ bool CChainState::AcceptBlock(const Config &config,
         // this allow for the "stickyness" of our chain to be preserved and maintains "first seen" semantics in spite of
         // our ASERT DAA's tendency to drift the difficulty slightly after 1 block. Were we to not do this, the chain
         // tip we are on could be unstable and/or gameable by miners and "first seen" would be weak or almost
-        // non-existant (again, due to our DAA's tendency to drift the difficulty from block-to-block). In summary, the
+        // non-existent (again, due to our DAA's tendency to drift the difficulty from block-to-block). In summary, the
         // parking strategy we use disincentivizes short block races in cases where one of the equal-height racing
         // chains has 0.01% "more work" due to DAA drift. See the FABLOUS CHIP and/or this bitcoin talk discussion:
         //
