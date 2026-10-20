@@ -116,8 +116,9 @@ static constexpr unsigned int MAX_HEADERS_RESULTS = 2000;
  * Maximum depth of blocks we're willing to serve as compact blocks to peers
  * when requested. For older blocks, a regular BLOCK response will be sent.
  *
- * TODO: (blocktime) Do we keep this or scale it to ticks? Intuition says
- * keep it as-is.. but needs revisiting. -Calin
+ * Note: For 1-min blocktime, we don't scale this to use ticks. We stick to
+ * height/blocks since this heuristic number should not scale to ticks (it's
+ * more about discrete blocks as mempool synch/commit points).
  */
 static constexpr int MAX_CMPCTBLOCK_DEPTH = 5;
 /**
@@ -241,12 +242,11 @@ extern arith_uint256 nMinimumChainWork;
 extern CBlockIndex *pindexBestHeader;
 
 /**
- * Block files containing a block-height within MIN_BLOCKS_TO_KEEP of
- * ::ChainActive().Tip() will not be pruned.
+ * Block files containing a block within MIN_BLOCK_TICKS_TO_KEEP of ::ChainActive().Tip() will not be pruned.
  */
-static constexpr unsigned int MIN_BLOCKS_TO_KEEP = 288; // TODO: Scale this to block time?
-/** Minimum blocks required to signal NODE_NETWORK_LIMITED */
-static constexpr unsigned int NODE_NETWORK_LIMITED_MIN_BLOCKS = 288; // TODO: Scale this to block time?
+static constexpr BlockTicks MIN_BLOCK_TICKS_TO_KEEP = 288 * legacy::POW_TARGET_SPACING_TICKS;
+/** Minimum blocks required to signal NODE_NETWORK_LIMITED, as expressed in BlockTicks  */
+static constexpr BlockTicks NODE_NETWORK_LIMITED_MIN_BLOCK_TICKS = MIN_BLOCK_TICKS_TO_KEEP;
 
 static constexpr signed int DEFAULT_CHECKBLOCKS = 6;
 static constexpr unsigned int DEFAULT_CHECKLEVEL = 3;

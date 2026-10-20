@@ -1282,6 +1282,8 @@ void PeerLogicValidation::ProcessGetBlockData(const Config &config, const NodeRe
                      __func__, pfrom->GetId());
         }
     }
+    // NB: Code below assumes that if `send` is set, then `pindex` is on the active chain! If that assumption changes,
+    // be careful and modify the below code!
     const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
     // Disconnect node in case we have reached the outbound limit for serving
     // historical blocks.
@@ -1300,22 +1302,17 @@ void PeerLogicValidation::ProcessGetBlockData(const Config &config, const NodeRe
         pfrom->fDisconnect = true;
         send = false;
     }
-    // Avoid leaking prune-height by never sending blocks below the
-    // NODE_NETWORK_LIMITED threshold.
-    // Add two blocks buffer extension for possible races
-    if (send && !pfrom->HasPermission(PF_NOBAN) &&
-        ((((pfrom->GetLocalServices() & NODE_NETWORK_LIMITED) ==
-           NODE_NETWORK_LIMITED) &&
-          ((pfrom->GetLocalServices() & NODE_NETWORK) != NODE_NETWORK) &&
-          (::ChainActive().Tip()->nHeight - pindex->nHeight >
-           (int)NODE_NETWORK_LIMITED_MIN_BLOCKS + 2)))) {
-        LogPrint(BCLog::NET,
-                 "Ignore block request below NODE_NETWORK_LIMITED "
-                 "threshold from peer=%d\n",
-                 pfrom->GetId());
+    // Avoid leaking prune-height by never sending blocks below the NODE_NETWORK_LIMITED threshold.
+    // Add two blocks buffer extension for possible races.
+    if (send && !pfrom->HasPermission(PF_NOBAN)
+        && (pfrom->GetLocalServices() & (NODE_NETWORK_LIMITED|NODE_NETWORK)) == NODE_NETWORK_LIMITED // pruned mode
+        // Note: At this point `pindex` definitely is on the active chain (enforced by `BlockRequestAllowed()` above),
+        // so this blockticks subtraction is always well defined and doesn't underflow.
+        && ::ChainActive().Ticks() - pindex->GetBlockTicks()
+           > NODE_NETWORK_LIMITED_MIN_BLOCK_TICKS + 2 * pindex->GetTickDeltaForThisBlock()) {
+        LogPrint(BCLog::NET, "Ignore block request below NODE_NETWORK_LIMITED threshold from peer=%d\n", pfrom->GetId());
 
-        // disconnect node and prevent it from stalling (would otherwise wait
-        // for the missing block)
+        // disconnect node and prevent it from stalling (would otherwise wait for the missing block)
         pfrom->fDisconnect = true;
         send = false;
     }
@@ -2703,18 +2700,13 @@ bool PeerLogicValidation::ProcessMessage(const Config &config, const NodeRef &pf
             // likely to still have for some reasonable time window (1 hour)
             // that block relay might require.
             const CBlockIndex *tip{};
-            const auto powSpacing = GetCurrentPowSpacing(&tip);
-            const int nPrunedBlocksLikelyToHave =
-                MIN_BLOCKS_TO_KEEP
-                // Below expression is always: 6 (legacy 10 min block times) or 60 (1 min block times)
-                - 3600 / powSpacing.toSecs(); // TODO: Ensure this expression can't be negative, even for <1min block time
-            if (fPruneMode &&
-                (!pindex->nStatus.hasData() ||
-                 pindex->nHeight <= tip->nHeight - nPrunedBlocksLikelyToHave)) {
-                LogPrint(
-                    BCLog::NET,
-                    " getblocks stopping, pruned or too old block at %d %s\n",
-                    pindex->nHeight, pindex->GetBlockHash().ToString());
+            constexpr BlockTicks kOneHour{3600u};
+            static_assert(MIN_BLOCK_TICKS_TO_KEEP > kOneHour, "Below expression requires MIN_BLOCK_TICKS_TO_KEEP > kOneHour");
+            const BlockTicks nPrunedBlockTicksLikelyToHave = MIN_BLOCK_TICKS_TO_KEEP - kOneHour;
+            if (fPruneMode && (!pindex->nStatus.hasData()
+                               || pindex->GetBlockTicks() <= tip->GetBlockTicks() - nPrunedBlockTicksLikelyToHave)) {
+                LogPrint(BCLog::NET, " getblocks stopping, pruned or too old block at %d %s\n",
+                         pindex->nHeight, pindex->GetBlockHash().ToString());
                 break;
             }
             pfrom->PushInventory(CInv(MSG_BLOCK, pindex->GetBlockHash()));

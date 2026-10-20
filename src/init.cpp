@@ -2707,13 +2707,17 @@ bool AppInitMain(Config &config, RPCServer &rpcServer,
                     assert(::ChainActive().Tip() != nullptr);
 
                     uiInterface.InitMessage(_("Verifying blocks..."));
-                    if (fHavePruned &&
-                        gArgs.GetArg("-checkblocks", DEFAULT_CHECKBLOCKS) >
-                            MIN_BLOCKS_TO_KEEP) {
-                        LogPrintf(
-                            "Prune: pruned datadir may not have more than %d "
-                            "blocks; only checking available blocks\n",
-                            MIN_BLOCKS_TO_KEEP);
+                    // Note: kLegacyMinBlocksToKeep is a heuristic threshold to just print a warning message. For
+                    //       simplicity, we don't bother making sure this is accurate w.r.t to the actual tip and the
+                    //       tip's current block time interval. So, here we print a warning if the user wanted to check
+                    //       more than 288 blocks -- which is fine for warning purposes. The system will check the
+                    //       number of blocks that are available (which may be >288 anyway), so this warning is harmless
+                    //       if it misfires in the 1-min block regime (2 days after we are in the 1 min block regime we
+                    //       have min-blocks-to-keep at 2880, not 288).
+                    constexpr int64_t kLegacyMinBlocksToKeep{MIN_BLOCK_TICKS_TO_KEEP / legacy::POW_TARGET_SPACING_TICKS};
+                    if (fHavePruned && gArgs.GetArg("-checkblocks", DEFAULT_CHECKBLOCKS) > kLegacyMinBlocksToKeep) {
+                        LogPrintf("Prune: pruned datadir may not have more than %d blocks; only checking available blocks\n",
+                                  kLegacyMinBlocksToKeep);
                     }
 
                     CBlockIndex *tip = ::ChainActive().Tip();
