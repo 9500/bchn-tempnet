@@ -23,6 +23,7 @@
 #include <index/txindex.h>
 #include <key_io.h>
 #include <net_processing.h> /* for PeerLogicValidation */
+#include <node/blockheighttotickmapper.h>
 #include <node/blockstorage.h>
 #include <policy/policy.h>
 #include <primitives/transaction.h>
@@ -1137,9 +1138,7 @@ static UniValue pruneblockchain(const Config &config,
     }
 
     if (!fPruneMode) {
-        throw JSONRPCError(
-            RPC_MISC_ERROR,
-            "Cannot prune blocks because node is not in prune mode.");
+        throw JSONRPCError(RPC_MISC_ERROR, "Cannot prune blocks because node is not in prune mode.");
     }
 
     LOCK(cs_main);
@@ -1154,29 +1153,29 @@ static UniValue pruneblockchain(const Config &config,
     if (heightParam > 1000000000) {
         // Add a 2 hour buffer to include blocks which might have had old
         // timestamps
-        CBlockIndex *pindex =
-            ::ChainActive().FindEarliestAtLeast(heightParam - TIMESTAMP_WINDOW);
+        const CBlockIndex *pindex = ::ChainActive().FindEarliestAtLeast(heightParam - TIMESTAMP_WINDOW);
         if (!pindex) {
-            throw JSONRPCError(
-                RPC_INVALID_PARAMETER,
-                "Could not find block with at least the specified timestamp.");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Could not find block with at least the specified timestamp.");
         }
         heightParam = pindex->nHeight;
     }
 
-    unsigned int height = (unsigned int)heightParam;
-    unsigned int chainHeight = (unsigned int)::ChainActive().Height();
-    if (chainHeight < config.GetChainParams().PruneAfterHeight()) {
-        throw JSONRPCError(RPC_MISC_ERROR,
-                           "Blockchain is too short for pruning.");
+    unsigned height = static_cast<unsigned>(heightParam);
+    const unsigned chainHeight = static_cast<unsigned>(::ChainActive().Height());
+    const CBlockIndex * const tip = ::ChainActive().Tip();
+
+    if (!tip || chainHeight < config.GetChainParams().PruneAfterHeight() || tip->GetBlockTicks() <= MIN_BLOCK_TICKS_TO_KEEP) {
+        throw JSONRPCError(RPC_MISC_ERROR, "Blockchain is too short for pruning.");
     } else if (height > chainHeight) {
-        throw JSONRPCError(
-            RPC_INVALID_PARAMETER,
-            "Blockchain is shorter than the attempted prune height.");
-    } else if (height > chainHeight - MIN_BLOCKS_TO_KEEP) {
-        LogPrint(BCLog::RPC, "Attempt to prune blocks close to the tip. "
-                             "Retaining the minimum number of blocks.\n");
-        height = chainHeight - MIN_BLOCKS_TO_KEEP;
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Blockchain is shorter than the attempted prune height.");
+    }
+
+    const auto mapper = MakeHeightToTickMapperForPrev(config.GetChainParams().GetConsensus(), tip);
+    const unsigned maxHeightAllowedToPrune = mapper.TickToHeight(tip->GetBlockTicks() - MIN_BLOCK_TICKS_TO_KEEP);
+
+    if (height > maxHeightAllowedToPrune) {
+        LogPrint(BCLog::RPC, "Attempt to prune blocks close to the tip. Retaining the minimum number of blocks.\n");
+        height = maxHeightAllowedToPrune;
     }
 
     PruneBlockFilesManual(height);

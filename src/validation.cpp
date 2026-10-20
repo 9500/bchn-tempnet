@@ -353,10 +353,8 @@ enum class FlushStateMode { NONE, IF_NEEDED, PERIODIC, ALWAYS };
 static bool FlushStateToDisk(const CChainParams &chainParams,
                              CValidationState &state, FlushStateMode mode,
                              int nManualPruneHeight = 0);
-static void FindFilesToPruneManual(std::set<int> &setFilesToPrune,
-                                   int nManualPruneHeight);
-static void FindFilesToPrune(std::set<int> &setFilesToPrune,
-                             uint64_t nPruneAfterHeight);
+static void FindFilesToPruneManual(const CChainParams &params, std::set<int> &setFilesToPrune, int nManualPruneHeight);
+static void FindFilesToPrune(const CChainParams &params, std::set<int> &setFilesToPrune);
 static uint32_t GetNextBlockScriptFlags(const Consensus::Params &params,
                                         const CBlockIndex *pindex);
 
@@ -2030,8 +2028,7 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state, CBl
  * If FlushStateMode::NONE is used, then FlushStateToDisk(...) won't do anything
  * besides checking if we need to prune.
  */
-static bool FlushStateToDisk(const CChainParams &chainparams,
-                             CValidationState &state, FlushStateMode mode,
+static bool FlushStateToDisk(const CChainParams &chainparams, CValidationState &state, FlushStateMode mode,
                              int nManualPruneHeight) {
     int64_t nMempoolUsage = g_mempool.DynamicMemoryUsage();
     LOCK(cs_main);
@@ -2047,10 +2044,9 @@ static bool FlushStateToDisk(const CChainParams &chainparams,
             if (fPruneMode && (fCheckForPruning || nManualPruneHeight > 0) &&
                 !fReindex) {
                 if (nManualPruneHeight > 0) {
-                    FindFilesToPruneManual(setFilesToPrune, nManualPruneHeight);
+                    FindFilesToPruneManual(chainparams, setFilesToPrune, nManualPruneHeight);
                 } else {
-                    FindFilesToPrune(setFilesToPrune,
-                                     chainparams.PruneAfterHeight());
+                    FindFilesToPrune(chainparams, setFilesToPrune);
                     fCheckForPruning = false;
                 }
                 if (!setFilesToPrune.empty()) {
@@ -2180,8 +2176,7 @@ void FlushStateToDisk() {
     CValidationState state;
     const CChainParams &chainparams = Params();
     if (!FlushStateToDisk(chainparams, state, FlushStateMode::ALWAYS)) {
-        LogPrintf("%s: failed to flush state (%s)\n", __func__,
-                  FormatStateMessage(state));
+        LogPrintf("%s: failed to flush state (%s)\n", __func__, FormatStateMessage(state));
     }
 }
 
@@ -2190,8 +2185,7 @@ void PruneAndFlush() {
     WITH_LOCK(cs_LastBlockFile, fCheckForPruning = true);
     const CChainParams &chainparams = Params();
     if (!FlushStateToDisk(chainparams, state, FlushStateMode::NONE)) {
-        LogPrintf("%s: failed to flush state (%s)\n", __func__,
-                  FormatStateMessage(state));
+        LogPrintf("%s: failed to flush state (%s)\n", __func__, FormatStateMessage(state));
     }
 }
 
@@ -4168,8 +4162,7 @@ bool CChainState::AcceptBlock(const Config &config,
     // blocks which are too close in height to the tip.  Apply this test
     // regardless of whether pruning is enabled; it should generally be safe to
     // not process unrequested blocks.
-    bool fTooFarAhead =
-        (pindex->nHeight > int(m_chain.Height() + MIN_BLOCKS_TO_KEEP));
+    const bool fTooFarAhead = pindex->GetBlockTicks() > m_chain.Ticks() + MIN_BLOCK_TICKS_TO_KEEP;
 
     // TODO: Decouple this function from the block download logic by removing
     // fRequested
@@ -4406,42 +4399,41 @@ void PruneOneBlockFile(const int fileNumber) {
  * Calculate the block/rev files to delete based on height specified by user
  * with RPC command pruneblockchain
  */
-static void FindFilesToPruneManual(std::set<int> &setFilesToPrune,
-                                   int nManualPruneHeight) {
+static void FindFilesToPruneManual(const CChainParams &params, std::set<int> &setFilesToPrune, int nManualPruneHeight) {
     assert(fPruneMode && nManualPruneHeight > 0);
 
     LOCK2(cs_main, cs_LastBlockFile);
-    if (::ChainActive().Tip() == nullptr) {
+    const CBlockIndex * const tip = ::ChainActive().Tip();
+    if (tip == nullptr) {
+        return;
+    }
+    if (tip->GetBlockTicks() <= MIN_BLOCK_TICKS_TO_KEEP) {
+        // Cannot prune now, our chain is too short. We are required to keep MIN_BLOCK_TICKS_TO_KEEP for p2p protocol.
         return;
     }
 
-    // last block to prune is the lesser of (user-specified height,
-    // MIN_BLOCKS_TO_KEEP from the tip)
-    unsigned int nLastBlockWeCanPrune =
-        std::min((unsigned)nManualPruneHeight,
-                 ::ChainActive().Tip()->nHeight - MIN_BLOCKS_TO_KEEP);
+    const auto mapper = MakeHeightToTickMapperForPrev(params.GetConsensus(), tip);
+    const unsigned maxHeightAllowedToPrune = mapper.TickToHeight(tip->GetBlockTicks() - MIN_BLOCK_TICKS_TO_KEEP);
+    // last block to prune is the lesser of (user-specified height, MIN_BLOCK_TICKS_TO_KEEP from the tip)
+    const unsigned nLastBlockWeCanPrune = std::min(static_cast<unsigned>(nManualPruneHeight), maxHeightAllowedToPrune);
     int count = 0;
-    for (int fileNumber = 0; fileNumber < nLastBlockFile; fileNumber++) {
-        if (vinfoBlockFile[fileNumber].nSize == 0 ||
-            vinfoBlockFile[fileNumber].nHeightLast > nLastBlockWeCanPrune) {
+    for (int fileNumber = 0; fileNumber < nLastBlockFile; ++fileNumber) {
+        if (vinfoBlockFile[fileNumber].nSize == 0 || vinfoBlockFile[fileNumber].nHeightLast > nLastBlockWeCanPrune) {
             continue;
         }
         PruneOneBlockFile(fileNumber);
         setFilesToPrune.insert(fileNumber);
-        count++;
+        ++count;
     }
-    LogPrintf("Prune (Manual): prune_height=%d removed %d blk/rev pairs\n",
-              nLastBlockWeCanPrune, count);
+    LogPrintf("Prune (Manual): prune_height=%d removed %d blk/rev pairs\n", nLastBlockWeCanPrune, count);
 }
 
 /* This function is called from the RPC code for pruneblockchain */
 void PruneBlockFilesManual(int nManualPruneHeight) {
     CValidationState state;
     const CChainParams &chainparams = Params();
-    if (!FlushStateToDisk(chainparams, state, FlushStateMode::NONE,
-                          nManualPruneHeight)) {
-        LogPrintf("%s: failed to flush state (%s)\n", __func__,
-                  FormatStateMessage(state));
+    if (!FlushStateToDisk(chainparams, state, FlushStateMode::NONE, nManualPruneHeight)) {
+        LogPrintf("%s: failed to flush state (%s)\n", __func__,FormatStateMessage(state));
     }
 }
 
@@ -4466,18 +4458,21 @@ void PruneBlockFilesManual(int nManualPruneHeight) {
  * @param[out]   setFilesToPrune   The set of file indices that can be unlinked
  * will be returned
  */
-static void FindFilesToPrune(std::set<int> &setFilesToPrune,
-                             uint64_t nPruneAfterHeight) {
+static void FindFilesToPrune(const CChainParams &params, std::set<int> &setFilesToPrune) {
     LOCK2(cs_main, cs_LastBlockFile);
-    if (::ChainActive().Tip() == nullptr || nPruneTarget == 0) {
+    const CBlockIndex * const tip = ::ChainActive().Tip();
+    if (tip == nullptr || nPruneTarget == 0) {
         return;
     }
-    if (uint64_t(::ChainActive().Tip()->nHeight) <= nPruneAfterHeight) {
+    if (static_cast<uint64_t>(tip->nHeight) <= params.PruneAfterHeight()) {
         return;
     }
-
-    unsigned int nLastBlockWeCanPrune =
-        ::ChainActive().Tip()->nHeight - MIN_BLOCKS_TO_KEEP;
+    if (tip->GetBlockTicks() <= MIN_BLOCK_TICKS_TO_KEEP) {
+        // Cannot prune now, our chain is too short. We are required to keep MIN_BLOCK_TICKS_TO_KEEP for p2p protocol.
+        return;
+    }
+    const auto mapper = MakeHeightToTickMapperForPrev(params.GetConsensus(), tip);
+    const unsigned nLastBlockWeCanPrune = mapper.TickToHeight(tip->GetBlockTicks() - MIN_BLOCK_TICKS_TO_KEEP);
     uint64_t nCurrentUsage = CalculateCurrentUsage();
     // We don't check to prune until after we've allocated new space for files,
     // so we should leave a buffer under our target to account for another
@@ -4497,9 +4492,8 @@ static void FindFilesToPrune(std::set<int> &setFilesToPrune,
             nBuffer += nPruneTarget / 10;
         }
 
-        for (int fileNumber = 0; fileNumber < nLastBlockFile; fileNumber++) {
-            nBytesToPrune = vinfoBlockFile[fileNumber].nSize +
-                            vinfoBlockFile[fileNumber].nUndoSize;
+        for (int fileNumber = 0; fileNumber < nLastBlockFile; ++fileNumber) {
+            nBytesToPrune = vinfoBlockFile[fileNumber].nSize + vinfoBlockFile[fileNumber].nUndoSize;
 
             if (vinfoBlockFile[fileNumber].nSize == 0) {
                 continue;
@@ -4510,8 +4504,8 @@ static void FindFilesToPrune(std::set<int> &setFilesToPrune,
                 break;
             }
 
-            // don't prune files that could have a block within
-            // MIN_BLOCKS_TO_KEEP of the main chain's tip but keep scanning
+            // don't prune files that could have a block within MIN_BLOCK_TICKS_TO_KEEP of the main chain's tip but keep
+            // scanning
             if (vinfoBlockFile[fileNumber].nHeightLast > nLastBlockWeCanPrune) {
                 continue;
             }
@@ -4520,13 +4514,11 @@ static void FindFilesToPrune(std::set<int> &setFilesToPrune,
             // Queue up the files for removal
             setFilesToPrune.insert(fileNumber);
             nCurrentUsage -= nBytesToPrune;
-            count++;
+            ++count;
         }
     }
 
-    LogPrint(BCLog::PRUNE,
-             "Prune: target=%dMiB actual=%dMiB diff=%dMiB "
-             "max_prune_height=%d removed %d blk/rev pairs\n",
+    LogPrint(BCLog::PRUNE, "Prune: target=%dMiB actual=%dMiB diff=%dMiB max_prune_height=%d removed %d blk/rev pairs\n",
              nPruneTarget / 1024 / 1024, nCurrentUsage / 1024 / 1024,
              ((int64_t)nPruneTarget - (int64_t)nCurrentUsage) / 1024 / 1024,
              nLastBlockWeCanPrune, count);
