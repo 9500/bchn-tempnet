@@ -2964,11 +2964,14 @@ bool CWallet::SelectCoins(const std::vector<COutput> &vAvailableCoins,
         Shuffle(vCoins.begin(), vCoins.end(), FastRandomContext());
     }
 
-    //
-    // TODO: (blocktime) Figure out if the below heuristics need to scale based on ticks
-    //
-    std::vector<OutputGroup> groups =
-        GroupOutputs(vCoins, !coin_control.m_avoid_partial_spends);
+    // Note: For the FABLOUS blocktime CHIP, we explicitly did not modify these
+    // heuristics to scale with ticks. Rationale: fallback to 1 conf here
+    // indicates that if it fails to satisfy 6, it will go to 1, indicating
+    // that this is just a heuristic preference and not critical. Also, we
+    // don't anticipate >6 block reorgs to be common even with 1 min blocks. In
+    // the interests of simplicity, then we just maintain the hard-coded 6, 1,
+    // 0 ordering here and call it a day.
+    std::vector<OutputGroup> groups = GroupOutputs(vCoins, !coin_control.m_avoid_partial_spends);
 
     bool res =
         nTargetValue <= nValueFromPresetInputs ||
