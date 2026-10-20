@@ -800,7 +800,7 @@ static std::string ablaStateHelpCommon(bool trailingComma, size_t extraSpaceLeft
         "%s    \"blockinterval\": n,          %s(numeric) The block interval (in seconds) for this block\n"
         "%s    \"blocksizelimit\" : n,        %s(numeric) The size limit for this block\n"
         "%s    \"nextblocksizelimit\" : n     %s(numeric) The size limit for the next block\n"
-        "%s  }%s\n", spL, spM, spL, spM, spL, spM, spL, spM, spL, spM, spL, spM, spL, trailingComma ? "," : "");
+        "%s  }%s\n", spL, spM, spL, spM, spL, spM, spL, spM, spL, spM, spL, spM, spL, spM, spL, trailingComma ? "," : "");
 }
 
 /// Requires cs_main; called by getblock() and ParseHashOrHeight(disallow_pruned=true)
