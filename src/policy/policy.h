@@ -99,7 +99,18 @@ inline constexpr unsigned int MAX_INV_BROADCAST_INTERVAL = 1'000'000;
  * configuration parameter. This is a sanity check limit to avoid unspecified
  * or extremely undesirable behavior of the node.
  */
-inline constexpr unsigned int MAX_INV_BROADCAST_RATE = 1'000'000;
+inline constexpr unsigned int MAX_INV_BROADCAST_RATE_PER_MB_PER_10_MIN_BLOCK = 1'000'000;
+/**
+ * Default average delay between trickled inventory transmissions in millisec.
+ * Blocks and whitelisted receivers bypass this, outbound peers get half this
+ * delay. Note: this ends up capped at MAX_INV_BROADCAST_INTERVAL.
+ */
+inline constexpr unsigned int DEFAULT_INV_BROADCAST_INTERVAL = 500;
+/**
+ * Maximum number of inventory items to send per transmission.
+ * Limits the impact of low-fee transaction floods.
+ */
+inline constexpr unsigned int DEFAULT_INV_BROADCAST_RATE_PER_MB_PER_10_MIN_BLOCK = 7;
 
 /**
  * When transactions fail script evaluations under standard flags, this flagset

@@ -4188,6 +4188,7 @@ bool PeerLogicValidation::SendMessages(const Config &config, NodeRef pto,
     if (!lockMain) {
         return true;
     }
+    CBlockIndex * const pindexTip = ::ChainActive().Tip(); // used in many places below
 
     if (SendRejectsAndCheckIfShouldDiscourage(pto)) {
         return true;
@@ -4242,7 +4243,7 @@ bool PeerLogicValidation::SendMessages(const Config &config, NodeRef pto,
 
     // Start block sync
     if (pindexBestHeader == nullptr) {
-        pindexBestHeader = ::ChainActive().Tip();
+        pindexBestHeader = pindexTip;
     }
 
     // Download if this is a nice peer, or we have no nice peers and this one
@@ -4437,7 +4438,7 @@ bool PeerLogicValidation::SendMessages(const Config &config, NodeRef pto,
                     LogPrint(BCLog::NET,
                              "Announcing block %s not on main chain (tip=%s)\n",
                              hashToAnnounce.ToString(),
-                             ::ChainActive().Tip()->GetBlockHash().ToString());
+                             pindexTip->GetBlockHash().ToString());
                 }
 
                 // If the peer's chain has this block, don't inv it back.
@@ -4462,8 +4463,8 @@ bool PeerLogicValidation::SendMessages(const Config &config, NodeRef pto,
         // effective max number of transactions per inventory is
         // rawRatePerSecond * blockSizeInMB * broadcastIntervalInSeconds (rounded up)
         const uint64_t nMaxBroadcasts = std::ceil(
-                                            config.GetInvBroadcastRate()
-                                          * (GetNextBlockSizeLimit(config, ::ChainActive().Tip()) / 1000000.0)
+                                            config.GetInvBroadcastRatePerMbForBlockInterval(pindexTip->GetTickDeltaForNextBlock())
+                                          * (GetNextBlockSizeLimit(config, pindexTip) / 1000000.0)
                                           * (std::max<uint64_t>(invBroadcastInterval, 1) / 1000.0));
 
         {

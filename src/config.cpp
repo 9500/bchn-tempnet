@@ -6,6 +6,7 @@
 
 #include <chainparams.h>
 #include <policy/policy.h> // MAX_INV_BROADCAST_*
+#include <util/check.h>
 #include <util/overloaded.h>
 
 #include <algorithm>
@@ -13,6 +14,8 @@
 GlobalConfig::GlobalConfig()
     : useCashAddr(DEFAULT_USE_CASHADDR), gbtCheckValidity(DEFAULT_GBT_CHECK_VALIDITY),
       allowUnconnectedMining(DEFAULT_ALLOW_UNCONNECTED_MINING),
+      nInvBroadcastRatePerMbPer10MinBlock{DEFAULT_INV_BROADCAST_RATE_PER_MB_PER_10_MIN_BLOCK},
+      nInvBroadcastInterval{DEFAULT_INV_BROADCAST_INTERVAL},
       // NB: The generated block size is normally set in init.cpp to use chain-specific
       //     defaults which are often smaller than the DEFAULT_CONSENSUS_BLOCK_SIZE.
       varGeneratedBlockSizeParam(100.0),
@@ -71,10 +74,19 @@ bool GlobalConfig::SetGeneratedBlockSizePercent(double percent) {
     return true;
 }
 
-bool GlobalConfig::SetInvBroadcastRate(uint64_t rate) {
-    if (rate > MAX_INV_BROADCAST_RATE) return false;
-    nInvBroadcastRate = rate;
+bool GlobalConfig::SetInvBroadcastRatePerMbFor10MinBlocks(uint64_t ratePerMbPer10MinBlock) {
+    if (ratePerMbPer10MinBlock > MAX_INV_BROADCAST_RATE_PER_MB_PER_10_MIN_BLOCK) return false;
+    nInvBroadcastRatePerMbPer10MinBlock = ratePerMbPer10MinBlock;
     return true;
+}
+
+uint64_t GlobalConfig::GetInvBroadcastRatePerMbForBlockInterval(BlockTicks blockInterval) const {
+    Assume(blockInterval > BlockTicks{0}
+           && 0 == legacy::POW_TARGET_SPACING_SECS % blockInterval.toSecs()
+           && blockInterval <= legacy::POW_TARGET_SPACING_TICKS);
+    const uint64_t multiple = std::max(legacy::POW_TARGET_SPACING_TICKS / std::max(blockInterval, BlockTicks{1}),
+                                       uint64_t{1});
+    return multiple * nInvBroadcastRatePerMbPer10MinBlock;
 }
 
 bool GlobalConfig::SetInvBroadcastInterval(uint64_t interval) {
