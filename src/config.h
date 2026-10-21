@@ -63,7 +63,11 @@ public:
     /** The maximum amount of RAM to be used in the mempool before TrimToSize is called. */
     virtual void SetMaxMemPoolSize(uint64_t maxMemPoolSize) = 0;
     virtual uint64_t GetMaxMemPoolSize() const = 0;
+    /** Set the TPS per MB per 10Min block. Note that to read this value back you need to specify a block interval
+     *  since it scales itself up if the blocksize is smaller due to shorter block intervals.*/
     virtual bool SetInvBroadcastRatePerMbFor10MinBlocks(uint64_t ratePerMbPer10MinBlock) = 0;
+    /** Read back the TPS rate for this block interval. Shorter times return a higher rate -- this value is only
+     *  used in 1 place in the codebase in net_processing.cpp:SendMessages(), and so the scaling is needed there. */
     virtual uint64_t GetInvBroadcastRatePerMbForBlockInterval(BlockTicks blockInterval) const = 0;
     virtual bool SetInvBroadcastInterval(uint64_t interval) = 0;
     virtual uint64_t GetInvBroadcastInterval() const = 0;
