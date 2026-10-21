@@ -626,7 +626,7 @@ static bool TipMayBeStale() EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
 static bool CanDirectFetch() EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     const CBlockIndex *tip{};
     const auto powTargetSpacing = GetCurrentPowSpacing(&tip);
-    return tip->GetBlockTime() > GetAdjustedTime() - powTargetSpacing.toSecs() * 20;
+    return tip && tip->GetBlockTime() > GetAdjustedTime() - powTargetSpacing.toSecs() * 20;
 }
 
 static bool PeerHasHeader(CNodeState *state, const CBlockIndex *pindex)
@@ -2699,12 +2699,13 @@ bool PeerLogicValidation::ProcessMessage(const Config &config, const NodeRef &pf
             // If pruning, don't inv blocks unless we have on disk and are
             // likely to still have for some reasonable time window (1 hour)
             // that block relay might require.
-            const CBlockIndex *tip{};
             constexpr BlockTicks kOneHour{3600u};
             static_assert(MIN_BLOCK_TICKS_TO_KEEP > kOneHour, "Below expression requires MIN_BLOCK_TICKS_TO_KEEP > kOneHour");
             const BlockTicks nPrunedBlockTicksLikelyToHave = MIN_BLOCK_TICKS_TO_KEEP - kOneHour;
+            const CBlockIndex * const tip = ::ChainActive().Tip();
             if (fPruneMode && (!pindex->nStatus.hasData()
-                               || pindex->GetBlockTicks() <= tip->GetBlockTicks() - nPrunedBlockTicksLikelyToHave)) {
+                               || (tip->GetBlockTicks() >= nPrunedBlockTicksLikelyToHave
+                                   && pindex->GetBlockTicks() <= tip->GetBlockTicks() - nPrunedBlockTicksLikelyToHave))) {
                 LogPrint(BCLog::NET, " getblocks stopping, pruned or too old block at %d %s\n",
                          pindex->nHeight, pindex->GetBlockHash().ToString());
                 break;
