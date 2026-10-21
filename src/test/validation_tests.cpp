@@ -1,10 +1,11 @@
 // Copyright (c) 2011-2019 The Bitcoin Core developers
-// Copyright (c) 2017-2021 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <validation.h>
 
+#include <chain.h>
 #include <chainparams.h>
 #include <clientversion.h>
 #include <config.h>
@@ -29,25 +30,27 @@ static void TestBlockSubsidyHalvings(const Consensus::Params &consensusParams) {
     int maxHalvings = 64;
     Amount nInitialSubsidy = 50 * COIN;
 
+    CBlockIndex dummyPrev;
+    dummyPrev.SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS);
     // for height == 0
     Amount nPreviousSubsidy = 2 * nInitialSubsidy;
     BOOST_CHECK_EQUAL(nPreviousSubsidy, 2 * nInitialSubsidy);
     for (int nHalvings = 0; nHalvings < maxHalvings; nHalvings++) {
-        int nHeight = nHalvings * consensusParams.nSubsidyHalvingInterval;
-        Amount nSubsidy = GetBlockSubsidy(nHeight, consensusParams);
+        const BlockTicks ticks = nHalvings * consensusParams.subsidyHalvingInterval;
+        dummyPrev.SetBlockTicks(ticks);
+        Amount nSubsidy = GetBlockSubsidy(&dummyPrev, consensusParams);
         BOOST_CHECK(nSubsidy <= nInitialSubsidy);
         BOOST_CHECK_EQUAL(nSubsidy, nPreviousSubsidy / 2);
         nPreviousSubsidy = nSubsidy;
     }
-    BOOST_CHECK_EQUAL(
-        GetBlockSubsidy(maxHalvings * consensusParams.nSubsidyHalvingInterval,
-                        consensusParams),
-        Amount::zero());
+    dummyPrev.SetBlockTicks(maxHalvings * consensusParams.subsidyHalvingInterval);
+    BOOST_CHECK_EQUAL(GetBlockSubsidy(&dummyPrev, consensusParams),
+                      Amount::zero());
 }
 
 static void TestBlockSubsidyHalvings(int nSubsidyHalvingInterval) {
     Consensus::Params consensusParams;
-    consensusParams.nSubsidyHalvingInterval = nSubsidyHalvingInterval;
+    consensusParams.subsidyHalvingInterval = nSubsidyHalvingInterval * legacy::POW_TARGET_SPACING_TICKS;
     TestBlockSubsidyHalvings(consensusParams);
 }
 
@@ -61,16 +64,41 @@ BOOST_AUTO_TEST_CASE(block_subsidy_test) {
     TestBlockSubsidyHalvings(1000);
 }
 
-BOOST_AUTO_TEST_CASE(subsidy_limit_test) {
+BOOST_AUTO_TEST_CASE(subsidy_limit_test_10_min_blocks) {
     const auto chainParams = CreateChainParams(CBaseChainParams::MAIN);
+    BOOST_REQUIRE(0 == chainParams->GetConsensus().subsidyHalvingInterval / legacy::POW_TARGET_SPACING_TICKS % 1000);
+    CBlockIndex dummyPrev;
+    dummyPrev.SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS);
     Amount nSum = Amount::zero();
     for (int nHeight = 0; nHeight < 14000000; nHeight += 1000) {
-        Amount nSubsidy = GetBlockSubsidy(nHeight, chainParams->GetConsensus());
+        dummyPrev.SetBlockTicks(nHeight * legacy::POW_TARGET_SPACING_TICKS);
+        Amount nSubsidy = GetBlockSubsidy(&dummyPrev, chainParams->GetConsensus());
         BOOST_CHECK(nSubsidy <= 50 * COIN);
         nSum += 1000 * nSubsidy;
         BOOST_CHECK(MoneyRange(nSum));
     }
     BOOST_CHECK_EQUAL(nSum, int64_t(2099999997690000LL) * SATOSHI);
+}
+
+BOOST_AUTO_TEST_CASE(subsidy_limit_test_1_min_blocks) {
+    // Note that in the 1-minute block regime, we come up short 0.2499 BCH (due to int64_t truncation at the end).
+    // This test ensures the behavior of GetBlockSubsidy() matches the spec, and that we are 0.2499 BCH short of
+    // what we would have been at 10-minute blocks.
+    const auto chainParams = CreateChainParams(CBaseChainParams::MAIN);
+    BOOST_REQUIRE(0 == chainParams->GetConsensus().subsidyHalvingInterval / upgrade2027::POW_TARGET_SPACING_TICKS % 10'000);
+    CBlockIndex dummyPrev;
+    dummyPrev.SetTickDeltaForNextBlock(upgrade2027::POW_TARGET_SPACING_TICKS);
+    const BlockTicks end = 14'000'000 * legacy::POW_TARGET_SPACING_TICKS; // end is same tick count of 14 million 10-min blocks
+    Amount nSum = Amount::zero();
+    // We do this 10,000 1-min blocks at a time (same as 1000 10-min blocks at a time)
+    for (BlockTicks ticks{0}; ticks < end; ticks += 10'000 * upgrade2027::POW_TARGET_SPACING_TICKS) {
+        dummyPrev.SetBlockTicks(ticks);
+        Amount nSubsidy = GetBlockSubsidy(&dummyPrev, chainParams->GetConsensus());
+        BOOST_CHECK(nSubsidy <= 50 * COIN);
+        nSum += 10'000 * nSubsidy;
+        BOOST_CHECK(MoneyRange(nSum));
+    }
+    BOOST_CHECK_EQUAL(nSum, int64_t(2099999972700000LL) * SATOSHI);
 }
 
 static CBlock makeLargeDummyBlock(const size_t num_tx) {
