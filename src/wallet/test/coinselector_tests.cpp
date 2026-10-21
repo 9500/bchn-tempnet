@@ -79,7 +79,7 @@ static void add_coin(CWallet &wallet, const Amount nValue, int nAge = 6 * 24,
         wtx->fDebitCached = true;
         wtx->nDebitCached = SATOSHI;
     }
-    COutput output(wtx.get(), nInput, nAge, true /* spendable */,
+    COutput output(wtx.get(), nInput, {nAge, nAge * legacy::POW_TARGET_SPACING_TICKS}, true /* spendable */,
                    true /* solvable */, true /* safe */);
     vCoins.push_back(output);
     wallet.AddToWallet(*wtx.get());
@@ -129,7 +129,7 @@ inline std::vector<OutputGroup> &GroupCoins(const std::vector<COutput> &coins) {
         // defined below; perhaps set safe to false for !fIsFromMe in add_coin()
         const bool is_me =
             coin.tx->fDebitCached && coin.tx->nDebitCached == SATOSHI;
-        static_groups.emplace_back(coin.GetInputCoin(), coin.nDepth, is_me);
+        static_groups.emplace_back(coin.GetInputCoin(), coin.depthInfo.first, is_me);
     }
     return static_groups;
 }

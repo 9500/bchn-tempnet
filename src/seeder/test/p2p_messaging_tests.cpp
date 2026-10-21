@@ -47,7 +47,7 @@ public:
 
 static const unsigned short SERVICE_PORT = 18444;
 
-struct SeederTestingSetup : public TestChain100Setup {
+struct SeederTestingSetup : public TestChainSetup {
     SeederTestingSetup() {
         CNetAddr ip;
         ip.SetInternal("bitcoin.test");

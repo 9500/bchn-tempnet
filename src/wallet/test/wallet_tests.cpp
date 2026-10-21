@@ -49,7 +49,7 @@ static void AddKey(CWallet &wallet, const CKey &key) {
 
 // Note: when backporting PR14957, see PR15321 and ensure both LockAnnotations
 // are in place.
-BOOST_FIXTURE_TEST_CASE(rescan, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(rescan, TestChainSetup) {
     auto chain = interfaces::MakeChain();
 
     // Cap last block file size, and mine new block in a new block file.
@@ -58,6 +58,7 @@ BOOST_FIXTURE_TEST_CASE(rescan, TestChain100Setup) {
     CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
     CBlockIndex *newTip = ::ChainActive().Tip();
 
+    const auto &params = GetConfig().GetChainParams().GetConsensus();
     LockAnnotation lock(::cs_main);
     auto locked_chain = chain->lock();
 
@@ -91,7 +92,8 @@ BOOST_FIXTURE_TEST_CASE(rescan, TestChain100Setup) {
         BOOST_CHECK(result.failed_block.IsNull());
         BOOST_CHECK_EQUAL(result.stop_block, newTip->GetBlockHash());
         BOOST_CHECK_EQUAL(*result.stop_height, newTip->nHeight);
-        BOOST_CHECK_EQUAL(wallet.GetImmatureBalance(), 100 * COIN);
+        const auto expected = GetBlockSubsidy(oldTip->pprev, params) + GetBlockSubsidy(newTip->pprev, params);
+        BOOST_CHECK_EQUAL(wallet.GetImmatureBalance(), expected);
     }
 
     // Prune the older block file.
@@ -112,7 +114,8 @@ BOOST_FIXTURE_TEST_CASE(rescan, TestChain100Setup) {
         BOOST_CHECK_EQUAL(result.failed_block, oldTip->GetBlockHash());
         BOOST_CHECK_EQUAL(result.stop_block, newTip->GetBlockHash());
         BOOST_CHECK_EQUAL(*result.stop_height, newTip->nHeight);
-        BOOST_CHECK_EQUAL(wallet.GetImmatureBalance(), 50 * COIN);
+        const auto expected = GetBlockSubsidy(newTip->pprev, params);
+        BOOST_CHECK_EQUAL(wallet.GetImmatureBalance(), expected);
     }
 
     // Prune the remaining block file.
@@ -136,7 +139,7 @@ BOOST_FIXTURE_TEST_CASE(rescan, TestChain100Setup) {
     }
 }
 
-BOOST_FIXTURE_TEST_CASE(importmulti_rescan, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(importmulti_rescan, TestChainSetup) {
     auto chain = interfaces::MakeChain();
 
     // Cap last block file size, and mine new block in a new block file.
@@ -199,8 +202,9 @@ BOOST_FIXTURE_TEST_CASE(importmulti_rescan, TestChain100Setup) {
 // greater or equal than key birthday. Previously there was a bug where
 // importwallet RPC would start the scan at the latest block with timestamp less
 // than or equal to key birthday.
-BOOST_FIXTURE_TEST_CASE(importwallet_rescan, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(importwallet_rescan, TestChainSetup) {
     auto chain = interfaces::MakeChain();
+    const size_t origCbTxnsSize = m_coinbase_txns.size();
 
     // Create two blocks with same timestamp to verify that importwallet rescan
     // will pick up both blocks, not just the first.
@@ -259,10 +263,10 @@ BOOST_FIXTURE_TEST_CASE(importwallet_rescan, TestChain100Setup) {
 
         LOCK(wallet->cs_wallet);
         BOOST_CHECK_EQUAL(wallet->mapWallet.size(), 3U);
-        BOOST_CHECK_EQUAL(m_coinbase_txns.size(), 103U);
+        BOOST_CHECK_EQUAL(m_coinbase_txns.size(), origCbTxnsSize + 3U);
         for (size_t i = 0; i < m_coinbase_txns.size(); ++i) {
             bool found = wallet->GetWalletTx(m_coinbase_txns[i]->GetId());
-            bool expected = i >= 100;
+            bool expected = i >= origCbTxnsSize;
             BOOST_CHECK_EQUAL(found, expected);
         }
     }
@@ -290,7 +294,7 @@ BOOST_AUTO_TEST_CASE(no_wallet) {
 // This is a regression test written to verify a bugfix for the immature credit
 // function. Similar tests probably should be written for the other credit and
 // debit functions.
-BOOST_FIXTURE_TEST_CASE(coin_mark_dirty_immature_credit, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(coin_mark_dirty_immature_credit, TestChainSetup) {
     auto chain = interfaces::MakeChain();
     CWallet wallet(GetConfig(), *chain, WalletLocation(),
                    WalletDatabase::CreateDummy());
@@ -308,7 +312,7 @@ BOOST_FIXTURE_TEST_CASE(coin_mark_dirty_immature_credit, TestChain100Setup) {
     // credit amount is calculated.
     wtx.MarkDirty();
     wallet.AddKeyPubKey(coinbaseKey, coinbaseKey.GetPubKey());
-    BOOST_CHECK_EQUAL(wtx.GetImmatureCredit(*locked_chain), 50 * COIN);
+    BOOST_CHECK_EQUAL(wtx.GetImmatureCredit(*locked_chain), m_coinbase_txns.back()->vout.at(0).nValue);
 }
 
 static int64_t AddTx(CWallet &wallet, uint32_t lockTime, int64_t mockTime,
@@ -381,7 +385,7 @@ BOOST_AUTO_TEST_CASE(LoadReceiveRequests) {
     BOOST_CHECK_EQUAL(values[1], "val_rr1");
 }
 
-class ListCoinsTestingSetup : public TestChain100Setup {
+class ListCoinsTestingSetup : public TestChainSetup {
 public:
     ListCoinsTestingSetup() {
         CreateAndProcessBlock({},
@@ -423,6 +427,7 @@ public:
                           wallet->CreateTransaction(
                               *m_locked_chain, recipients, tx, reservekey, fee,
                               changePos, error, coinControl, true, coinsel));
+        BOOST_REQUIRE(tx);
 
         // The anti-fee-sniping feature should set the lock time equal to the block height.
         BOOST_CHECK_EQUAL(::ChainActive().Height(), tx->nLockTime);
@@ -455,6 +460,13 @@ public:
     std::unique_ptr<interfaces::Chain::Lock> m_locked_chain =
         m_chain->assumeLocked();
     std::unique_ptr<CWallet> wallet;
+
+    static Amount GetSubsidy(int height) {
+        const auto &params = GetConfig().GetChainParams().GetConsensus();
+        const CBlockIndex *pindex = WITH_LOCK(cs_main, return ::ChainActive()[height]);
+        BOOST_REQUIRE(pindex);
+        return GetBlockSubsidy(pindex->pprev, params);
+    }
 };
 
 BOOST_FIXTURE_TEST_CASE(ListCoins, ListCoinsTestingSetup) {
@@ -473,10 +485,10 @@ BOOST_FIXTURE_TEST_CASE(ListCoins, ListCoinsTestingSetup) {
     BOOST_CHECK_EQUAL(list.begin()->second.size(), 1U);
 
     // Check initial balance from one mature coinbase transaction.
-    BOOST_CHECK_EQUAL(50 * COIN, wallet->GetAvailableBalance());
+    BOOST_CHECK_EQUAL(GetSubsidy(1), wallet->GetAvailableBalance());
 
     // Check that wallet->GetBalance returns the same thing
-    BOOST_CHECK_EQUAL(50 * COIN, wallet->GetBalance());
+    BOOST_CHECK_EQUAL(GetSubsidy(1), wallet->GetBalance());
 
     // Add a transaction creating a change address, and confirm ListCoins still
     // returns the coin associated with the change address underneath the
@@ -527,21 +539,42 @@ BOOST_FIXTURE_TEST_CASE(ListCoins, ListCoinsTestingSetup) {
 BOOST_FIXTURE_TEST_CASE(FastTransaction, ListCoinsTestingSetup) {
     std::string coinbaseAddress = coinbaseKey.GetPubKey().GetID().ToString();
 
+    const Amount block1Subsidy = GetSubsidy(1);
+    BOOST_CHECK_EQUAL(block1Subsidy, m_coinbase_txns.at(0)->GetValueOut());
+    Amount bal = block1Subsidy; // starting balance is block 1's subsidy
+    int next_maturing_cb = 2;
     for (uint8_t i=0; i<2; i++) {
         CoinSelectionHint coinsel(static_cast<CoinSelectionHint>(i));
 
-        BOOST_CHECK(wallet->GetBalance() == 50 * COIN);
+        Amount sent, subsidy, s1, s2, s3, s4;
+        BOOST_CHECK_EQUAL(wallet->GetBalance(), bal);
 
-        // Each AddTx call will spend some coins then mine a block, adding another 50 coins
-        AddTx(CRecipient{GetScriptForRawPubKey({}),   1 * COIN, {}, true /* subtract fee */}, coinsel);
-        BOOST_CHECK(wallet->GetBalance() == 99 * COIN);
-        AddTx(CRecipient{GetScriptForRawPubKey({}),   1 * COIN, {}, true /* subtract fee */}, coinsel);
-        BOOST_CHECK(wallet->GetBalance() == 148 * COIN);
-        AddTx(CRecipient{GetScriptForRawPubKey({}),  51 * COIN, {}, true /* subtract fee */}, coinsel);
-        BOOST_CHECK(wallet->GetBalance() == 147 * COIN);
-        AddTx(CRecipient{GetScriptForRawPubKey({}), 147 * COIN, {}, true /* subtract fee */}, coinsel);
-
-        BOOST_CHECK(wallet->GetBalance() == 50 * COIN);
+        // Each AddTx call will spend some coins then mine a block, adding another `GetSubsidy()` coins
+        subsidy = s1 = GetSubsidy(next_maturing_cb++);
+        sent = 1 * COIN;
+        AddTx(CRecipient{GetScriptForRawPubKey({}), sent, {}, true /* subtract fee */}, coinsel);
+        bal -= sent;
+        bal += subsidy;
+        BOOST_CHECK_EQUAL(wallet->GetBalance(), bal);
+        subsidy = s2 = GetSubsidy(next_maturing_cb++);
+        sent = 1 * COIN;
+        AddTx(CRecipient{GetScriptForRawPubKey({}), sent, {}, true /* subtract fee */}, coinsel);
+        bal -= sent;
+        bal += subsidy;
+        BOOST_CHECK_EQUAL(wallet->GetBalance(), bal);
+        subsidy = s3 = GetSubsidy(next_maturing_cb++);
+        sent = s1 + 1 * COIN;
+        AddTx(CRecipient{GetScriptForRawPubKey({}), sent, {}, true /* subtract fee */}, coinsel);
+        bal -= sent;
+        bal += subsidy;
+        BOOST_CHECK_EQUAL(wallet->GetBalance(), bal);
+        subsidy = s4 = GetSubsidy(next_maturing_cb++);
+        sent = s2 + s3 + s4 - 3 * COIN;
+        AddTx(CRecipient{GetScriptForRawPubKey({}), sent, {}, true /* subtract fee */}, coinsel);
+        bal -= sent;
+        bal += subsidy;
+        BOOST_CHECK_EQUAL(bal, block1Subsidy); // should end up at original height=1 subsidy
+        BOOST_CHECK_EQUAL(wallet->GetBalance(), bal);
     }
 }
 
@@ -561,7 +594,7 @@ BOOST_FIXTURE_TEST_CASE(wallet_error_on_invalid_coinselection_hint, ListCoinsTes
                 CoinSelectionHint::Invalid));
 }
 
-BOOST_FIXTURE_TEST_CASE(wallet_disableprivkeys, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(wallet_disableprivkeys, TestChainSetup) {
     auto chain = interfaces::MakeChain();
     std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(
         GetConfig(), *chain, WalletLocation(), WalletDatabase::CreateDummy());
@@ -604,7 +637,7 @@ static size_t CalculateP2PKHInputSize(bool use_max_sig, bool use_schnorr) {
     return static_cast<size_t>(GetVirtualTransactionInputSize(tx_in, 1, nBytesPerSigCheck));
 }
 
-BOOST_FIXTURE_TEST_CASE(dummy_input_size_test, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(dummy_input_size_test, TestChainSetup) {
     BOOST_CHECK_EQUAL(CalculateP2PKHInputSize(false, false), DUMMY_P2PKH_INPUT_SIZE);
     BOOST_CHECK_EQUAL(CalculateP2PKHInputSize(true, false), DUMMY_P2PKH_INPUT_SIZE_MAX);
     BOOST_CHECK_EQUAL(CalculateP2PKHInputSize(true, true), DUMMY_P2PKH_INPUT_SIZE_MAX);
@@ -635,7 +668,7 @@ static size_t RealP2PKHInputSize(bool sign_schnorr) {
     return static_cast<size_t>(GetVirtualTransactionInputSize(tx.vin[0], 1, nBytesPerSigCheck));
 }
 
-BOOST_FIXTURE_TEST_CASE(real_input_size_test, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(real_input_size_test, TestChainSetup) {
     // The constants must bound what we really produce, not just what the dummy
     // creators produce; otherwise a matching error in both goes unnoticed.
     BOOST_CHECK_EQUAL(RealP2PKHInputSize(/* sign_schnorr= */ true), DUMMY_P2PKH_INPUT_SIZE_SCHNORR);
@@ -653,7 +686,7 @@ BOOST_FIXTURE_TEST_CASE(real_input_size_test, TestChain100Setup) {
 
 // CalculateP2PKHInputSize above re-implements DummySignInput's creator choice,
 // so it cannot notice that choice regressing. Drive the wallet's own path.
-BOOST_FIXTURE_TEST_CASE(dummy_input_size_honors_use_max_sig_test, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(dummy_input_size_honors_use_max_sig_test, TestChainSetup) {
     const Defer d = [wasSchnorr = GetConfig().IsSignSchnorr()] {
         // Restore whatever the global setting was prior to this test
         GetMutableConfig().SetSignSchnorr(wasSchnorr);
@@ -706,6 +739,10 @@ struct Upgrade9NotActivatedTestingSetup : ListCoinsTestingSetup {
 };
 
 BOOST_FIXTURE_TEST_CASE(wallet_bip69, Upgrade9NotActivatedTestingSetup) {
+    // Require that we start out with precisely 1 mature coinbase coin
+    const Amount startingBalance = GetSubsidy(1);
+    BOOST_REQUIRE_EQUAL(wallet->GetBalance(), startingBalance);
+
     // Note: The entire point of this test is to *just* test tx sorting with/without bip69 enabled when token data is
     // present/absent, and as such we didn't bother creating consensus-respecting CashToken txns for this test (which
     // is why this test requires upgrade9 be disabled).
@@ -742,7 +779,7 @@ BOOST_FIXTURE_TEST_CASE(wallet_bip69, Upgrade9NotActivatedTestingSetup) {
         }
     }
 
-    BOOST_CHECK(wallet->GetBalance() > 50 * COIN);
+    BOOST_CHECK(wallet->GetBalance() > startingBalance);
     {
         // count the number of coins we have
         LOCK2(cs_main, wallet->cs_wallet);
@@ -992,6 +1029,9 @@ BOOST_FIXTURE_TEST_CASE(wallet_tokens, Upgrade9ActivatedTestingSetup) {
         return ret;
     };
 
+    int mature_cb_height = 1;
+    BOOST_REQUIRE_EQUAL(wallet->GetAvailableBalance(), GetSubsidy(1)); // Ensure all we have is 1 mature CB coin
+
     auto GenesisTokenToWallet = [&]{
         auto tokenGenesisCandidateCoins = GetTokenGenesisCoins();
         BOOST_CHECK( ! tokenGenesisCandidateCoins.empty());
@@ -1007,6 +1047,7 @@ BOOST_FIXTURE_TEST_CASE(wallet_tokens, Upgrade9ActivatedTestingSetup) {
         const CRecipient toMe{spk, 100 * CASH, tokenData, false};
 
         AddTx(toMe, CoinSelectionHint::Default, nullptr, ctl);
+        ++mature_cb_height;
         return tokenId;
     };
 
@@ -1021,6 +1062,7 @@ BOOST_FIXTURE_TEST_CASE(wallet_tokens, Upgrade9ActivatedTestingSetup) {
           const CRecipient toMe{txout.scriptPubKey, txout.nValue, txout.tokenDataPtr, true /* subtract fee */};
 
           AddTx(toMe, CoinSelectionHint::Default, nullptr, ctl);
+          ++mature_cb_height;
     };
 
     BOOST_CHECK_MESSAGE(GetTokenCoins().empty(), "Wallet should start out with no tokens");
@@ -1071,8 +1113,9 @@ BOOST_FIXTURE_TEST_CASE(wallet_tokens, Upgrade9ActivatedTestingSetup) {
     AddTx(toExt); // send all non-token coins to external address
 
     const auto balanceAfter = wallet->GetAvailableBalance();
-    BOOST_CHECK_MESSAGE(balanceBefore != balanceAfter && balanceAfter == 50 * COIN,
-                        "Our ending balance should be just 50 BCH (newly matured coinbase from mining).");
+    const Amount expectedBalance = GetSubsidy(mature_cb_height); // support both 1 min and 10 min block times here
+    BOOST_CHECK_MESSAGE(balanceBefore > balanceAfter && balanceAfter == expectedBalance,
+                        "Our ending balance should be just one newly matured coinbase from mining.");
     BOOST_CHECK_MESSAGE(GetTokenCoins().size() == 1, "Ensure that after sending all, we still have the token coin");
     const auto balancePlusTokens = wallet->GetAvailableBalance(&allIncludingTokens);
     BOOST_CHECK_MESSAGE(balancePlusTokens == balanceAfter + tokenCoins.front().GetInputCoin().txout.nValue,

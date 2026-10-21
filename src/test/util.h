@@ -1,31 +1,42 @@
 // Copyright (c) 2019 The Bitcoin Core developers
-// Copyright (c) 2020-2021 The Bitcoin developers
+// Copyright (c) 2020-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #pragma once
 
+#include <primitives/transaction.h>
 #include <span.h>
 
+#include <any>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 class CBlock;
 class Config;
-class CScript;
-class CTxIn;
-class CWallet;
 
 // Lower-level utils //
 
 /** Returns the generated coin */
-CTxIn MineBlock(const Config &config, const CScript &coinbase_scriptPubKey);
+/** Returns the generated coinbase coin */
+std::pair<COutPoint, Amount> MineBlock(const Config &config, const CScript &coinbase_scriptPubKey,
+                                       const std::vector<CTransactionRef> &extraTxns = {});
 /** Prepare a block to be mined */
 std::shared_ptr<CBlock> PrepareBlock(const Config &config,
-                                     const CScript &coinbase_scriptPubKey);
+                                     const CScript &coinbase_scriptPubKey,
+                                     const std::vector<CTransactionRef> &extraTxns = {});
+/** Mines until the current tip's coinbase is mature, paying out to *scriptPubKey or OP_TRUE if !scriptPubKey.
+    Returns number of blocks mined on top of tip */
+size_t MatureCurrentTip(const Config &config, const CScript *scriptPubKey = nullptr);
+
+/** If fCheckBlockIndex is enabled, temporarily disables it and returns an opaque RAII type that will auto-re-enable
+ *  fCheckBlockIndex when its lifetime ends. Additionally, on lifetime end of the returned value, CheckBlockIndex()
+ *  is run once for good measure. Warning: param `config` *must* outlive the returned RAII type! */
+[[nodiscard]] std::any TemporarilyDisableCheckBlockIndex(const Config &config);
 
 // Use zlib to uncompress to a byte buffer. Throws on error, such as if uncompressedByteSize is too small, otherwise
 // returns the uncompressed bytes. The returned vector's size is always <= uncompressedByteSize.

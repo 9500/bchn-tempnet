@@ -1,5 +1,5 @@
 // Copyright (c) 2019 The Bitcoin Core developers
-// Copyright (c) 2020-2025 The Bitcoin developers
+// Copyright (c) 2020-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,21 +8,27 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <config.h>
+#include <consensus/activation.h>
+#include <consensus/consensus.h>
 #include <consensus/merkle.h>
 #include <miner.h>
+#include <primitives/transaction.h>
 #include <pow.h>
+#include <util/defer.h>
 #include <validation.h>
 
 #include <zlib.h>
 
+#include <algorithm>
 #include <cassert>
 #include <stdexcept>
+#include <optional>
 
-CTxIn MineBlock(const Config &config, const CScript &coinbase_scriptPubKey) {
-    auto block = PrepareBlock(config, coinbase_scriptPubKey);
+std::pair<COutPoint, Amount>
+MineBlock(const Config &config, const CScript &coinbase_scriptPubKey, const std::vector<CTransactionRef> &extraTxns) {
+    auto block = PrepareBlock(config, coinbase_scriptPubKey, extraTxns);
 
-    while (!CheckProofOfWork(block->GetHash(), block->nBits,
-                             config.GetChainParams().GetConsensus())) {
+    while (!CheckProofOfWork(block->GetHash(), block->nBits, config.GetChainParams().GetConsensus())) {
         ++block->nNonce;
         assert(block->nNonce);
     }
@@ -30,21 +36,76 @@ CTxIn MineBlock(const Config &config, const CScript &coinbase_scriptPubKey) {
     bool processed{ProcessNewBlock(config, block, true, nullptr)};
     assert(processed);
 
-    return CTxIn{block->vtx[0]->GetId(), 0};
+    const auto &tx = *block->vtx.at(0);
+    return {std::piecewise_construct,
+            std::forward_as_tuple(tx.GetId(), 0), std::forward_as_tuple(tx.vout.at(0).nValue)};
 }
 
 std::shared_ptr<CBlock> PrepareBlock(const Config &config,
-                                     const CScript &coinbase_scriptPubKey) {
-    auto block =
-        std::make_shared<CBlock>(BlockAssembler{config, ::g_mempool}
-                                     .CreateNewBlock(coinbase_scriptPubKey)
-                                     ->block);
-    const CBlockIndex * const tip = ::ChainActive().Tip();
+                                     const CScript &coinbase_scriptPubKey,
+                                     const std::vector<CTransactionRef> &extraTxns) {
+    const CBlockIndex *tip{};
+    auto block = std::make_shared<CBlock>(std::move(
+        BlockAssembler{config, ::g_mempool}.CreateNewBlock(coinbase_scriptPubKey, 0, true, &tip)->block
+    ));
     assert(tip != nullptr);
+    assert(tip->GetBlockHash() == block->hashPrevBlock);
+    // Set nTime based on tip + 1
     block->nTime = tip->GetMedianTimePast() + 1;
+
+    // Add any extra txns specified
+    if (!extraTxns.empty()) {
+        block->vtx.reserve(block->vtx.size() + extraTxns.size());
+        block->vtx.insert(block->vtx.end(), extraTxns.begin(), extraTxns.end());
+        // Sort if we added txns and we have magnetic anomaly enabled
+        if (IsMagneticAnomalyEnabled(config.GetChainParams().GetConsensus(), tip)) {
+            std::sort(block->vtx.begin() + 1, block->vtx.end(), [](const auto &a, const auto &b){
+                return a->GetId() < b->GetId();
+            });
+        }
+    }
+
+    // Recalculate merkle root since we touched header and/or possibly txns
     block->hashMerkleRoot = BlockMerkleRoot(*block);
 
     return block;
+}
+
+size_t MatureCurrentTip(const Config &config, const CScript *scriptPubKey) {
+    // we must force-disable block index checking while we mine blocks, since it slows this process down for 1000-block chains somewhat
+    const auto raiiReEnabler = TemporarilyDisableCheckBlockIndex(config);
+
+    std::optional<CScript> tmpSPK;
+    if (!scriptPubKey) {
+        scriptPubKey = &(tmpSPK.emplace() << OP_TRUE);
+    }
+    auto GetTicks = [](bool next = false) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+        const CBlockIndex * const tip = ::ChainActive().Tip();
+        return tip ? tip->GetBlockTicks() + (next ? tip->GetTickDeltaForNextBlock() : BlockTicks{0}) : BlockTicks{0};
+    };
+    LOCK(cs_main);
+    const auto maturity = GetTicks() + kCoinbaseMaturityTicks;
+    size_t ct{};
+    while (GetTicks(true) < maturity) {
+        MineBlock(config, *scriptPubKey);
+        ++ct;
+    }
+    return ct;
+}
+
+[[nodiscard]] std::any TemporarilyDisableCheckBlockIndex(const Config &config) {
+    if (!fCheckBlockIndex) {
+        // was already disabled, just bail without doing anything
+        return {};
+    }
+    // was enabled, disable and return an RAII functor that will re-enable and run CheckBlockIndex on lifetime end
+    fCheckBlockIndex = false;
+    auto ReEnabler = [&params = config.GetChainParams().GetConsensus()]{
+        fCheckBlockIndex = true;
+        CheckBlockIndex(params);
+    };
+    // We use the "Defer" type here that auto-calls a functor on destruction.
+    return std::make_shared<const Defer<decltype(ReEnabler)>>(std::move(ReEnabler));
 }
 
 Span<uint8_t> UncompressInPlace(Span<uint8_t> outputBuf, Span<const uint8_t> compressedBytes) {

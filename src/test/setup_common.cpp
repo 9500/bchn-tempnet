@@ -4,6 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test/setup_common.h>
+#include <test/util.h>
 
 #include <banman.h>
 #include <chain.h>
@@ -226,30 +227,59 @@ void TestingSetup::StopScheduler() {
     }
 }
 
-TestChain100Setup::TestChain100Setup()
-    : TestingSetup(CBaseChainParams::REGTEST) {
-    // Generate a 100-block chain:
-    coinbaseKey.MakeNewKey(true);
-    CScript scriptPubKey = CScript() << coinbaseKey.GetPubKey()
-                                     << OP_CHECKSIG;
-    for (int i = 0; i < COINBASE_MATURITY; i++) {
-        std::vector<CMutableTransaction> noTxns;
-        CBlock b = CreateAndProcessBlock(noTxns, scriptPubKey);
-        m_coinbase_txns.push_back(b.vtx[0]);
+TestChainSetup::TestChainSetup() : TestingSetup(CBaseChainParams::REGTEST) {
+    // Generate a 100-block or 1000-block chain, paying to coinbaseKey
+    CreateMaturityTicksWorthOfBlocks();
+}
+
+size_t TestChainSetup::CreateMaturityTicksWorthOfBlocks(const CScript *coinbaseScriptPubKey,
+                                                        const std::function<void(size_t)> &func) {
+    // we must force-disable block index checking while we mine blocks, since it slows this process down for 1000-block chains somewhat
+    const auto raiiReEnabler = TemporarilyDisableCheckBlockIndex(GetConfig());
+
+    auto GetNextTicks = []() EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+        if (auto *tip = ::ChainActive().Tip()) {
+            return tip->GetBlockTicks() + tip->GetTickDeltaForNextBlock();
+        }
+        return BlockTicks{0};
+    };
+
+    const std::vector<CMutableTransaction> noTxns;
+    std::optional<CScript> tmpSPK;
+    if (coinbaseScriptPubKey == nullptr) {
+        // ensure we have a good key
+        if (!coinbaseKey.IsValid()) {
+            coinbaseKey.MakeNewKey(true);
+        }
+        // P2PK
+        coinbaseScriptPubKey = &(tmpSPK.emplace() << coinbaseKey.GetPubKey() << OP_CHECKSIG);
     }
+    size_t count = 0;
+    LOCK(cs_main);
+    // This loop creates enough blocks to ensure that at least the 1st coinbase is spendable
+    const auto maturity = GetNextTicks() + kCoinbaseMaturityTicks;
+    while (GetNextTicks() < maturity) {
+        CBlock b = CreateAndProcessBlock(noTxns, *coinbaseScriptPubKey);
+        m_coinbase_txns.push_back(b.vtx[0]);
+        if (func) {
+            func(++count);
+        }
+    }
+    return count;
 }
 
 //
 // Create a new block with just given transactions, coinbase paying to
 // scriptPubKey, and try to add it to the current chain.
 //
-CBlock TestChain100Setup::CreateAndProcessBlock(
+CBlock TestChainSetup::CreateAndProcessBlock(
     const std::vector<CMutableTransaction> &txns, const CScript &scriptPubKey) {
     const Config &config = GetConfig();
     const CBlockIndex *pindexMinedTip;
-    std::unique_ptr<CBlockTemplate> pblocktemplate =
-        BlockAssembler(config, g_mempool).CreateNewBlock(scriptPubKey, 0, true, &pindexMinedTip);
-    CBlock &block = pblocktemplate->block;
+    auto shared_pblock = std::make_shared<CBlock>(std::move(
+        BlockAssembler(config, g_mempool).CreateNewBlock(scriptPubKey, 0, true, &pindexMinedTip)->block
+    ));
+    CBlock &block = *shared_pblock;
 
     // Replace mempool-selected txns with just coinbase plus passed-in txns:
     block.vtx.resize(1);
@@ -259,9 +289,8 @@ CBlock TestChain100Setup::CreateAndProcessBlock(
 
     // Order transactions by canonical order
     std::sort(std::begin(block.vtx) + 1, std::end(block.vtx),
-              [](const std::shared_ptr<const CTransaction> &txa,
-                 const std::shared_ptr<const CTransaction> &txb) -> bool {
-                  return txa->GetId() < txb->GetId();
+              [](const std::shared_ptr<const CTransaction> &a, const std::shared_ptr<const CTransaction> &b) -> bool {
+                  return a->GetId() < b->GetId();
               });
 
     // IncrementExtraNonce creates a valid coinbase and merkleRoot
@@ -273,15 +302,12 @@ CBlock TestChain100Setup::CreateAndProcessBlock(
         ++block.nNonce;
     }
 
-    std::shared_ptr<const CBlock> shared_pblock =
-        std::make_shared<const CBlock>(block);
     ProcessNewBlock(config, shared_pblock, true, nullptr);
 
-    CBlock result = block;
-    return result;
+    return block; // NB: don't std::move(block) here because other parts of app may be holding refs to shared_pblock
 }
 
-TestChain100Setup::~TestChain100Setup() {}
+TestChainSetup::~TestChainSetup() {}
 
 CTxMemPoolEntry TestMemPoolEntryHelper::FromTx(const CMutableTransaction &tx) {
     return FromTx(MakeTransactionRef(tx));

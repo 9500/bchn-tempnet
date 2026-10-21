@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2026 The Bitcoin developers
+// Copyright (c) 2019-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -258,7 +258,8 @@ BOOST_AUTO_TEST_CASE(isupgrade2027enabled) {
     // test with no hard-coded activation height (activation based on MTP)
     const auto pparams = CreateChainParams(CBaseChainParams::MAIN);
     const Consensus::Params &params = pparams->GetConsensus();
-    const auto activation = gArgs.GetArg("-upgrade2027activationtime", params.upgrade2027ActivationTime);
+    const auto activation = g_Upgrade2027TimeOverride.value_or(params.upgrade2027ActivationTime);
+    BOOST_REQUIRE(activation > 1000001);
     const auto origMockTime = GetMockTime();
     Defer d([origMockTime] { SetMockTime(origMockTime); });
     SetMockTime(activation - 1000000);
@@ -288,7 +289,8 @@ BOOST_AUTO_TEST_CASE(test_upgrade2027_activation_block_tracking) {
     CBlockIndex * const origTip = ::ChainActive().Tip();
     const auto pparams = CreateChainParams(CBaseChainParams::MAIN);
     const Consensus::Params &params = pparams->GetConsensus();
-    const auto activation = gArgs.GetArg("-upgrade2027activationtime", params.upgrade2027ActivationTime);
+    const auto activation = g_Upgrade2027TimeOverride.value_or(params.upgrade2027ActivationTime);
+    BOOST_REQUIRE(activation > 1000001);
     const auto origMockTime = GetMockTime();
     SetMockTime(activation - 1000000);
     Defer d([&] {

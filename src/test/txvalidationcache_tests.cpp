@@ -39,7 +39,7 @@ static bool ToMemPool(const CMutableTransaction &tx) {
 }
 
 // Testing setup that we use with a few cases below to try both Schnorr and ECDSA signing for the same test cases
-struct TxValidationCacheSetup : TestChain100Setup {
+struct TxValidationCacheSetup : TestChainSetup {
     TxValidationCacheSetup() = default;
 
     void tx_mempool_block_doublespend_inner(bool schnorr);

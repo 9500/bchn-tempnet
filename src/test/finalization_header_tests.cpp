@@ -16,7 +16,7 @@
 #include <util/time.h>
 #include <validation.h>
 
-BOOST_FIXTURE_TEST_SUITE(finalization_header_tests, TestChain100Setup)
+BOOST_FIXTURE_TEST_SUITE(finalization_header_tests, TestChainSetup)
 
 static COutPoint InsecureRandOutPoint() {
     return COutPoint(TxId(InsecureRand256()), 0);

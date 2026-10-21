@@ -189,7 +189,7 @@ QModelIndex FindTx(const QAbstractItemModel &model, const uint256 &txid) {
 void TestGUI() {
     QLocale::setDefault(QLocale("en_US"));
     // Set up wallet and chain with 105 blocks (5 mature blocks for spending).
-    TestChain100Setup test;
+    TestChainSetup test;
     for (int i = 0; i < 5; ++i) {
         test.CreateAndProcessBlock(
             {}, GetScriptForRawPubKey(test.coinbaseKey.GetPubKey()));

@@ -1157,11 +1157,13 @@ static Defer<std::function<void()>> SetUpgrade12Active(bool active, const int32_
 // After activation:
 //    - do not allow coinbase transactions with any token outputs.
 //    - do not allow coinbase transactions to contain a scriptPubKey that starts with token::PREFIX_BYTE
-BOOST_FIXTURE_TEST_CASE(check_consensus_rejection_of_coinbase_tokens, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(check_consensus_rejection_of_coinbase_tokens, TestChainSetup) {
     SeedInsecureRand(/* deterministic */ true);
     const bool prev_g_mock_deterministic_tests = g_mock_deterministic_tests;
     g_mock_deterministic_tests = true;
     Defer d([&]{ g_mock_deterministic_tests = prev_g_mock_deterministic_tests; });
+
+    const auto &params = ::GetConfig().GetChainParams();
 
     const auto [currentHeight, currentMTP] = []{
         LOCK(cs_main);
@@ -1171,7 +1173,7 @@ BOOST_FIXTURE_TEST_CASE(check_consensus_rejection_of_coinbase_tokens, TestChain1
     }();
 
     // Create two coinbase transactions (one with token data and one with unparseable token data)
-    const auto & [coinbaseTxWithTokenData, coinbaseTxWithUnparseableTokenData] = [](int nHeight){
+    const auto & [coinbaseTxWithTokenData, coinbaseTxWithUnparseableTokenData] = [&params](int nHeight){
         CMutableTransaction mtx;
         auto & txin = mtx.vin.emplace_back(); // default constructed CTxIn is a coinbase
         txin.scriptSig = CScript() << ScriptInt::fromInt(nHeight + 1).value(); // encode BIP34 height correctly
@@ -1181,7 +1183,8 @@ BOOST_FIXTURE_TEST_CASE(check_consensus_rejection_of_coinbase_tokens, TestChain1
         const auto token_amount = token::SafeAmount::fromInt(1).value();
         CScript spk;
         GenRandomScriptPubKeyHexForAStandardDestination(&spk);
-        auto & txo = mtx.vout.emplace_back(50 * COIN, spk, token::OutputDataPtr{token::OutputData(token_id, token_amount)});
+        const Amount subsidy = GetBlockSubsidy(WITH_LOCK(cs_main, return ::ChainActive().Tip()), params.GetConsensus());
+        auto & txo = mtx.vout.emplace_back(subsidy, spk, token::OutputDataPtr{token::OutputData(token_id, token_amount)});
         CMutableTransaction tx1 = mtx; // save this txn
         // clear token data
         txo.tokenDataPtr.reset();
@@ -1195,7 +1198,6 @@ BOOST_FIXTURE_TEST_CASE(check_consensus_rejection_of_coinbase_tokens, TestChain1
     BOOST_CHECK(coinbaseTxWithUnparseableTokenData.IsCoinBase());
     BOOST_CHECK(coinbaseTxWithUnparseableTokenData.vout.back().HasUnparseableTokenData());
 
-    const auto &params = ::GetConfig().GetChainParams();
     CValidationState state;
     BlockValidationOptions options(::GetConfig());
     options = options.withCheckMerkleRoot().withCheckPoW();
@@ -1448,7 +1450,7 @@ static CMutableTransaction CreateAndSignTx(const CKey senderKey, const CTransact
 
 /// txn-tokens-before-activation: Check that valid genesis token transactions can be mined only after
 /// activation of native tokens
-BOOST_FIXTURE_TEST_CASE(with_mempool_check_valid_genesis_token, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(with_mempool_check_valid_genesis_token, TestChainSetup) {
     // Create a token category genesis transaction. To be a genesis tx, the token category id must be equal
     // to the prevout tx id and the tx prevout must be n=0
     std::vector<CTxOut> vout(1);
@@ -1472,7 +1474,7 @@ BOOST_FIXTURE_TEST_CASE(with_mempool_check_valid_genesis_token, TestChain100Setu
 }
 
 /// bad-txns-token-invalid-category: Check that we cannot spend tokens with no matching input tokens
-BOOST_FIXTURE_TEST_CASE(with_mempool_check_invalid_mint, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(with_mempool_check_invalid_mint, TestChainSetup) {
     // Create a token "from nothing" - with no matching genesis or input token
     std::vector<CTxOut> vout(1);
     // Random ID ensures no matching token category
@@ -1491,7 +1493,7 @@ BOOST_FIXTURE_TEST_CASE(with_mempool_check_invalid_mint, TestChain100Setup) {
 
 /// bad-txns-inputs-missingorspent: Check that we cannot spend from a spent input
 // This error is caught by AcceptToMemoryPool returning with 'missingInputs' set to true
-BOOST_FIXTURE_TEST_CASE(with_mempool_check_spent_coin_with_token_spend, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(with_mempool_check_spent_coin_with_token_spend, TestChainSetup) {
     // Create a token category genesis transaction and render the reward spent
     std::vector<CTxOut> vout(1);
     vout[0].tokenDataPtr.emplace(token::Id{m_coinbase_txns[0]->GetId()},
@@ -1515,7 +1517,7 @@ BOOST_FIXTURE_TEST_CASE(with_mempool_check_spent_coin_with_token_spend, TestChai
 
 /// bad-txns-token-in-belowout: Check that we cannot mine transactions that spend more tokens
 /// than are available in the inputs
-BOOST_FIXTURE_TEST_CASE(with_mempool_check_token_overspend, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(with_mempool_check_token_overspend, TestChainSetup) {
     // Create a token category genesis transaction
     std::vector<CTxOut> vout(1);
     vout[0].tokenDataPtr.emplace(token::Id{m_coinbase_txns[0]->GetId()},
@@ -1552,7 +1554,7 @@ BOOST_FIXTURE_TEST_CASE(with_mempool_check_token_overspend, TestChain100Setup) {
 
 /// bad-txns-token-nft-ex-nihilo: Check that we cannot mine transactions that spend more NFTs
 /// than are available in the inputs
-BOOST_FIXTURE_TEST_CASE(with_mempool_check_invalid_nft_mint, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(with_mempool_check_invalid_nft_mint, TestChainSetup) {
     // Create an nft genesis transaction
     std::vector<CTxOut> vout(1);
     const token::NFTCommitment goodCommitment{3u, uint8_t(0xaa)};
@@ -1592,7 +1594,7 @@ BOOST_FIXTURE_TEST_CASE(with_mempool_check_invalid_nft_mint, TestChain100Setup) 
 
 /// bad-txns-token-amount-overflow: Check that the sum total of genesis tokens cannot exceed numerical
 /// maximum limits
-BOOST_FIXTURE_TEST_CASE(with_mempool_check_token_amount_overflow, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(with_mempool_check_token_amount_overflow, TestChainSetup) {
     // Create a token category genesis transaction with multiple outputs with a total token count greater
     // than int64_t max.
     std::vector<CTxOut> vout(2);
@@ -1615,7 +1617,7 @@ BOOST_FIXTURE_TEST_CASE(with_mempool_check_token_amount_overflow, TestChain100Se
 
 /// bad-txns-token-non-nft-amount-zero: Check that a zero amount of fungible tokens cannot be sent
 // This error is caught by the exception 'InvalidBitfieldError' raised during token data serialization
-BOOST_FIXTURE_TEST_CASE(with_mempool_check_zero_ft_amount, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(with_mempool_check_zero_ft_amount, TestChainSetup) {
     // Create a fungible token genesis transaction
     std::vector<CTxOut> vout(1);
     vout[0].tokenDataPtr.emplace(token::Id{m_coinbase_txns[0]->GetId()},
@@ -1638,7 +1640,7 @@ BOOST_FIXTURE_TEST_CASE(with_mempool_check_zero_ft_amount, TestChain100Setup) {
 
 /// bad-txns-token-fungible-with-commitment: Check that fungible tokens with a commitment cannot be created
 // This error is caught by the exception 'InvalidBitfieldError' raised during token data serialization
-BOOST_FIXTURE_TEST_CASE(with_mempool_check_invalid_ft_with_commitment, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(with_mempool_check_invalid_ft_with_commitment, TestChainSetup) {
     std::vector<CTxOut> vout(1);
     vout[0].tokenDataPtr.emplace(token::Id{m_coinbase_txns[0]->GetId()},
                                  token::SafeAmount::fromInt(1).value(),
@@ -1651,7 +1653,7 @@ BOOST_FIXTURE_TEST_CASE(with_mempool_check_invalid_ft_with_commitment, TestChain
 }
 
 /// bad-txns-token-commitment-oversized: Check that tokens with oversized commitments cannot be mined
-BOOST_FIXTURE_TEST_CASE(with_mempool_check_oversized_token_commitment, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(with_mempool_check_oversized_token_commitment, TestChainSetup) {
     std::vector<CTxOut> vout(1), vout2(1);
     BOOST_REQUIRE_GE(m_coinbase_txns.size(), 2);
     BOOST_REQUIRE_GT(token::MAX_CONSENSUS_COMMITMENT_LENGTH_UPGRADE12, token::MAX_CONSENSUS_COMMITMENT_LENGTH_UPGRADE9);
@@ -1705,7 +1707,7 @@ BOOST_FIXTURE_TEST_CASE(with_mempool_check_oversized_token_commitment, TestChain
 
 // Test basic behavior of SIGHASH_UTXOS as a valid signing scheme. It should fail consensus if the upgrade is not
 // active, but work otherwise if used correctly in client code (requires a full and valid ScriptExecutionContext).
-BOOST_FIXTURE_TEST_CASE(sighash_utxos_test, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(sighash_utxos_test, TestChainSetup) {
     size_t coinbase_txn_idx = 0;
     CScript const p2pk_scriptPubKey = CScript() << coinbaseKey.GetPubKey() << OP_CHECKSIG;
 
