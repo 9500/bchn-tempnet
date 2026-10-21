@@ -714,6 +714,7 @@ static UniValue getblocktemplatecommon(bool fLight, const Config &config, const 
     aMutable.emplace_back("prevblock");
 
     UniValue::Object result;
+    result.reserve(17 + fLight);
     result.emplace_back("capabilities", std::move(aCaps));
 
     result.emplace_back("version", pblock->nVersion);
@@ -738,6 +739,7 @@ static UniValue getblocktemplatecommon(bool fLight, const Config &config, const 
     result.emplace_back("curtime", pblock->GetBlockTime());
     result.emplace_back("bits", strprintf("%08x", pblock->nBits));
     result.emplace_back("height", pindexPrev->nHeight + 1);
+    result.emplace_back("target_time", pindexPrev->GetTickDeltaForNextBlock().toSecs());
 
     if (fLight) {
         // Note: this must be called with cs_main held (which is the case here)
@@ -840,7 +842,8 @@ static UniValue getblocktemplate(const Config &config, const JSONRPCRequest &req
                 "  \"sizelimit\" : n,                  (numeric) limit of block size\n"
                 "  \"curtime\" : ttt,                  (numeric) current timestamp in seconds since epoch (Jan 1 1970 GMT)\n"
                 "  \"bits\" : \"xxxxxxxx\",              (string) compressed target of next block\n"
-                "  \"height\" : n                      (numeric) The height of the next block\n"
+                "  \"height\" : n,                     (numeric) The height of the next block\n"
+                "  \"target_time\" : n                 (numeric) The block time interval, in seconds, of the next block\n"
                 "}\n"
             },
             RPCExamples{HelpExampleCli("getblocktemplate", "") +
@@ -890,7 +893,8 @@ static UniValue getblocktemplatelight(const Config &config, const JSONRPCRequest
                 "  \"sizelimit\" : n,                  (numeric) limit of block size\n"
                 "  \"curtime\" : ttt,                  (numeric) current timestamp in seconds since epoch (Jan 1 1970 GMT)\n"
                 "  \"bits\" : \"xxxxxxxx\",              (string) compressed target of next block\n"
-                "  \"height\" : n                      (numeric) The height of the next block\n"
+                "  \"height\" : n,                     (numeric) The height of the next block\n"
+                "  \"target_time\" : n                 (numeric) The block time interval, in seconds, of the next block\n"
                 "}\n"
             },
             RPCExamples{HelpExampleCli("getblocktemplatelight", "") +
