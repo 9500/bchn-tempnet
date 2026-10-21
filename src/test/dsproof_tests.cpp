@@ -287,12 +287,12 @@ EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     return {b, std::move(state)};
 }
 
-struct EnsureClearedMempoolTestChain100Setup : TestChainSetup, EnsureClearedMempoolMixin {};
+struct EnsureClearedMempoolTestChainSetup : TestChainSetup, EnsureClearedMempoolMixin {};
 
 /// Comprehensive test that adds real tx's to the mempool and double-spends them.
 /// - Tests that the proofs are generated correctly when rejecting double-spends
 /// - Tests orphans and claiming of orphans
-BOOST_FIXTURE_TEST_CASE(dsproof_doublespend_mempool, EnsureClearedMempoolTestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(dsproof_doublespend_mempool, EnsureClearedMempoolTestChainSetup) {
     FlatSigningProvider provider;
     provider.keys[coinbaseKey.GetPubKey().GetID()] = coinbaseKey;
     provider.pubkeys[coinbaseKey.GetPubKey().GetID()] = coinbaseKey.GetPubKey();
@@ -327,14 +327,22 @@ BOOST_FIXTURE_TEST_CASE(dsproof_doublespend_mempool, EnsureClearedMempoolTestCha
     }
 
     // next, mine a bunch of blocks that send coinbase to p2pkh
-    for (int i = 0; i < COINBASE_MATURITY*2 + 1; ++i) {
-        const CBlock b = CreateAndProcessBlock({}, scriptPubKey);
-        m_coinbase_txns.push_back(b.vtx[0]);
-        LOCK2(cs_main, g_mempool.cs);
+    auto CheckFunc = [&](auto) {
+        AssertLockHeld(cs_main);
+        LOCK(g_mempool.cs);
         // belt-and-suspenders check that coinbase tx cannot have double spend proofs
         bool isProtected;
         BOOST_CHECK(!DoubleSpendProof::checkIsProofPossibleForAllInputsOfTx(g_mempool, *m_coinbase_txns.back(), &isProtected));
         BOOST_CHECK(!isProtected);
+    };
+    // We create 2 x Maturity period + 1 blocks, calling the above CheckFunc for each block
+    CreateMaturityTicksWorthOfBlocks(&scriptPubKey, CheckFunc);
+    CreateMaturityTicksWorthOfBlocks(&scriptPubKey, CheckFunc);
+    {
+        LOCK(cs_main);
+        const CBlock b = CreateAndProcessBlock({}, scriptPubKey);
+        m_coinbase_txns.push_back(b.vtx[0]);
+        CheckFunc(0);
     }
 
     // Some code-paths below need locks held
@@ -343,10 +351,11 @@ BOOST_FIXTURE_TEST_CASE(dsproof_doublespend_mempool, EnsureClearedMempoolTestCha
     g_mempool.clear(); // ensure mempool is clean
     BOOST_CHECK_EQUAL(g_mempool.doubleSpendProofStorage()->size(), 0u);
 
-
     // Create 100 double-spend pairs of mature coinbase txn:
     std::vector<CMutableTransaction> spends;
-    spends.resize(2 * COINBASE_MATURITY);
+    spends.resize(2 * 100 /* rest of test assumes this many pairs */);
+    const size_t nCoinbaseTxs = m_coinbase_txns.size() - firstTxIdx; // this exact # depends on 10 min vs 1 min blocks
+    BOOST_REQUIRE(spends.size() <= nCoinbaseTxs * 2);
     auto const context = std::nullopt;
     for (size_t i = 0; i < spends.size(); ++i) {
         const auto &cbTxRef = m_coinbase_txns.at(firstTxIdx + i/2);
@@ -546,7 +555,7 @@ BOOST_FIXTURE_TEST_CASE(dsproof_doublespend_mempool, EnsureClearedMempoolTestCha
 /// Comprehensive test that adds real tx's to the mempool and double-spends them,
 /// and also makes the double-spent tx's a chain of unconfirmed children. This
 /// tests the CTxMemPool::recursiveDSProofSearch facility.
-BOOST_FIXTURE_TEST_CASE(dsproof_recursive_search_mempool, EnsureClearedMempoolTestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(dsproof_recursive_search_mempool, EnsureClearedMempoolTestChainSetup) {
     FlatSigningProvider provider;
     provider.keys[coinbaseKey.GetPubKey().GetID()] = coinbaseKey;
     provider.pubkeys[coinbaseKey.GetPubKey().GetID()] = coinbaseKey.GetPubKey();
@@ -554,7 +563,10 @@ BOOST_FIXTURE_TEST_CASE(dsproof_recursive_search_mempool, EnsureClearedMempoolTe
     const CScript scriptPubKey = GetScriptForDestination(coinbaseKey.GetPubKey().GetID());
     const size_t firstTxIdx = m_coinbase_txns.size();
 
-    for (int i = 0; i < COINBASE_MATURITY*2 + 1; ++i) {
+    // create 2*MATURITY + 1 blocks (201 or 2001 blocks, depending on blocktime 10min vs 1min)
+    CreateMaturityTicksWorthOfBlocks(&scriptPubKey);
+    CreateMaturityTicksWorthOfBlocks(&scriptPubKey);
+    {
         const CBlock b = CreateAndProcessBlock({}, scriptPubKey);
         m_coinbase_txns.push_back(b.vtx[0]);
     }
@@ -681,11 +693,11 @@ BOOST_FIXTURE_TEST_CASE(dsproof_recursive_search_mempool, EnsureClearedMempoolTe
     BOOST_CHECK_EQUAL(g_mempool.doubleSpendProofStorage()->size(), 0u);
 }
 
-// Like EnsureClearedMempoolTestChain100Setup, but ensures tokens are enabled
-struct Upgrade9TestChain100Setup : Upgrade9ActivatedMixin, EnsureClearedMempoolTestChain100Setup {};
+// Like EnsureClearedMempoolTestChainSetup, but ensures tokens are enabled
+struct Upgrade9TestChainSetup : Upgrade9ActivatedMixin, EnsureClearedMempoolTestChainSetup {};
 
 /// Test that a txn input with a CashToken in it does correctly produce a proof.
-BOOST_FIXTURE_TEST_CASE(dsproof_with_cashtokens, Upgrade9TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(dsproof_with_cashtokens, Upgrade9TestChainSetup) {
     FlatSigningProvider provider;
     provider.keys[coinbaseKey.GetPubKey().GetID()] = coinbaseKey;
     provider.pubkeys[coinbaseKey.GetPubKey().GetID()] = coinbaseKey.GetPubKey();
@@ -693,7 +705,10 @@ BOOST_FIXTURE_TEST_CASE(dsproof_with_cashtokens, Upgrade9TestChain100Setup) {
     const CScript scriptPubKey = GetScriptForDestination(coinbaseKey.GetPubKey().GetID());
     const size_t firstTxIdx = m_coinbase_txns.size();
 
-    for (int i = 0; i < COINBASE_MATURITY*2 + 1; ++i) {
+    // create 2*MATURITY + 1 blocks (201 or 2001 blocks, depending on blocktime 10min vs 1min)
+    CreateMaturityTicksWorthOfBlocks(&scriptPubKey);
+    CreateMaturityTicksWorthOfBlocks(&scriptPubKey);
+    {
         const CBlock b = CreateAndProcessBlock({}, scriptPubKey);
         m_coinbase_txns.push_back(b.vtx[0]);
     }
