@@ -2690,7 +2690,7 @@ bool PeerLogicValidation::ProcessMessage(const Config &config, const NodeRef &pf
                  (pindex ? pindex->nHeight : -1),
                  hashStop.IsNull() ? "end" : hashStop.ToString(), nLimit,
                  pfrom->GetId());
-        for (; pindex; pindex = ::ChainActive().Next(pindex)) {
+        for (const auto * tip = ::ChainActive().Tip(); pindex; pindex = ::ChainActive().Next(pindex)) {
             if (pindex->GetBlockHash() == hashStop) {
                 LogPrint(BCLog::NET, "  getblocks stopping at %d %s\n",
                          pindex->nHeight, pindex->GetBlockHash().ToString());
@@ -2701,11 +2701,8 @@ bool PeerLogicValidation::ProcessMessage(const Config &config, const NodeRef &pf
             // that block relay might require.
             constexpr BlockTicks kOneHour{3600u};
             static_assert(MIN_BLOCK_TICKS_TO_KEEP > kOneHour, "Below expression requires MIN_BLOCK_TICKS_TO_KEEP > kOneHour");
-            const BlockTicks nPrunedBlockTicksLikelyToHave = MIN_BLOCK_TICKS_TO_KEEP - kOneHour;
-            const CBlockIndex * const tip = ::ChainActive().Tip();
-            if (fPruneMode && (!pindex->nStatus.hasData()
-                               || (tip->GetBlockTicks() >= nPrunedBlockTicksLikelyToHave
-                                   && pindex->GetBlockTicks() <= tip->GetBlockTicks() - nPrunedBlockTicksLikelyToHave))) {
+            constexpr BlockTicks nPrunedBlockTicksLikelyToHave = MIN_BLOCK_TICKS_TO_KEEP - kOneHour;
+            if (fPruneMode && (!pindex->nStatus.hasData() || tip->TickDiff(pindex) >= nPrunedBlockTicksLikelyToHave)) {
                 LogPrint(BCLog::NET, " getblocks stopping, pruned or too old block at %d %s\n",
                          pindex->nHeight, pindex->GetBlockHash().ToString());
                 break;
