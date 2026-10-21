@@ -287,7 +287,7 @@ EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     return {b, std::move(state)};
 }
 
-struct EnsureClearedMempoolTestChain100Setup : TestChain100Setup, EnsureClearedMempoolMixin {};
+struct EnsureClearedMempoolTestChain100Setup : TestChainSetup, EnsureClearedMempoolMixin {};
 
 /// Comprehensive test that adds real tx's to the mempool and double-spends them.
 /// - Tests that the proofs are generated correctly when rejecting double-spends

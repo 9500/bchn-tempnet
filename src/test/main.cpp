@@ -1,10 +1,11 @@
 // Copyright (c) 2011-2016 The Bitcoin Core developers
-// Copyright (c) 2020-2026 The Bitcoin developers
+// Copyright (c) 2020-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #define BOOST_TEST_MODULE Bitcoin Cash Node unit tests
 
+#include <consensus/activation.h>
 #include <util/system.h>
 
 #include <boost/test/unit_test.hpp>
@@ -55,6 +56,15 @@ struct CustomArgumentsFixture {
             std::locale::global(loc);
             std::cout.imbue(loc);
             std::cerr.imbue(loc);
+        }
+
+        // Process CLI override for the upgrade2027 activation time (code snippet is same as in src/init.cpp)
+        if (gArgs.IsArgSet("-upgrade2027activationtime")) {
+            const auto val = gArgs.GetArg("-upgrade2027activationtime", 0);
+            if (val < 0) {
+                throw utf::setup_error("Invalid -upgrade2027activationtime, must be a positive integer");
+            }
+            ::g_Upgrade2027TimeOverride.emplace(val);
         }
     }
 

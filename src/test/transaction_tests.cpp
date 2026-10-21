@@ -987,10 +987,11 @@ BOOST_AUTO_TEST_CASE(txsize_activation_test) {
         params, smallTx, state, upgrade9ActivationHeight, 5678, unusedMTP, upgrade9ActivationTicks));
 }
 
-BOOST_FIXTURE_TEST_CASE(checktxinput_test, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(checktxinput_test, TestChainSetup) {
     CScript const p2pk_scriptPubKey = CScript() << coinbaseKey.GetPubKey() << OP_CHECKSIG;
     CScript const p2sh_scriptPubKey = GetScriptForDestination(ScriptID(p2pk_scriptPubKey, false /*=p2sh_20*/));
 
+    const Amount coinbaseAmt = m_coinbase_txns.at(0)->vout.at(0).nValue;
     CMutableTransaction funding_tx_1;
     CScript noppyScriptPubKey;
     {
@@ -998,7 +999,7 @@ BOOST_FIXTURE_TEST_CASE(checktxinput_test, TestChain100Setup) {
         funding_tx_1.vin.resize(1);
         funding_tx_1.vin[0].prevout = COutPoint(m_coinbase_txns[0]->GetId(), 0);
         funding_tx_1.vout.resize(1);
-        funding_tx_1.vout[0].nValue = 50 * COIN;
+        funding_tx_1.vout[0].nValue = coinbaseAmt;
 
         noppyScriptPubKey << OP_IF << OP_NOP10 << OP_ENDIF << OP_1;
         funding_tx_1.vout[0].scriptPubKey = noppyScriptPubKey;
@@ -1024,7 +1025,7 @@ BOOST_FIXTURE_TEST_CASE(checktxinput_test, TestChain100Setup) {
         funding_tx_2.vin.resize(1);
         funding_tx_2.vin[0].prevout = COutPoint(m_coinbase_txns[1]->GetId(), 0);
         funding_tx_2.vout.resize(1);
-        funding_tx_2.vout[0].nValue = 50 * COIN;
+        funding_tx_2.vout[0].nValue = coinbaseAmt;
 
         noppyScriptPubKey << OP_IF << OP_NOP10 << OP_ENDIF << OP_1;
         funding_tx_2.vout[0].scriptPubKey = noppyScriptPubKey;
@@ -1037,8 +1038,9 @@ BOOST_FIXTURE_TEST_CASE(checktxinput_test, TestChain100Setup) {
         funding_tx_2.vin[0].scriptSig << fundingVchSig;
     }
 
-    // TODO: see if we need to update this for blocktime CHIP
-    const auto mapper = MakeHeightToTickMapperForPrev(GetConfig().GetChainParams().GetConsensus(), ::ChainActive().Tip());
+    const auto mapper = WITH_LOCK(cs_main,
+                                  return MakeHeightToTickMapperForPrev(GetConfig().GetChainParams().GetConsensus(),
+                                                                       ::ChainActive().Tip()));
     {
         CMutableTransaction spend_tx;
         spend_tx.nVersion = 1;
@@ -1048,6 +1050,7 @@ BOOST_FIXTURE_TEST_CASE(checktxinput_test, TestChain100Setup) {
         spend_tx.vin[1].prevout = COutPoint(funding_tx_2.GetId(), 0);
         spend_tx.vin[1].scriptSig << OP_1;
         spend_tx.vout.resize(2);
+        BOOST_REQUIRE(coinbaseAmt > 2 * 11 * CENT);
         spend_tx.vout[0].nValue = 11 * CENT;
         spend_tx.vout[0].scriptPubKey = p2sh_scriptPubKey;
         spend_tx.vout[1].nValue = 11 * CENT;

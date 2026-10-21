@@ -12,7 +12,7 @@
 
 #include <boost/test/unit_test.hpp>
 
-BOOST_FIXTURE_TEST_SUITE(finalization_tests, TestChain100Setup)
+BOOST_FIXTURE_TEST_SUITE(finalization_tests, TestChainSetup)
 
 BOOST_AUTO_TEST_CASE(finalizationDelay) {
     CScript p2pk_scriptPubKey =

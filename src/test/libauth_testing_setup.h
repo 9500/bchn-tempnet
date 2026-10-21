@@ -22,7 +22,7 @@ class TransactionSignatureChecker;
 /// Testing setup that:
 /// - loads all of the json data for all of the libauth tests into a static structure (lazy load, upon first use)
 /// - tracks if we overrode ::fRequireStandard, and resets it on test end
-class LibauthTestingSetup : public TestChain100Setup {
+class LibauthTestingSetup : public TestChainSetup {
 public:
     enum TxStandard { INVALID, NONSTANDARD, STANDARD };
 

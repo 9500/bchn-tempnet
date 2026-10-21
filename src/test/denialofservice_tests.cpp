@@ -1,5 +1,5 @@
 // Copyright (c) 2011-2016 The Bitcoin Core developers
-// Copyright (c) 2019-2026 The Bitcoin developers
+// Copyright (c) 2019-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -18,6 +18,7 @@
 #include <pow.h>
 #include <script/sign.h>
 #include <serialize.h>
+#include <util/check.h>
 #include <util/system.h>
 #include <validation.h>
 
@@ -171,7 +172,9 @@ BOOST_AUTO_TEST_CASE(stale_tip_peer_management) {
         BOOST_CHECK(node->fDisconnect == false);
     }
 
-    SetMockTime(GetTime() + 3 * consensusParams.nPowTargetSpacing + 1);
+    const BlockTicks powSpacing = WITH_LOCK(cs_main, return Assert(::ChainActive().Tip())->GetTickDeltaForNextBlock());
+
+    SetMockTime(GetTime() + 3 * powSpacing.toSecs() + 1);
 
     // Now tip should definitely be stale, and we should look for an extra
     // outbound peer

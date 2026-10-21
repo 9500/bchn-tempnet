@@ -174,7 +174,7 @@ BOOST_AUTO_TEST_CASE(blockserialization) {
 }
 
 // Check that ReadRawBlockFromDisk succeeds and passes basic sanity checks.
-BOOST_FIXTURE_TEST_CASE(check_read_raw_block_from_disk, TestChain100Setup) {
+BOOST_FIXTURE_TEST_CASE(check_read_raw_block_from_disk, TestChainSetup) {
     const bool orig_fCheckBlockReads = fCheckBlockReads;
     fCheckBlockReads = true; // ReadRawBlockFromDisk() does additional checks if this is set
     Defer d([&]{ fCheckBlockReads = orig_fCheckBlockReads; }); // undo above at function exit

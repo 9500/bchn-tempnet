@@ -62,7 +62,7 @@ void EditAddressAndSubmit(EditAddressDialog *dialog, const QString &label,
  * the warning message presented to the user.
  */
 void TestAddAddressesToSendBook() {
-    TestChain100Setup test;
+    TestChainSetup test;
 
     auto chain = interfaces::MakeChain();
     std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(
