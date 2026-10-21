@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2026 The Bitcoin developers
+// Copyright (c) 2022-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,13 +14,25 @@
 #include <boost/test/unit_test.hpp>
 
 #include <cstdlib>
+#include <limits>
 #include <optional>
 #include <string>
 
 namespace {
 
+// An RAII class that disables upgrade 2027. Used as the first base class of all the below classes to disable it
+// before even the TestChainSetup is created because if upgrade 2027 is enabled, all the BIP-68 specific libauth tests
+// fail due to changed locktime semantics. This is OK because these tests only exist to test specific versions of BCHN
+// support. When a new test is added later for 2027, we can revisit this and we will get libauth coverage for the
+// 2027 rules. But for now, we do this.
+struct Upgrade2027Disabler {
+    const std::optional<int64_t> saved_g_Upgrade2027TimeOverride = ::g_Upgrade2027TimeOverride;
+    Upgrade2027Disabler() { ::g_Upgrade2027TimeOverride = std::numeric_limits<int64_t>::max(); }
+    ~Upgrade2027Disabler() { ::g_Upgrade2027TimeOverride = saved_g_Upgrade2027TimeOverride; }
+};
+
 /// Test fixture that can force-enable or disable upgrade9 (cashtokens)
-struct Upgrade9OverrideTestingSetup : LibauthTestingSetup {
+struct Upgrade9OverrideTestingSetup : Upgrade2027Disabler, LibauthTestingSetup {
     std::optional<int32_t> upgrade9OriginalOverride;
     bool touchedUpgrade9{};
 
