@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2025 The Bitcoin developers
+// Copyright (c) 2018-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,6 +8,7 @@
 #include <streams.h>
 #include <uint256.h>
 #include <util/strencodings.h>
+#include <validation.h>
 
 #include <test/setup_common.h>
 
@@ -432,13 +433,15 @@ BOOST_AUTO_TEST_CASE(abla_state_packing) {
     const uint64_t maxPackable = u64max >> 1;
 
     CBlockIndex index;
+    const auto blockInterval = index.GetTickDeltaForThisBlock(); // we test AblaStateMixin, not blocktime changes, so leave this as default
+    BOOST_REQUIRE(blockInterval > BlockTicks{0}); // basic check
     BOOST_CHECK(!index.GetAblaStateOpt());
 
     // A state survives the packed representation unchanged. blockSize gets one bit fewer than
     // the other two members, since the engaged flag steals one. Descending order so that a
     // store which fails to clear bits set by the previous one is visible here.
     for (const uint64_t blockSize : {maxPackable, uint64_t(1000), uint64_t(0)}) {
-        const auto state = abla::State::FromTuple({blockSize, u64max, u64max});
+        const auto state = abla::State::FromTuple({blockSize, u64max, u64max, blockInterval});
         index.SetAblaStateOpt(state);
         const auto readBack = index.GetAblaStateOpt();
         BOOST_REQUIRE(readBack);
@@ -457,24 +460,26 @@ BOOST_AUTO_TEST_CASE(abla_state_packing) {
 
     // GetAblaStateOr must not evaluate the fallback when a state is present: its only caller
     // reads a block from disk in that lambda.
-    const auto fallback = abla::State::FromTuple({7, 7, 7});
+    const auto fallback = abla::State::FromTuple({7, 7, 7, blockInterval});
     size_t calls = 0;
     const auto countingFallback = [&] { ++calls; return fallback; };
     BOOST_CHECK(index.GetAblaStateOr(countingFallback) == fallback);
     BOOST_CHECK_EQUAL(calls, 1u);
-    const auto real = abla::State::FromTuple({1, 2, 3});
+    const auto real = abla::State::FromTuple({1, 2, 3, blockInterval});
     index.SetAblaStateOpt(real);
     BOOST_CHECK(index.GetAblaStateOr(countingFallback) == real);
     BOOST_CHECK_EQUAL(calls, 1u);
 
     // CanPack is the boundary the serialization code relies on.
-    BOOST_CHECK(AblaStateMixin::CanPack(std::nullopt));
-    BOOST_CHECK(AblaStateMixin::CanPack(abla::State::FromTuple({maxPackable, 0, 0})));
-    BOOST_CHECK(!AblaStateMixin::CanPack(abla::State::FromTuple({maxPackable + 1, 0, 0})));
+    BOOST_CHECK(CBlockIndex::CanPack(std::nullopt));
+    BOOST_CHECK(CBlockIndex::CanPack(abla::State::FromTuple({maxPackable, 0, 0, blockInterval})));
+    BOOST_CHECK(!CBlockIndex::CanPack(abla::State::FromTuple({maxPackable + 1, 0, 0, blockInterval})));
 }
 
 BOOST_AUTO_TEST_CASE(abla_state_disk_serialization) {
     CBlockIndex index;
+    const auto blockInterval = index.GetTickDeltaForThisBlock(); // we test AblaStateMixin, not blocktime changes, so leave this as default
+    BOOST_REQUIRE(blockInterval > BlockTicks{0}); // basic check
     index.nHeight = 700000;
     index.nStatus = index.nStatus.withData().withUndo();
     index.nTx = 5;
@@ -485,7 +490,7 @@ BOOST_AUTO_TEST_CASE(abla_state_disk_serialization) {
     index.nTime = 1700000000;
     index.nBits = 0x1d00ffff;
     index.nNonce = 42;
-    const auto state = abla::State::FromTuple({1000, 32000000, 1000000});
+    const auto state = abla::State::FromTuple({1000, 32000000, 1000000, blockInterval});
     index.SetAblaStateOpt(state);
 
     CDataStream ss(SER_DISK, CLIENT_VERSION);
@@ -504,8 +509,8 @@ BOOST_AUTO_TEST_CASE(abla_state_disk_serialization) {
     // corruption could produce. Serializing it directly is fine: only the CBlockIndex setter
     // packs. This assumes the abla state is the last thing CDiskBlockIndex writes; if a field
     // is ever appended after it, the tail check below is what will complain.
-    const auto unpackable = abla::State::FromTuple({uint64_t(1) << 63, 32000000, 1000000});
-    BOOST_REQUIRE(!AblaStateMixin::CanPack(unpackable));
+    const auto unpackable = abla::State::FromTuple({uint64_t(1) << 63, 32000000, 1000000, blockInterval});
+    BOOST_REQUIRE(!CBlockIndex::CanPack(unpackable));
     CDataStream goodTailStream(SER_DISK, CLIENT_VERSION), badTailStream(SER_DISK, CLIENT_VERSION);
     goodTailStream << std::optional<abla::State>{state};
     badTailStream << std::optional<abla::State>{unpackable};
@@ -539,7 +544,7 @@ BOOST_AUTO_TEST_CASE(abla_state_truncated_record) {
     index.nVersion = 4;
     index.nTime = 1700000000;
     index.nBits = 0x1d00ffff;
-    index.SetAblaStateOpt(abla::State::FromTuple({1000, 32000000, 1000000}));
+    index.SetAblaStateOpt(abla::State::FromTuple({1000, 32000000, 1000000, legacy::POW_TARGET_SPACING_TICKS}));
 
     CDataStream ss(SER_DISK, CLIENT_VERSION);
     ss << CDiskBlockIndex(&index);
@@ -554,6 +559,64 @@ BOOST_AUTO_TEST_CASE(abla_state_truncated_record) {
     CDiskBlockIndex read;
     BOOST_CHECK_NO_THROW(truncated >> read);
     BOOST_CHECK(!read.GetAblaStateOpt());
+}
+
+BOOST_FIXTURE_TEST_CASE(test_TickDiff, TestChainSetup) {
+    const auto *const tip = ::ChainActive().Tip();
+    BOOST_REQUIRE(tip && tip->nHeight >= 100);
+
+    BOOST_CHECK(tip->TickDiff(tip) == BlockTicks{}); // block always has difference 0 to itself
+
+    // Check unorthodox usage
+    BOOST_CHECK(tip->TickDiff(nullptr) == tip->GetBlockTicks()); // if is nullptr, "difference" is just the tick count
+    BOOST_CHECK(tip->pprev->TickDiff(tip) == tip->TickDiff(tip->pprev)); // support reversed operation (absolute diff)
+    BOOST_CHECK(tip->TickDiff(::ChainActive().Genesis()) == tip->GetBlockTicks());
+
+    BlockTicks prevTicks, prevDiff;
+    for (int i = 0; i < tip->nHeight; ++i) {
+        const auto *cur = ::ChainActive()[i];
+        BOOST_REQUIRE(cur);
+        const auto ticks = cur->GetBlockTicks();
+        const auto diff = tip->TickDiff(cur);
+        BOOST_CHECK(diff == tip->GetBlockTicks() - cur->GetBlockTicks());
+        if (i > 0) {
+            BOOST_CHECK(diff < prevDiff);
+            BOOST_CHECK(diff == prevDiff - (ticks - prevTicks));
+        }
+        prevTicks = ticks;
+        prevDiff = diff;
+
+        BOOST_CHECK(cur->TickDiff(tip) == tip->TickDiff(cur)); // ask for tick diff to a later block should work
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE(test_FindAncestorWithTickDepth, TestChainSetup) {
+    const CBlockIndex *const tip = ::ChainActive().Tip(), *a, *b;
+    BOOST_REQUIRE(tip && tip->nHeight >= 100);
+
+    // The ancestor that has the same depth as our tick count is always genesis
+    BOOST_CHECK(tip->FindAncestorWithTickDepth(tip->GetBlockTicks()) == ::ChainActive().Genesis());
+    // Any larger tick count and nullptr is returned
+    BOOST_CHECK(tip->FindAncestorWithTickDepth(tip->GetBlockTicks() + BlockTicks{1}) == nullptr);
+
+    // Try 100 random block index pairs and see if FindAncestorWithTickDepth works as expected for them
+    for (int i = 0; i < 100; ++i) {
+        a = ::ChainActive()[GetRandInt(tip->nHeight + 1)];
+        b = ::ChainActive()[GetRandInt(tip->nHeight + 1)];
+        BOOST_REQUIRE(a && b);
+        if (a->nHeight < b->nHeight) {
+            // ensure a >= b
+            std::swap(a, b);
+        }
+        auto diff = a->TickDiff(b);
+        BOOST_CHECK(a->FindAncestorWithTickDepth(diff) == b);
+        BOOST_CHECK(a->FindAncestorWithTickDepth(diff + BlockTicks{1}) == b->pprev);
+        const auto powSpacing = b->GetTickDeltaForNextBlock();
+        if (diff >= powSpacing) {
+            const auto *nextb = ::ChainActive().Next(b);
+            BOOST_CHECK(a->FindAncestorWithTickDepth(diff - powSpacing) == nextb);
+        }
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
