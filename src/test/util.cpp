@@ -140,3 +140,11 @@ std::string UncompressStr(Span<const uint8_t> compressedBytes, size_t uncompress
 std::vector<uint8_t> Uncompress(Span<const uint8_t> compressedBytes, size_t uncompressedByteSize) {
     return UncompressGeneric<std::vector<uint8_t>>(compressedBytes, uncompressedByteSize);
 }
+
+Upgrade2027Disabler::Upgrade2027Disabler() : saved_g_Upgrade2027TimeOverride{::g_Upgrade2027TimeOverride} {
+    ::g_Upgrade2027TimeOverride = std::numeric_limits<int64_t>::max();
+}
+
+Upgrade2027Disabler::~Upgrade2027Disabler() {
+    ::g_Upgrade2027TimeOverride = saved_g_Upgrade2027TimeOverride;
+}

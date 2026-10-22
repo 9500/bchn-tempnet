@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -48,3 +49,12 @@ std::string UncompressStr(Span<const uint8_t> compressedBytes, size_t uncompress
 // space to hold the uncompressed data. Returns a subspan of outputBuf that enecompasses the uncompressed data actually
 // written.
 Span<uint8_t> UncompressInPlace(Span<uint8_t> outputBuf, Span<const uint8_t> compressedBytes);
+
+// An RAII class that disables upgrade 2027. Can be ssed as the first base class of a derived TestChainSetup class,
+// or can be used stand-alone.
+class Upgrade2027Disabler {
+    const std::optional<int64_t> saved_g_Upgrade2027TimeOverride;
+public:
+    Upgrade2027Disabler();
+    ~Upgrade2027Disabler();
+};

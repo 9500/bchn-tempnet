@@ -10,6 +10,7 @@
 
 #include <test/libauth_testing_setup.h>
 #include <test/setup_common.h>
+#include <test/util.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -20,16 +21,11 @@
 
 namespace {
 
-// An RAII class that disables upgrade 2027. Used as the first base class of all the below classes to disable it
+// Note: We use Upgrade2027Disabler as the first base class of all the below classes to disable the blocktime upgrade
 // before even the TestChainSetup is created because if upgrade 2027 is enabled, all the BIP-68 specific libauth tests
 // fail due to changed locktime semantics. This is OK because these tests only exist to test specific versions of BCHN
 // support. When a new test is added later for 2027, we can revisit this and we will get libauth coverage for the
 // 2027 rules. But for now, we do this.
-struct Upgrade2027Disabler {
-    const std::optional<int64_t> saved_g_Upgrade2027TimeOverride = ::g_Upgrade2027TimeOverride;
-    Upgrade2027Disabler() { ::g_Upgrade2027TimeOverride = std::numeric_limits<int64_t>::max(); }
-    ~Upgrade2027Disabler() { ::g_Upgrade2027TimeOverride = saved_g_Upgrade2027TimeOverride; }
-};
 
 /// Test fixture that can force-enable or disable upgrade9 (cashtokens)
 struct Upgrade9OverrideTestingSetup : Upgrade2027Disabler, LibauthTestingSetup {
