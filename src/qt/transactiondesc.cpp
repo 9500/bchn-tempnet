@@ -31,13 +31,13 @@
 #include <string>
 
 QString
-TransactionDesc::FormatTxStatus(const interfaces::WalletTx &wtx,
-                                const interfaces::WalletTxStatus &status,
-                                bool inMempool, int numBlocks) {
+TransactionDesc::FormatTxStatus(const interfaces::WalletTx &wtx, const interfaces::WalletTxStatus &status,
+                                bool inMempool, const BlockTicks &tipTicks, const BlockTicks &blockInterval) {
     if (!status.is_final) {
         if (wtx.tx->nLockTime < LOCKTIME_THRESHOLD) {
-            return tr("Open for %n more block(s)", "",
-                      wtx.tx->nLockTime - numBlocks);
+            const int64_t lockTimeAsTicks = wtx.tx->nLockTime * legacy::POW_TARGET_SPACING_SECS;
+            const int estNumBlocks = (lockTimeAsTicks - tipTicks.toSecs()) / blockInterval.toSecs();
+            return tr("Open for %n more block(s)", "", estNumBlocks);
         } else {
             return tr("Open until %1")
                 .arg(GUIUtil::dateTimeStr(wtx.tx->nLockTime));
@@ -63,12 +63,11 @@ TransactionDesc::FormatTxStatus(const interfaces::WalletTx &wtx,
 QString TransactionDesc::toHTML(interfaces::Node &node,
                                 interfaces::Wallet &wallet,
                                 TransactionRecord *rec, int unit) {
-    int numBlocks;
     interfaces::WalletTxStatus status;
     interfaces::WalletOrderForm orderForm;
     bool inMempool;
-    interfaces::WalletTx wtx = wallet.getWalletTxDetails(
-        rec->txid, status, orderForm, inMempool, numBlocks);
+    BlockTicks tipTicks, blockInterval;
+    interfaces::WalletTx wtx = wallet.getWalletTxDetails(rec->txid, status, orderForm, inMempool, tipTicks, blockInterval);
 
     QString strHTML;
 
@@ -89,8 +88,7 @@ QString TransactionDesc::toHTML(interfaces::Node &node,
                      QString::fromStdString(dsProof.GetId().ToString()));
     }
 
-    strHTML += "<b>" + tr("Status") + ":</b> " +
-               FormatTxStatus(wtx, status, inMempool, numBlocks);
+    strHTML += "<b>" + tr("Status") + ":</b> " + FormatTxStatus(wtx, status, inMempool, tipTicks, blockInterval);
     strHTML += "<br>";
 
     strHTML += "<b>" + tr("Date") + ":</b> " +

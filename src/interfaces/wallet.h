@@ -176,10 +176,8 @@ public:
                                 BlockTicks &tip_ticks, BlockTicks &block_interval) = 0;
 
     //! Get transaction details.
-    virtual WalletTx getWalletTxDetails(const TxId &txid,
-                                        WalletTxStatus &tx_status,
-                                        WalletOrderForm &order_form,
-                                        bool &in_mempool, int &num_blocks) = 0;
+    virtual WalletTx getWalletTxDetails(const TxId &txid, WalletTxStatus &tx_status, WalletOrderForm &order_form,
+                                        bool &in_mempool, BlockTicks &tip_ticks, BlockTicks &block_interval) = 0;
 
     //! Get balances.
     virtual WalletBalances getBalances() = 0;

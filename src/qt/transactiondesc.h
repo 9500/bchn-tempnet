@@ -1,5 +1,5 @@
 // Copyright (c) 2011-2014 The Bitcoin Core developers
-// Copyright (c) 2017-2021 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,6 +8,7 @@
 #include <QObject>
 #include <QString>
 
+class BlockTicks;
 class TransactionRecord;
 
 namespace interfaces {
@@ -30,7 +31,6 @@ public:
 private:
     TransactionDesc() {}
 
-    static QString FormatTxStatus(const interfaces::WalletTx &wtx,
-                                  const interfaces::WalletTxStatus &status,
-                                  bool inMempool, int numBlocks);
+    static QString FormatTxStatus(const interfaces::WalletTx &wtx, const interfaces::WalletTxStatus &status,
+                                  bool inMempool, const BlockTicks &tipTicks, const BlockTicks &blockInterval);
 };
