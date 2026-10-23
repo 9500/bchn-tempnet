@@ -1,6 +1,6 @@
 // Copyright (c) 2018 The Bitcoin Core developers
 // Copyright (c) 2022 The Bitcoin Cash Node developers
-// Copyright (c) 2019-2022 The Bitcoin developers
+// Copyright (c) 2019-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+class BlockTicks;
 class CChainParams;
 class CCoinControl;
 class CKey;
@@ -171,8 +172,8 @@ public:
 
     //! Try to get updated status for a particular transaction, if possible
     //! without blocking.
-    virtual bool tryGetTxStatus(const TxId &txid, WalletTxStatus &tx_status,
-                                int &num_blocks, int64_t &block_time) = 0;
+    virtual bool tryGetTxStatus(const TxId &txid, WalletTxStatus &tx_status, int &num_blocks, int64_t &block_time,
+                                BlockTicks &tip_ticks, BlockTicks &block_interval) = 0;
 
     //! Get transaction details.
     virtual WalletTx getWalletTxDetails(const TxId &txid,

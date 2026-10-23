@@ -1,6 +1,6 @@
 // Copyright (c) 2011-2016 The Bitcoin Core developers
 // Copyright (c) 2022 The Bitcoin Cash Node developers
-// Copyright (c) 2017-2022 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -13,6 +13,7 @@
 #include <QList>
 #include <QString>
 
+class BlockTicks;
 namespace interfaces {
 class Node;
 class Wallet;
@@ -102,7 +103,9 @@ public:
         SendToSelf
     };
 
-    /** Number of confirmation recommended for accepting a transaction */
+    /** Number of confirmation recommended for accepting a transaction. Note that for the blocktime CHIP (FABLOUS) we
+        do not scale this and leave it as a flat 6. Rationale: we want to promote less waiting and more activity and
+        the wallet code has historically been extremely conservative, at the expense of utility. */
     static const int RecommendedNumConfirmations = 6;
 
     TransactionRecord()
@@ -153,8 +156,8 @@ public:
 
     /** Update status from core wallet tx.
      */
-    void updateStatus(const interfaces::WalletTxStatus &wtx, int numBlocks,
-                      int64_t block_time);
+    void updateStatus(const interfaces::WalletTxStatus &wtx, int numBlocks, int64_t block_time,
+                      const BlockTicks &tipTicks, const BlockTicks &blockInterval);
 
     /** Return whether a status update is needed.
      */

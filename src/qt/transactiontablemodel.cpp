@@ -197,9 +197,10 @@ public:
             interfaces::WalletTxStatus wtx;
             int numBlocks;
             int64_t block_time;
-            if (wallet.tryGetTxStatus(rec->txid, wtx, numBlocks, block_time) &&
+            BlockTicks tipTicks, blockInterval;
+            if (wallet.tryGetTxStatus(rec->txid, wtx, numBlocks, block_time, tipTicks, blockInterval) &&
                 rec->statusUpdateNeeded(numBlocks)) {
-                rec->updateStatus(wtx, numBlocks, block_time);
+                rec->updateStatus(wtx, numBlocks, block_time, tipTicks, blockInterval);
             }
             return rec;
         }
