@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 // Copyright (c) 2015 The Bitcoin Core developers
@@ -9,6 +9,7 @@
 #include <chainparams.h>
 #include <config.h>
 #include <consensus/activation.h>
+#include <consensus/consensus.h>
 #include <pow.h>
 #include <random.h>
 #include <tinyformat.h>
@@ -18,6 +19,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -34,8 +36,7 @@ BOOST_AUTO_TEST_CASE(get_next_work) {
     pindexLast.nTime = 1262152739; // Block #32255
     pindexLast.nBits = 0x1d00ffff;
     BOOST_CHECK_EQUAL(
-        CalculateNextWorkRequired(&pindexLast, nLastRetargetTime,
-                                  config.GetChainParams().GetConsensus()),
+        legacy::CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, config.GetChainParams().GetConsensus()),
         0x1d00d86aU);
 }
 
@@ -49,8 +50,7 @@ BOOST_AUTO_TEST_CASE(get_next_work_pow_limit) {
     pindexLast.nTime = 1233061996; // Block #2015
     pindexLast.nBits = 0x1d00ffff;
     BOOST_CHECK_EQUAL(
-        CalculateNextWorkRequired(&pindexLast, nLastRetargetTime,
-                                  config.GetChainParams().GetConsensus()),
+        legacy::CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, config.GetChainParams().GetConsensus()),
         0x1d00ffffU);
 }
 
@@ -64,8 +64,7 @@ BOOST_AUTO_TEST_CASE(get_next_work_lower_limit_actual) {
     pindexLast.nTime = 1279297671; // Block #68543
     pindexLast.nBits = 0x1c05a3f4;
     BOOST_CHECK_EQUAL(
-        CalculateNextWorkRequired(&pindexLast, nLastRetargetTime,
-                                  config.GetChainParams().GetConsensus()),
+        legacy::CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, config.GetChainParams().GetConsensus()),
         0x1c0168fdU);
 }
 
@@ -79,8 +78,7 @@ BOOST_AUTO_TEST_CASE(get_next_work_upper_limit_actual) {
     pindexLast.nTime = 1269211443; // Block #46367
     pindexLast.nBits = 0x1c387f6f;
     BOOST_CHECK_EQUAL(
-        CalculateNextWorkRequired(&pindexLast, nLastRetargetTime,
-                                  config.GetChainParams().GetConsensus()),
+        legacy::CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, config.GetChainParams().GetConsensus()),
         0x1d00e1fdU);
 }
 
@@ -97,11 +95,13 @@ BOOST_AUTO_TEST_CASE(GetBlockProofEquivalentTime_test) {
         blocks[i]->nHeight = i;
         blocks[i]->nTime =
             1269211443 +
-            i * config.GetChainParams().GetConsensus().nPowTargetSpacing;
+            i * legacy::POW_TARGET_SPACING_SECS;
         blocks[i]->nBits = 0x207fffff; /* target 0x7fffff000... */
         blocks[i]->nChainWork =
             i ? blocks[i - 1]->nChainWork + GetBlockProof(*blocks[i])
               : arith_uint256(0);
+        blocks[i]->SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS);
+        blocks[i]->SetBlockTicks(i * legacy::POW_TARGET_SPACING_TICKS);
     }
 
     for (int j = 0; j < 1000; j++) {
@@ -125,6 +125,10 @@ static CBlockIndexPtr GetBlockIndex(CBlockIndex *pindexPrev, int64_t nTimeInterv
 
     block->BuildSkip();
     block->nChainWork = pindexPrev->nChainWork + GetBlockProof(*block);
+
+    block->SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS);
+    block->SetBlockTicks(pindexPrev->GetBlockTicks() + pindexPrev->GetTickDeltaForNextBlock());
+
     return block;
 }
 
@@ -145,10 +149,11 @@ BOOST_AUTO_TEST_CASE(retargeting_test) {
     blocks[0]->nBits = initialBits;
 
     blocks[0]->nChainWork = GetBlockProof(*blocks[0]);
+    blocks[0]->SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS);
 
     // Pile up some blocks.
     for (size_t i = 1; i < 100; i++) {
-        blocks.push_back(GetBlockIndex(blocks[i - 1].get(), params.nPowTargetSpacing, initialBits));
+        blocks.push_back(GetBlockIndex(blocks[i - 1].get(), legacy::POW_TARGET_SPACING_SECS, initialBits));
     }
 
     CBlockHeader blkHeaderDummy;
@@ -225,6 +230,7 @@ BOOST_AUTO_TEST_CASE(cash_difficulty_test) {
     blocks[0]->nBits = initialBits;
 
     blocks[0]->nChainWork = GetBlockProof(*blocks[0]);
+    blocks[0]->SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS);
 
     // Block counter.
     size_t i;
@@ -385,7 +391,7 @@ BOOST_AUTO_TEST_CASE(cash_difficulty_test) {
 }
 
 double TargetFromBits(const uint32_t nBits) {
-    return (nBits & 0xff'ff'ff) * pow(256, (nBits >> 24)-3);
+    return (nBits & 0xff'ff'ff) * std::pow(256, (nBits >> 24)-3);
 }
 
 double GetASERTApproximationError(const CBlockIndex *pindexPrev,
@@ -400,7 +406,7 @@ double GetASERTApproximationError(const CBlockIndex *pindexPrev,
     double dFinalPow   = TargetFromBits(finalBits);
 
     double dExponent = double(nTimeDiff - (nHeightDiff+1) * 600) / double(2*24*3600);
-    double dTarget = dInitialPow * pow(2, dExponent);
+    double dTarget = dInitialPow * std::pow(2, dExponent);
 
     return (dFinalPow - dTarget) / dTarget;
 }
@@ -427,6 +433,7 @@ BOOST_AUTO_TEST_CASE(asert_difficulty_test) {
     blocks[0]->nBits = 0x0dedbeef;
 
     blocks[0]->nChainWork = GetBlockProof(*blocks[0]);
+    blocks[0]->SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS);
 
     // Block counter.
     size_t i = 1;
@@ -437,14 +444,14 @@ BOOST_AUTO_TEST_CASE(asert_difficulty_test) {
     // The nBits for the next block should not be equal to the anchor block's nBits
     CBlockHeader blkHeaderDummy;
     uint32_t nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params, blocks[1].get());
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[1].get())) < dMaxErr);
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[1].get())) < dMaxErr);
     BOOST_CHECK(nBits != initialBits);
 
     // If we add another block at 1050 seconds, we should return to the anchor block's nBits
     blocks[i] = GetBlockIndex(blocks[i-1].get(), 1050, nBits);
     nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params, blocks[1].get());
     BOOST_CHECK(nBits == initialBits);
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[1].get())) < dMaxErr);
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[1].get())) < dMaxErr);
 
     currentPow = arith_uint256().SetCompact(nBits);
     // Before we do anything else, check that timestamps *before* the anchor block work fine.
@@ -455,14 +462,14 @@ BOOST_AUTO_TEST_CASE(asert_difficulty_test) {
     // Because nBits truncates target, we don't end up with exactly 1/2 the target
     BOOST_CHECK(currentPow <= arith_uint256().SetCompact(initialBits  ) / 2);
     BOOST_CHECK(currentPow >= arith_uint256().SetCompact(initialBits-1) / 2);
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[1].get())) < dMaxErr);
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[1].get())) < dMaxErr);
 
     // Jumping forward 2 days should return the target to the initial value
     blocks[i] = GetBlockIndex(blocks[i-1].get(), 600+172800, nBits);
     nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params, blocks[1].get());
     currentPow = arith_uint256().SetCompact(nBits);
     BOOST_CHECK(nBits == initialBits);
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[1].get())) < dMaxErr);
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[1].get())) < dMaxErr);
 
     // Pile up some blocks every 10 mins to establish some history.
     for (; i < 150; i++) {
@@ -487,47 +494,47 @@ BOOST_AUTO_TEST_CASE(asert_difficulty_test) {
     // (at this point, equal to initialBits).
     blocks[i] = GetBlockIndex(blocks[i - 1].get(), 300, nBits);
     nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params, blocks[1].get());
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr);
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr);
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
     blocks[i] = GetBlockIndex(blocks[i - 1].get(), 900, nBits);
     nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params, blocks[1].get());
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
     BOOST_CHECK_EQUAL(nBits, initialBits);
     BOOST_CHECK(nBits != blocks[i-1]->nBits);
 
     // Same in reverse - this time slower block first, followed by faster block.
     blocks[i] = GetBlockIndex(blocks[i - 1].get(), 900, nBits);
     nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params, blocks[1].get());
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
     blocks[i] = GetBlockIndex(blocks[i - 1].get(), 300, nBits);
     nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params, blocks[1].get());
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
     BOOST_CHECK_EQUAL(nBits, initialBits);
     BOOST_CHECK(nBits != blocks[i-1]->nBits);
 
     // Jumping forward 2 days should double the target (halve the difficulty)
     blocks[i] = GetBlockIndex(blocks[i - 1].get(), 600 + 2*24*3600, nBits);
     nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params, blocks[1].get());
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
     currentPow = arith_uint256().SetCompact(nBits) / 2;
     BOOST_CHECK_EQUAL(currentPow.GetCompact(), initialBits);
 
     // Jumping backward 2 days should bring target back to where we started
     blocks[i] = GetBlockIndex(blocks[i - 1].get(), 600 - 2*24*3600, nBits);
     nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params, blocks[1].get());
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
     BOOST_CHECK_EQUAL(nBits, initialBits);
 
     // Jumping backward 2 days should halve the target (double the difficulty)
     blocks[i] = GetBlockIndex(blocks[i - 1].get(), 600 - 2*24*3600, nBits);
     nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params, blocks[1].get());
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
     currentPow = arith_uint256().SetCompact(nBits);
     // Because nBits truncates target, we don't end up with exactly 1/2 the target
     BOOST_CHECK(currentPow <= arith_uint256().SetCompact(initialBits  ) / 2);
@@ -536,13 +543,13 @@ BOOST_AUTO_TEST_CASE(asert_difficulty_test) {
     // And forward again
     blocks[i] = GetBlockIndex(blocks[i - 1].get(), 600 + 2*24*3600, nBits);
     nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params, blocks[1].get());
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
     BOOST_CHECK_EQUAL(nBits, initialBits);
     blocks[i] = GetBlockIndex(blocks[i - 1].get(), 600 + 2*24*3600, nBits);
     nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params, blocks[1].get());
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
-    BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[ 1 ].get())) < dMaxErr); // absolute
+    BOOST_CHECK(std::fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[i-2].get())) < dMaxErr); // relative
     currentPow = arith_uint256().SetCompact(nBits) / 2;
     BOOST_CHECK_EQUAL(currentPow.GetCompact(), initialBits);
 
@@ -585,10 +592,10 @@ BOOST_AUTO_TEST_CASE(asert_difficulty_test) {
         if (dErr    > dMax)    dMax    = dErr;
         if (dRelErr < dRelMin) dRelMin = dRelErr;
         if (dRelErr > dRelMax) dRelMax = dRelErr;
-        BOOST_CHECK_MESSAGE(fabs(dErr) < dMaxErr,
+        BOOST_CHECK_MESSAGE(std::fabs(dErr) < dMaxErr,
                             strprintf("solveTime: %d\tStep size: %.8f%%\tdErr: %.8f%%\tnBits: %0x\n",
                                       int64_t(blocks[i]->nTime) - blocks[i-1]->nTime, dStep*100, dErr*100, nBits));
-        BOOST_CHECK_MESSAGE(fabs(dRelErr) < dMaxErr,
+        BOOST_CHECK_MESSAGE(std::fabs(dRelErr) < dMaxErr,
                             strprintf("solveTime: %d\tStep size: %.8f%%\tdRelErr: %.8f%%\tnBits: %0x\n",
                                       int64_t(blocks[i]->nTime) - blocks[i-1]->nTime, dStep*100, dRelErr*100, nBits));
     }
@@ -648,12 +655,23 @@ std::string StrPrintCalcArgs(const arith_uint256 refTarget,
 
 // Tests of the CalculateASERT function.
 BOOST_AUTO_TEST_CASE(calculate_asert_test) {
+    auto CalculateASERT = [](const arith_uint256 &refTarget, const int64_t nPowTargetSpacing, const int64_t nTimeDiff,
+                             const int64_t nHeightDiff, const arith_uint256 &powLimit, const int64_t nHalfLife) {
+        // Here we test our new tick-based CalculateASERT vs the original one which was height-based. Should
+        // always produce identical results.
+        const auto r1 = CalculateASERT_HeightBased(refTarget, nPowTargetSpacing, nTimeDiff, nHeightDiff, powLimit,
+                                                   nHalfLife);
+        const auto r2 = CalculateASERT_TickBased(refTarget, nPowTargetSpacing, nPowTargetSpacing, nTimeDiff,
+                                                 nHeightDiff * nPowTargetSpacing, powLimit, nHalfLife);
+        BOOST_CHECK(r1 == r2); // ensure height-based == tick-based
+        return r1;
+    };
     DummyConfig config(CBaseChainParams::MAIN);
     const Consensus::Params &params = config.GetChainParams().GetConsensus();
     const int64_t nHalfLife = params.nASERTHalfLife;
 
     const arith_uint256 powLimit = UintToArith256(params.powLimit);
-    arith_uint256 initialTarget = powLimit >> 4;
+    const arith_uint256 initialTarget = powLimit >> 4;
     int64_t height = 0;
 
     // The CalculateASERT function uses the absolute ASERT formulation
@@ -661,39 +679,128 @@ BOOST_AUTO_TEST_CASE(calculate_asert_test) {
     // The time difference passed to it must factor in the difference
     // to the *parent* of the reference block.
     // We assume the parent is ideally spaced in time before the reference block.
-    static const int64_t parent_time_diff = 600;
+    constexpr int64_t parent_time_diff = legacy::POW_TARGET_SPACING_SECS;
+    constexpr int64_t nSpacingLegacy = parent_time_diff;
+    static_assert(parent_time_diff == 600, "Below code just assumes it's 600 anyway");
+
+    // Also test with: Faster blocks at 10x
+    constexpr int64_t fasterFactor = 10;
+    const auto nSpacingFaster = nSpacingLegacy / fasterFactor;
+    static_assert(nSpacingFaster == 60, "Below code just assumes it's 60 anyway");
 
     // Steady
-    arith_uint256 nextTarget = CalculateASERT(initialTarget, params.nPowTargetSpacing, parent_time_diff + 600 /* nTimeDiff */, ++height, powLimit, nHalfLife);
+    arith_uint256 nextTarget = CalculateASERT(initialTarget, nSpacingLegacy, parent_time_diff + 600 /* nTimeDiff */,
+                                              ++height, powLimit, nHalfLife);
     BOOST_CHECK(nextTarget == initialTarget);
 
-    // A block that arrives in half the expected time
-    nextTarget = CalculateASERT(initialTarget, params.nPowTargetSpacing, parent_time_diff + 600 + 300, ++height, powLimit, nHalfLife);
+    // Try the above with faster blocks, difficulty should be 1/10th
+    arith_uint256 nextTargetFaster = CalculateASERT_TickBased(initialTarget, nSpacingLegacy, nSpacingFaster,
+                                                              parent_time_diff + 60 /* nTimeDiff */,
+                                                              60 /* nTickDiff */,
+                                                              powLimit, nHalfLife);
+    BOOST_CHECK(nextTargetFaster / fasterFactor == nextTarget);
+
+    // A block that arrives in half the expected time (300 secs early)
+    nextTarget = CalculateASERT(initialTarget, nSpacingLegacy, parent_time_diff + 600 + 300, ++height, powLimit, nHalfLife);
     BOOST_CHECK(nextTarget < initialTarget);
+
+    const auto target300SecsEarly = nextTarget;
+    // Do the same with faster 1 min blocks; schedule off by 300 secs, should produce identical diff to the 10-min
+    // blocktime version in the lines above (which was also off by 300 seconds)
+    nextTargetFaster = CalculateASERT_TickBased(initialTarget, nSpacingLegacy, nSpacingFaster,
+                                                parent_time_diff + 600 + 300 /* nTimeDiff */,
+                                                600 + 600 /* nTickDiff */,
+                                                powLimit, nHalfLife);
+    BOOST_CHECK(nextTargetFaster / fasterFactor == target300SecsEarly); // after rescaling, should produce identical diff
+    // Now do it with purely faster blocks (30 seconds instead of 300 seconds faster)
+    nextTargetFaster = CalculateASERT_TickBased(initialTarget, nSpacingLegacy, nSpacingFaster,
+                                                parent_time_diff + 60 + 30 /* nTimeDiff */,
+                                                60 + 60 /* nTickDiff */,
+                                                powLimit, nHalfLife);
+    BOOST_CHECK(nextTargetFaster / fasterFactor < initialTarget); // target should have gone down (diff increase)
+    BOOST_CHECK(nextTargetFaster / fasterFactor > target300SecsEarly); // off by 30 secs vs 300, so target not as low
+    // Faster blocks: 9 10-min blocks arrived on time, 10th was supposed to be 1 min but arrived in 30 seconds
+    auto nextTargetFaster2 = CalculateASERT_TickBased(initialTarget, nSpacingLegacy, nSpacingFaster,
+                                                      parent_time_diff + 600*9 + 30 /* nTimeDiff */,
+                                                      600*9 + 60 /* nTickDiff */,
+                                                      powLimit, nHalfLife);
+    BOOST_CHECK(nextTargetFaster2 == nextTargetFaster); // since schedule is off by 30 secs as above, same diff
+    // Faster blocks: 9 1-min blocks arrived on time, 10th was supposed to be 1 min but arrived in 30 seconds
+    nextTargetFaster2 = CalculateASERT_TickBased(initialTarget, nSpacingLegacy, nSpacingFaster,
+                                                 parent_time_diff + 60*9 + 30 /* nTimeDiff */,
+                                                 60*10 /* nTickDiff */,
+                                                 powLimit, nHalfLife);
+    BOOST_CHECK(nextTargetFaster2 == nextTargetFaster); // since schedule is off by 30 secs as above, same diff
+    // Faster blocks: accumulate 300 seconds of being ahead of schedule over several blocks, diff should gradually ramp
+    // up with each iteration and then match the 10-min block version above where we were ahead by 300 seconds.
+    arith_uint256 prevTargetFaster;
+    for (int64_t delta = 0, iter = 0; delta < 300; ++iter) {
+        const int64_t randFastTime = std::clamp<int64_t>(GetRandInt(nSpacingFaster / 2), 1, 300 - delta);
+        delta += randFastTime;
+        const auto idealTime = (iter + 1) * nSpacingFaster;
+        BOOST_REQUIRE(idealTime > delta);
+        const auto target = CalculateASERT_TickBased(initialTarget, nSpacingLegacy, nSpacingFaster,
+                                                     parent_time_diff + (idealTime - delta) /* nTimeDiff */,
+                                                     idealTime /* nTickDiff */,
+                                                     powLimit, nHalfLife);
+        if (iter == 0) {
+            // First iteration: target, after scaling, should be less than or equal to initialTarget
+            BOOST_CHECK(target / fasterFactor <= initialTarget);
+        } else {
+            // Subsequent iterations: target should not be increasing (difficulty not decreasing)
+            BOOST_CHECK(target <= prevTargetFaster);
+        }
+        prevTargetFaster = target;
+    }
+    // Finally, after the above loop has completed, we are precisely 300 seconds too fast with our 1-min blocks, and
+    // that means that the absolute nature of ASERT should yield a difficulty which is identical to the case where
+    // we had 10-min blocks and we had 1 arrive 300 seconds early (after rescaling for 1 min blocks vs 10 min blocks).
+    BOOST_CHECK(prevTargetFaster / fasterFactor == target300SecsEarly);
 
     // A block that makes up for the shortfall of the previous one, restores the target to initial
     arith_uint256 prevTarget = nextTarget;
-    nextTarget = CalculateASERT(initialTarget, params.nPowTargetSpacing, parent_time_diff + 600 + 300 + 900, ++height, powLimit, nHalfLife);
+    nextTarget = CalculateASERT(initialTarget, nSpacingLegacy, parent_time_diff + 600 + 300 + 900, ++height, powLimit, nHalfLife);
     BOOST_CHECK(nextTarget > prevTarget);
     BOOST_CHECK(nextTarget == initialTarget);
 
+    // Do the same with 1 min blocks
+    prevTargetFaster = nextTargetFaster;
+    nextTargetFaster = CalculateASERT_TickBased(initialTarget, nSpacingLegacy, nSpacingFaster,
+                                                parent_time_diff + 30 + 90 /* nTimeDiff */,
+                                                120 /* nTickDiff */,
+                                                powLimit, nHalfLife);
+    BOOST_CHECK(nextTargetFaster > prevTargetFaster);
+    BOOST_CHECK(nextTargetFaster / fasterFactor == initialTarget);
+
     // Two days ahead of schedule should double the target (halve the difficulty)
     prevTarget = nextTarget;
-    nextTarget = CalculateASERT(prevTarget, params.nPowTargetSpacing, parent_time_diff + 288*1200, 288, powLimit, nHalfLife);
+    nextTarget = CalculateASERT(prevTarget, nSpacingLegacy, parent_time_diff + 288*1200, 288, powLimit, nHalfLife);
     BOOST_CHECK(nextTarget == prevTarget * 2);
+
+    // Do the same for 1 min blocks
+    auto myTarget = powLimit >> 16; // need a custom target here since `initialTarget` scaled is too close to `powLimit`
+    nextTargetFaster = CalculateASERT_TickBased(myTarget, nSpacingLegacy, nSpacingFaster,
+                                                parent_time_diff + 288*1200, 2880*60, powLimit, nHalfLife);
+    BOOST_CHECK(nextTargetFaster / fasterFactor == myTarget * 2);
+    prevTargetFaster = nextTargetFaster;
 
     // Two days behind schedule should halve the target (double the difficulty)
     prevTarget = nextTarget;
-    nextTarget = CalculateASERT(prevTarget, params.nPowTargetSpacing, parent_time_diff + 288*0, 288, powLimit, nHalfLife);
+    nextTarget = CalculateASERT(prevTarget, nSpacingLegacy, parent_time_diff + 288*0, 288, powLimit, nHalfLife);
     BOOST_CHECK(nextTarget == prevTarget / 2);
     BOOST_CHECK(nextTarget == initialTarget);
+    // Do the same for 1 min blocks
+    nextTargetFaster = CalculateASERT_TickBased(myTarget * 2, nSpacingLegacy, nSpacingFaster,
+                                                parent_time_diff + 288*0, 2880*60, powLimit, nHalfLife);
+    BOOST_CHECK(nextTargetFaster == prevTargetFaster / 2);
+    BOOST_CHECK(nextTargetFaster / fasterFactor == myTarget);
 
     // Ramp up from initialTarget to PowLimit - should only take 4 doublings...
     uint32_t powLimit_nBits = powLimit.GetCompact();
     uint32_t next_nBits;
     for (size_t k = 0; k < 3; k++) {
         prevTarget = nextTarget;
-        nextTarget = CalculateASERT(prevTarget, params.nPowTargetSpacing, parent_time_diff + 288*1200, 288, powLimit, nHalfLife);
+        nextTarget = CalculateASERT(prevTarget, nSpacingLegacy, parent_time_diff + 288*1200, 288, powLimit, nHalfLife);
         BOOST_CHECK(nextTarget == prevTarget * 2);
         BOOST_CHECK(nextTarget < powLimit);
         next_nBits = nextTarget.GetCompact();
@@ -701,7 +808,7 @@ BOOST_AUTO_TEST_CASE(calculate_asert_test) {
     }
 
     prevTarget = nextTarget;
-    nextTarget = CalculateASERT(prevTarget, params.nPowTargetSpacing, parent_time_diff + 288*1200, 288, powLimit, nHalfLife);
+    nextTarget = CalculateASERT(prevTarget, nSpacingLegacy, parent_time_diff + 288*1200, 288, powLimit, nHalfLife);
     next_nBits = nextTarget.GetCompact();
     BOOST_CHECK(nextTarget == prevTarget * 2);
     BOOST_CHECK(next_nBits == powLimit_nBits);
@@ -709,15 +816,24 @@ BOOST_AUTO_TEST_CASE(calculate_asert_test) {
     // Fast periods now cannot increase target beyond POW limit, even if we try to overflow nextTarget.
     // prevTarget is a uint256, so 256*2 = 512 days would overflow nextTarget unless CalculateASERT
     // correctly detects this error
-    nextTarget = CalculateASERT(prevTarget, params.nPowTargetSpacing, parent_time_diff + 512*144*600, 0, powLimit, nHalfLife);
+    nextTarget = CalculateASERT(prevTarget, nSpacingLegacy, parent_time_diff + 512*144*600, 0, powLimit, nHalfLife);
     next_nBits = nextTarget.GetCompact();
     BOOST_CHECK(next_nBits == powLimit_nBits);
 
     // We also need to watch for underflows on nextTarget. We need to withstand an extra ~446 days worth of blocks.
     // This should bring down a powLimit target to the a minimum target of 1.
-    nextTarget = CalculateASERT(powLimit, params.nPowTargetSpacing, 0, 2*(256-33)*144, powLimit, nHalfLife);
+    nextTarget = CalculateASERT(powLimit, nSpacingLegacy, 0, 2*(256-33)*144, powLimit, nHalfLife);
     next_nBits = nextTarget.GetCompact();
     BOOST_CHECK_EQUAL(next_nBits, arith_uint256(1).GetCompact());
+
+    // Do the same for 1 min blocks
+    nextTargetFaster = CalculateASERT_TickBased(powLimit, nSpacingLegacy, nSpacingFaster, 0,
+                                                2*(256-33)*1440 * 60 /* nTickDiff */, powLimit, nHalfLife);
+    BOOST_CHECK(nextTargetFaster > arith_uint256(1)); // not quite 1 due to the "faster blocks" lowered diff
+    BOOST_CHECK(arith_uint256(nextTargetFaster / fasterFactor) == arith_uint256(1)); // scaled: should equal 1 now
+    nextTargetFaster = CalculateASERT_TickBased(powLimit, nSpacingLegacy, nSpacingFaster, 0,
+                                                (2*(256-33) + 2)*1440 * 60 /* nTickDiff */, powLimit, nHalfLife);
+    BOOST_CHECK(nextTargetFaster == arith_uint256(1)); // saturated to 1 even in the lowered-diff "faster" version
 
     // Define a structure holding parameters to pass to CalculateASERT.
     // We are going to check some expected results  against a vector of
@@ -801,6 +917,7 @@ BOOST_AUTO_TEST_CASE(asert_activation_anchor_test) {
     blocks[0]->nTime = 1269211443;
     blocks[0]->nBits = initialBits;
     blocks[0]->nChainWork = GetBlockProof(*blocks[0]);
+    blocks[0]->SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS);
 
     // Pile up a random number of blocks to establish some history of random height.
     // cw144 DAA requires us to have height at least 2016, dunno why that much.
