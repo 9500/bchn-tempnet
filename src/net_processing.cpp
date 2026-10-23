@@ -4667,11 +4667,13 @@ bool PeerLogicValidation::SendMessages(const Config &config, NodeRef pto,
     // increase our timeout.
     if (state.vBlocksInFlight.size() > 0) {
         QueuedBlock &queuedBlock = state.vBlocksInFlight.front();
+        const auto blockInterval = queuedBlock.pindex ? queuedBlock.pindex->GetTickDeltaForThisBlock()
+                                                      : legacy::POW_TARGET_SPACING_TICKS;
         int nOtherPeersWithValidatedDownloads =
             nPeersWithValidatedDownloads -
             (state.nBlocksInFlightValidHeaders > 0);
         if (nNow > state.nDownloadingSince +
-                       pindexBestHeader->GetTickDeltaForNextBlock().toSecs() *
+                       blockInterval.toSecs() *
                            (BLOCK_DOWNLOAD_TIMEOUT_BASE +
                             BLOCK_DOWNLOAD_TIMEOUT_PER_PEER *
                                 nOtherPeersWithValidatedDownloads)) {
