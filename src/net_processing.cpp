@@ -16,6 +16,7 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <config.h>
+#include <consensus/activation.h>
 #include <consensus/validation.h>
 #include <dsproof/dsproof.h>
 #include <dsproof/storage.h>
@@ -4249,15 +4250,35 @@ bool PeerLogicValidation::SendMessages(const Config &config, NodeRef pto,
     if (!state.fSyncStarted && !pto->fClient && !fImporting && !fReindex) {
         // Only actively request headers from a single peer, unless we're close
         // to today.
-        if ((nSyncStarted == 0 && fFetch) ||
-            pindexBestHeader->GetBlockTime() >
-                GetAdjustedTime() - 24 * 60 * 60) {
+        if ((nSyncStarted == 0 && fFetch) || pindexBestHeader->GetBlockTime() > GetAdjustedTime() - 24 * 60 * 60) {
             state.fSyncStarted = true;
-            state.nHeadersSyncTimeout =
-                nNow + HEADERS_DOWNLOAD_TIMEOUT_BASE +
-                HEADERS_DOWNLOAD_TIMEOUT_PER_HEADER *
-                    (GetAdjustedTime() - pindexBestHeader->GetBlockTime()) /
-                    pindexBestHeader->GetTickDeltaForNextBlock().toSecs();
+            // Estimate the number of headers we are asking for -- we may cross the activation boundary for upgrade2027
+            // (1 min block times) so use some heuristics there to guess roughly the number of headers to expect. We
+            // cannot know in advance the exact time of activation and/or which header it lands on but we can roughly
+            // guess here with some reasonable ballpark so as to keep state.nHeaderSyncTimeout reasonably accurate.
+            const int64_t estNumHeaders = [&consensusParams]{
+                const int64_t adjNow = GetAdjustedTime();
+                const int64_t activation1MinBlocks = GetUpgrade2027ActivationTime(consensusParams);
+                const int64_t best = pindexBestHeader->GetBlockTime();
+                if (adjNow <= activation1MinBlocks) {
+                    // upgrade not activated, just take: (now - best) / 10-min-spacing
+                    return (adjNow - best) / legacy::POW_TARGET_SPACING_TICKS.toSecs();
+                } else {
+                    // upgrade2027 activated there may or may not be 10-min -> 1-min activation in the span we are
+                    // considering, so account for it if there is
+                    int64_t span10{};
+                    int64_t first = best;
+                    if (best <= activation1MinBlocks) {
+                        // our best header is before activation, calculate number of headers using the old 10-min interval
+                        span10 = (activation1MinBlocks - best) / legacy::POW_TARGET_SPACING_TICKS.toSecs();
+                        first = activation1MinBlocks;
+                    }
+                    return span10 + (adjNow - first) / upgrade2027::POW_TARGET_SPACING_TICKS.toSecs();
+                }
+            }();
+
+            state.nHeadersSyncTimeout = nNow + HEADERS_DOWNLOAD_TIMEOUT_BASE
+                                        + HEADERS_DOWNLOAD_TIMEOUT_PER_HEADER * estNumHeaders;
             nSyncStarted++;
             const CBlockIndex *pindexStart = pindexBestHeader;
             /**
@@ -4272,8 +4293,7 @@ bool PeerLogicValidation::SendMessages(const Config &config, NodeRef pto,
                 pindexStart = pindexStart->pprev;
             }
 
-            LogPrint(BCLog::NET,
-                     "initial getheaders (%d) to peer=%d (startheight:%d)\n",
+            LogPrint(BCLog::NET, "initial getheaders (%d) to peer=%d (startheight:%d)\n",
                      pindexStart->nHeight, pto->GetId(), pto->nStartingHeight);
             connman->PushMessage(
                 pto, msgMaker.Make(NetMsgType::GETHEADERS,
