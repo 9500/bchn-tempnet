@@ -1,4 +1,4 @@
-// Copyright (c) 2023 The Bitcoin developers
+// Copyright (c) 2023-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -74,8 +74,10 @@ static void RunTest(size_t testNum, const UniValue::Object &test) {
 
     // Set up initial state
     const TestAblaState initial_tstate = test.at("ABLAStateInitial").get_obj();
-    abla::State state = abla::State::FromTuple({0, initial_tstate.epsilon, initial_tstate.beta});
-    BOOST_REQUIRE(state.IsValid(config));
+    constexpr auto ticks = abla::BASE_BLOCK_INTERVAL;
+    abla::State state = abla::State::FromTuple({0, initial_tstate.epsilon, initial_tstate.beta, ticks});
+    const char *err = "No error";
+    BOOST_REQUIRE_MESSAGE(state.IsValid(config, &err), err);
     const uint64_t initial_bsLimit = Parse64(test, "blocksizeLimitInitial");
     uint64_t bsLimit = initial_bsLimit, blockSize{}, bsLimitNext{};
     uint64_t n = initial_tstate.n;
@@ -98,9 +100,11 @@ static void RunTest(size_t testNum, const UniValue::Object &test) {
         tstate.n = std::max(n0, tstate.n); // simulate "advancement" to the activation block
         if (tstate.n < final_tstate.n) {
             // Test vector only really does something if we activated.
-            // If so call the lookahead function CalcLookaheadBlockSizeLimit, and compare result of that to test vector.
-            state = abla::State::FromTuple({bsLimit, tstate.epsilon, tstate.beta}); // test calls for initial block to be "full"
-            const uint64_t lookahead_result = state.CalcLookaheadBlockSizeLimit(config, final_tstate.n - tstate.n, disable2GBLimit);
+            // If so call the lookahead function CalcLookaheadBlockSizeLimitWorstCase, and compare result of that to test vector.
+            state = abla::State::FromTuple({bsLimit, tstate.epsilon, tstate.beta, ticks}); // test calls for initial block to be "full"
+            const uint64_t lookahead_result =
+                state.CalcLookaheadBlockSizeLimitWorstCase(config, final_tstate.n - tstate.n, abla::BASE_BLOCK_INTERVAL,
+                                                           disable2GBLimit);
             BOOST_CHECK_EQUAL(lookahead_result, final_bsLimit);
         }
     } else {
@@ -110,8 +114,8 @@ static void RunTest(size_t testNum, const UniValue::Object &test) {
             BOOST_REQUIRE_EQUAL(n, tstate.n);
             {
                 // Update state with real blockSize
-                const auto & [bs, epsilon, beta] = state.ToTuple();
-                state = abla::State::FromTuple({blockSize, epsilon, beta});
+                const auto & [bs, epsilon, beta, ticks2] = state.ToTuple();
+                state = abla::State::FromTuple({blockSize, epsilon, beta, ticks2});
             }
             BOOST_CHECK_EQUAL(bsLimit, state.GetBlockSizeLimit(disable2GBLimit));
             BOOST_CHECK_EQUAL(state.GetControlBlockSize(), tstate.epsilon);
@@ -119,15 +123,15 @@ static void RunTest(size_t testNum, const UniValue::Object &test) {
             if (n >= n0) {
                 // post-activation, advance the state
                 if (!pastTheEnd) {
-                    BOOST_CHECK_EQUAL(state.GetNextBlockSizeLimit(config, disable2GBLimit), bsLimitNext);
+                    BOOST_CHECK_EQUAL(state.GetNextBlockSizeLimit(config, ticks, disable2GBLimit), bsLimitNext);
                 }
-                state = state.NextBlockState(config, blockSize);
+                state = state.NextBlockState(config, ticks, blockSize);
             } else {
                 if (!pastTheEnd) {
                     BOOST_CHECK_EQUAL(initial_bsLimit, bsLimitNext);
                 }
             }
-            BOOST_CHECK(state.IsValid(config));
+            BOOST_CHECK_MESSAGE(state.IsValid(config, &err), err);
         };
 
         for (const UniValue &uv : tv_array) {
