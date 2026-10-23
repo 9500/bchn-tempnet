@@ -123,8 +123,10 @@ BenchRunner::BenchmarkMap &BenchRunner::benchmarks() {
 BenchRunner::BenchRunner(const std::string &name,
                          BenchFunction func,
                          uint64_t num_iters_for_one_second,
-                         CompletionFunction completionFunc, bool reuseChain) {
-    benchmarks().try_emplace(name, Bench{std::move(func), num_iters_for_one_second, std::move(completionFunc), reuseChain});
+                         CompletionFunction completionFunc, bool reuseChain,
+                         PerEvaluationSetupFunction perEvalSetup) {
+    benchmarks().try_emplace(name, Bench{std::move(func), num_iters_for_one_second, std::move(completionFunc),
+                                         reuseChain, std::move(perEvalSetup)});
 }
 
 void BenchRunner::RunAll(Printer &printer, uint64_t num_evals,
@@ -162,7 +164,15 @@ void BenchRunner::RunAll(Printer &printer, uint64_t num_evals,
 
         State state(name, num_iters, printer, bench.completionFunc);
         for (uint64_t i = 0; i != num_evals; ++i) {
-            if (!optTestSetup || !bench.reuseChain) {
+            if (!bench.reuseChain) {
+                optTestSetup.reset();
+            }
+            if (bench.perEvaluationSetupFunction) {
+                // Call the "per eval setup" function (if any). Benches may use this to do special setup,
+                // such as force-disable upgrades, etc. See: bench/removeforblock.cpp which uses this.
+                bench.perEvaluationSetupFunction(state);
+            }
+            if (!optTestSetup) {
                 // (re)set the chain for this eval
                 optTestSetup.emplace(CBaseChainParams::REGTEST);
             }

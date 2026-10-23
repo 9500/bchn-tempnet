@@ -1,5 +1,5 @@
 // Copyright (c) 2016 The Bitcoin Core developers
-// Copyright (c) 2017-2026 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -7,6 +7,7 @@
 #include <coins.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
+#include <node/blockheighttotickmapper.h>
 #include <policy/policy.h>
 #include <wallet/crypter.h>
 
@@ -118,12 +119,14 @@ static void CheckTxInputs(benchmark::State &state) {
     }
 
 
+    const BlockHeightToTickMapper emptyMapper{};
+
     // Benchmark.
     BENCHMARK_LOOP {
         for (const CTransactionRef &tx : transactions) {
             CValidationState valstate;
             Amount txfee;
-            const bool success = Consensus::CheckTxInputs(*tx, valstate, coins, 0, txfee);
+            const bool success = Consensus::CheckTxInputs(*tx, valstate, coins, BlockTicks{0}, emptyMapper, txfee);
             assert(success);
         }
     }

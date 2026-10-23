@@ -1,5 +1,5 @@
 // Copyright (c) 2015-2016 The Bitcoin Core developers
-// Copyright (c) 2021-2024 The Bitcoin developers
+// Copyright (c) 2021-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -56,6 +56,7 @@ class State;
 
 using BenchFunction = std::function<void(State &)>;
 using CompletionFunction = std::function<void(const State &, Printer &)>;
+using PerEvaluationSetupFunction = std::function<void(State &)>;
 
 class State {
     std::string m_name;
@@ -122,6 +123,7 @@ class BenchRunner {
         uint64_t num_iters_for_one_second;
         CompletionFunction completionFunc;
         bool reuseChain = false;
+        PerEvaluationSetupFunction perEvaluationSetupFunction;
     };
     using BenchmarkMap = std::map<std::string, Bench>;
     static BenchmarkMap &benchmarks();
@@ -129,7 +131,7 @@ class BenchRunner {
 public:
     BenchRunner(const std::string &name, BenchFunction func,
                 uint64_t num_iters_for_one_second, CompletionFunction = {},
-                bool reuseChain = false);
+                bool reuseChain = false, PerEvaluationSetupFunction = {});
 
     static void RunAll(Printer &printer, uint64_t num_evals, double scaling,
                        const std::string &userFilter, bool is_list_only, const std::string &internalFilter = "");
@@ -218,9 +220,9 @@ constexpr void NoOptimize(Args && ...args) noexcept {
 #define CAT_I(a, b) a ## b
 #define STRINGIZE_TEXT(...) #__VA_ARGS__
 
-#define BENCHMARK(n, num_iters_for_one_second)                                 \
+#define BENCHMARK(n, num_iters_for_one_second, ...)                            \
     benchmark::BenchRunner CAT(bench_, CAT(__LINE__, n))(                      \
-        STRINGIZE_TEXT(n), n, (num_iters_for_one_second));
+        STRINGIZE_TEXT(n), n, (num_iters_for_one_second) __VA_OPT__(,) __VA_ARGS__);
 
 #define BENCHMARK_LOOP                                                         \
     state.StartBenchmark();                                                    \

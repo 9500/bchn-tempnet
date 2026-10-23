@@ -1,11 +1,12 @@
 // Copyright (c) 2015-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2021 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <bench/bench.h>
 #include <bench/libauth_bench.h>
 
+#include <consensus/activation.h>
 #include <crypto/sha256.h>
 #include <key.h>
 #include <logging.h>
@@ -14,6 +15,7 @@
 #include <util/system.h>
 #include <validation.h>
 
+#include <cstdio>
 #include <memory>
 
 static const int64_t DEFAULT_BENCH_EVALUATIONS = 5;
@@ -88,14 +90,17 @@ static void SetupBenchArgs() {
                   "default: %d). Currently only affects the CCheckQueue_RealBlock_32MB* benches.",
                   DEFAULT_SCRIPTCHECK_THREADS),
         ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
+    gArgs.AddArg(
+        "-upgrade2027activationtime=<n>",
+        "Override the activation time of the tentative May 2027 Bitcoin Cash Network Upgrade (<n> seconds since epoch)",
+        ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
 }
 
 int main(int argc, char **argv) {
     SetupBenchArgs();
     std::string error;
     if (!gArgs.ParseParameters(argc, argv, error)) {
-        fprintf(stderr, "Error parsing command line arguments: %s\n",
-                error.c_str());
+        std::fprintf(stderr, "Error parsing command line arguments: %s\n", error.c_str());
         return EXIT_FAILURE;
     }
 
@@ -111,8 +116,7 @@ int main(int argc, char **argv) {
 
     double scaling_factor;
     if (!ParseDouble(scaling_str, &scaling_factor)) {
-        fprintf(stderr, "Error parsing scaling factor as double: %s\n",
-                scaling_str.c_str());
+        std::fprintf(stderr, "Error parsing scaling factor as double: %s\n", scaling_str.c_str());
         return EXIT_FAILURE;
     }
 
@@ -131,9 +135,19 @@ int main(int argc, char **argv) {
         LogInstance().m_log_time_micros = true;
         for (const auto &cat : gArgs.GetArgs("-debug")) {
             if (!LogInstance().EnableCategory(cat)) {
-                fprintf(stderr, "Unsupported logging category -debug=%s.\n", cat.c_str());
+                std::fprintf(stderr, "Unsupported logging category -debug=%s.\n", cat.c_str());
             }
         }
+    }
+
+    // Process CLI override for the upgrade2027 activation time (code snippet is same as in src/init.cpp)
+    if (gArgs.IsArgSet("-upgrade2027activationtime")) {
+        const auto val = gArgs.GetArg("-upgrade2027activationtime", 0);
+        if (val < 0) {
+            std::fprintf(stderr, "Invalid -upgrade2027activationtime, must be a positive integer\n");
+            return EXIT_FAILURE;
+        }
+        ::g_Upgrade2027TimeOverride.emplace(val);
     }
 
     // For LibAuth-only mode

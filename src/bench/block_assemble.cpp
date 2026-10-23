@@ -1,5 +1,5 @@
 // Copyright (c) 2011-2017 The Bitcoin Core developers
-// Copyright (c) 2020-2026 The Bitcoin developers
+// Copyright (c) 2020-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -22,19 +22,20 @@ static void AssembleBlock(benchmark::State &state) {
     const CScript scriptSig = CScript() << std::vector<uint8_t>(100, 0xff)
                                         << ByteView{redeemScript};
 
-    // Collect some loose transactions that spend the coinbases of our mined
-    // blocks
-    constexpr size_t NUM_BLOCKS{200};
-    std::array<CTransactionRef, NUM_BLOCKS - COINBASE_MATURITY + 1> txs;
-    for (size_t b = 0; b < NUM_BLOCKS; ++b) {
+    // Collect some loose transactions that spend the coinbases of our mined blocks
+    constexpr size_t NUM_TXS_DESIRED{101};
+    std::vector<CTransactionRef> txs;
+    txs.reserve(NUM_TXS_DESIRED);
+    // The below loop mines NUM_TXS_DESIRED coinbases
+    while (txs.size() < NUM_TXS_DESIRED) {
+        const auto utxo = MineBlock(config, SCRIPT_PUB);
         CMutableTransaction tx;
-        tx.vin.push_back(MineBlock(config, SCRIPT_PUB));
-        tx.vin.back().scriptSig = scriptSig;
-        tx.vout.emplace_back(1337 * SATOSHI, SCRIPT_PUB);
-        if (NUM_BLOCKS - b >= COINBASE_MATURITY) {
-            txs.at(b) = MakeTransactionRef(tx);
-        }
+        tx.vin.emplace_back(utxo.first, scriptSig);
+        tx.vout.emplace_back(utxo.second - 1337 * SATOSHI, SCRIPT_PUB);
+        txs.push_back(MakeTransactionRef(std::move(tx)));
     }
+    // Now, mature the coinbases
+    MatureCurrentTip(config);
 
     {
         // Required for ::AcceptToMemoryPool.
