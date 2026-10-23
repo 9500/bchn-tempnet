@@ -143,14 +143,12 @@ static void benchRemoveForBlock(const Config& config, benchmark::State& state,
     opts.blockMinFeeRate = CFeeRate{Amount::zero()};
     opts.nConsensusCurrentBlockSizeLimit = config.GetDefaultConsensusBlockSize(WITH_LOCK(cs_main, return ::ChainActive().Tip()->GetTickDeltaForNextBlock()));
     opts.nMaxGeneratedBlockSize = blockMB * ONE_MEGABYTE;
-    if (opts.nConsensusCurrentBlockSizeLimit < opts.nMaxGeneratedBlockSize) [[unlikely]] {
-        // Uh oh.. this can only mean that Upgrade2027 is activated. Cannot satisfy the blocksize requested.
-        // This branch is not normally taken because we enforce that Upgrade2027Disabler is active when we run through
-        // here but is left in here for belt-and-suspenders.
-        std::cerr << strprintf("WARNING: nConsensusCurrentBlockSizeLimit < nMaxGeneratedBlockSize (%i < %i). Is the 1"
-                               " min blocktime upgrade activated? Please update bench_bitcoin, removeforblock.cpp!\n",
-                               opts.nConsensusCurrentBlockSizeLimit, opts.nMaxGeneratedBlockSize);
-    }
+
+    // Below assert ensures that we satisfied the caller's demand for blockMB. This is a check to ensure that we do not
+    // run this bench with Upgrade2027 activated. If we do, we cannot satisfy the blocksize requested (3.2 MB max blocks
+    // in the 1-min regime vs 32 MB max in the 10-min regime).
+    assert(opts.nConsensusCurrentBlockSizeLimit >= opts.nMaxGeneratedBlockSize);
+
     const auto pblktemplate = BlockAssembler{config, ::g_mempool, opts}.CreateNewBlock(SCRIPT_PUB_KEY);
     const auto &block = pblktemplate->block;
 

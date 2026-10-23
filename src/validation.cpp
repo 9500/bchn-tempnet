@@ -1105,10 +1105,9 @@ static void CheckForkWarningConditions() EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
                       pindexBestForkTip->phashBlock->ToString());
             SetfLargeWorkForkFound(true);
         } else {
-            LogPrintf("%s: Warning: Found invalid chain at least ~6 blocks "
+            LogPrintf("%s: Warning: Found invalid chain at least ~%u blocks "
                       "longer than our best chain.\nChain state database "
-                      "corruption likely.\n",
-                      __func__);
+                      "corruption likely.\n", __func__, numBlocks);
             SetfLargeWorkInvalidChainFound(true);
         }
     } else {
@@ -2729,10 +2728,15 @@ CBlockIndex *CChainState::FindMostWorkChain(const Consensus::Params &params) {
                     // `d` the divergence depth in ticks, the competing chain is accepted only if `E > D + P`, where the
                     // required excess `P` is:
                     //
-                    // - `D * 600² / 2400²` when `d < 600`         ; [0,9]   blocks ; A slight penalty of 6.25% (to preserve first-seen)
-                    // - `D * d² / 2400²`   when `600 <= d < 2400` ; [10,39] blocks ; P ramps up from D * 0.0625 -> D * 0.950625
-                    // - `D`                when `d >= 2400`       ; [40,∞]  blocks ; P == D (Amaury-identical), E > 2D
+                    // - `D * 600² / 2400²` when `d < 600`         ; [0,9]   blocks* ; A slight penalty of 6.25% (to preserve first-seen)
+                    // - `D * d² / 2400²`   when `600 <= d < 2400` ; [10,39] blocks* ; P ramps up from D * 0.0625 -> D * 0.950625
+                    // - `D`                when `d >= 2400`       ; [40,∞]  blocks* ; P == D (Amaury-identical), E > 2D
                     //
+                    // * - The block ranges listed assume uniform 1-min blocks. Across block interval change boundaries,
+                    //     the number of blocks in each tier above are not exactly the block ranges listed -- it's more
+                    //     about 60-tick "bands", but for simplicity in reading/understanding the above, we use the term
+                    //     "blocks" loosely since this branch will, >99% of the time, be taken for uniform 1-min blocks
+                    //     (the activation boundary happens only once and then after that blocks are uniformely spaced).
                     Assume(pindexTip->GetBlockTicks() >= pindexFork->GetBlockTicks());
                     const BlockTicks tickDeltaSinceFork = pindexTip->TickDiff(pindexFork);
 
