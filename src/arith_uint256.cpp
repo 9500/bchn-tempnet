@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2020 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -10,26 +10,21 @@
 #include <uint256.h>
 #include <util/strencodings.h>
 
-#include <cstdio>
 #include <cstring>
+#include <utility>
 
-template <unsigned int BITS>
-base_uint<BITS>::base_uint(const std::string &str) {
-    static_assert(BITS / 32 > 0 && BITS % 32 == 0,
-                  "Template parameter BITS must be a positive multiple of 32.");
-
+template <size_t BITS>
+base_uint<BITS>::base_uint(const std::string &str) noexcept {
     SetHex(str);
 }
 
-template <unsigned int BITS>
-base_uint<BITS> &base_uint<BITS>::operator<<=(unsigned int shift) {
-    base_uint<BITS> a(*this);
-    for (int i = 0; i < WIDTH; i++) {
-        pn[i] = 0;
-    }
-    int k = shift / 32;
+template <size_t BITS>
+base_uint<BITS> &base_uint<BITS>::operator<<=(unsigned int shift) noexcept {
+    base_uint a(*this);
+    std::memset(pn, 0, size());
+    unsigned k = shift / 32;
     shift = shift % 32;
-    for (int i = 0; i < WIDTH; i++) {
+    for (size_t i = 0; i < WIDTH; ++i) {
         if (i + k + 1 < WIDTH && shift != 0) {
             pn[i + k + 1] |= (a.pn[i] >> (32 - shift));
         }
@@ -40,15 +35,14 @@ base_uint<BITS> &base_uint<BITS>::operator<<=(unsigned int shift) {
     return *this;
 }
 
-template <unsigned int BITS>
-base_uint<BITS> &base_uint<BITS>::operator>>=(unsigned int shift) {
-    base_uint<BITS> a(*this);
-    for (int i = 0; i < WIDTH; i++) {
-        pn[i] = 0;
-    }
+template <size_t BITS>
+base_uint<BITS> &base_uint<BITS>::operator>>=(unsigned int shift) noexcept {
+    base_uint a(*this);
+    std::memset(pn, 0, size());
     int k = shift / 32;
     shift = shift % 32;
-    for (int i = 0; i < WIDTH; i++) {
+    static_assert(std::in_range<int>(WIDTH));
+    for (int i = 0; i < static_cast<int>(WIDTH); ++i) {
         if (i - k - 1 >= 0 && shift != 0) {
             pn[i - k - 1] |= (a.pn[i] << (32 - shift));
         }
@@ -59,24 +53,24 @@ base_uint<BITS> &base_uint<BITS>::operator>>=(unsigned int shift) {
     return *this;
 }
 
-template <unsigned int BITS>
-base_uint<BITS> &base_uint<BITS>::operator*=(uint32_t b32) {
+template <size_t BITS>
+base_uint<BITS> &base_uint<BITS>::operator*=(uint32_t b32) noexcept {
     uint64_t carry = 0;
-    for (int i = 0; i < WIDTH; i++) {
-        uint64_t n = carry + (uint64_t)b32 * pn[i];
+    for (size_t i = 0; i < WIDTH; ++i) {
+        uint64_t n = carry + static_cast<uint64_t>(b32) * pn[i];
         pn[i] = n & 0xffffffff;
         carry = n >> 32;
     }
     return *this;
 }
 
-template <unsigned int BITS>
-base_uint<BITS> &base_uint<BITS>::operator*=(const base_uint &b) {
-    base_uint<BITS> a;
-    for (int j = 0; j < WIDTH; j++) {
+template <size_t BITS>
+base_uint<BITS> &base_uint<BITS>::operator*=(const base_uint &b) noexcept {
+    base_uint a;
+    for (size_t j = 0; j < WIDTH; ++j) {
         uint64_t carry = 0;
-        for (int i = 0; i + j < WIDTH; i++) {
-            uint64_t n = carry + a.pn[i + j] + (uint64_t)pn[j] * b.pn[i];
+        for (size_t i = 0; i + j < WIDTH; ++i) {
+            uint64_t n = carry + a.pn[i + j] + static_cast<uint64_t>(pn[j]) * b.pn[i];
             a.pn[i + j] = n & 0xffffffff;
             carry = n >> 32;
         }
@@ -85,12 +79,12 @@ base_uint<BITS> &base_uint<BITS>::operator*=(const base_uint &b) {
     return *this;
 }
 
-template <unsigned int BITS>
+template <size_t BITS>
 base_uint<BITS> &base_uint<BITS>::operator/=(const base_uint &b) {
     // make a copy, so we can shift.
-    base_uint<BITS> div = b;
+    base_uint div = b;
     // make a copy, so we can subtract.
-    base_uint<BITS> num = *this;
+    base_uint num = *this;
     // the quotient.
     *this = 0;
     int num_bits = num.bits();
@@ -113,15 +107,15 @@ base_uint<BITS> &base_uint<BITS>::operator/=(const base_uint &b) {
         }
         // shift back.
         div >>= 1;
-        shift--;
+        --shift;
     }
     // num now contains the remainder of the division.
     return *this;
 }
 
-template <unsigned int BITS>
-int base_uint<BITS>::CompareTo(const base_uint<BITS> &b) const {
-    for (int i = WIDTH - 1; i >= 0; i--) {
+template <size_t BITS>
+int base_uint<BITS>::CompareTo(const base_uint<BITS> &b) const noexcept {
+    for (int i = WIDTH - 1; i >= 0; --i) {
         if (pn[i] < b.pn[i]) {
             return -1;
         }
@@ -132,8 +126,8 @@ int base_uint<BITS>::CompareTo(const base_uint<BITS> &b) const {
     return 0;
 }
 
-template <unsigned int BITS> bool base_uint<BITS>::EqualTo(uint64_t b) const {
-    for (int i = WIDTH - 1; i >= 2; i--) {
+template <size_t BITS> bool base_uint<BITS>::EqualTo(uint64_t b) const noexcept {
+    for (size_t i = WIDTH - 1; i >= 2; --i) {
         if (pn[i]) {
             return false;
         }
@@ -147,37 +141,37 @@ template <unsigned int BITS> bool base_uint<BITS>::EqualTo(uint64_t b) const {
     return true;
 }
 
-template <unsigned int BITS> double base_uint<BITS>::getdouble() const {
+template <size_t BITS> double base_uint<BITS>::getdouble() const noexcept {
     double ret = 0.0;
     double fact = 1.0;
-    for (int i = 0; i < WIDTH; i++) {
+    for (size_t i = 0; i < WIDTH; ++i) {
         ret += fact * pn[i];
         fact *= 4294967296.0;
     }
     return ret;
 }
 
-template <unsigned int BITS> std::string base_uint<BITS>::GetHex() const {
+template <size_t BITS> std::string base_uint<BITS>::GetHex() const {
     return ArithToUint256(*this).GetHex();
 }
 
-template <unsigned int BITS> void base_uint<BITS>::SetHex(const char *psz) {
+template <size_t BITS> void base_uint<BITS>::SetHex(const char *psz) noexcept {
     *this = UintToArith256(uint256S(psz));
 }
 
-template <unsigned int BITS>
-void base_uint<BITS>::SetHex(const std::string &str) {
+template <size_t BITS>
+void base_uint<BITS>::SetHex(const std::string &str) noexcept {
     SetHex(str.c_str());
 }
 
-template <unsigned int BITS> std::string base_uint<BITS>::ToString() const {
-    return (GetHex());
+template <size_t BITS> std::string base_uint<BITS>::ToString() const {
+    return GetHex();
 }
 
-template <unsigned int BITS> unsigned int base_uint<BITS>::bits() const {
-    for (int pos = WIDTH - 1; pos >= 0; pos--) {
+template <size_t BITS> unsigned int base_uint<BITS>::bits() const noexcept {
+    for (int pos = WIDTH - 1; pos >= 0; --pos) {
         if (pn[pos]) {
-            for (int nbits = 31; nbits > 0; nbits--) {
+            for (int nbits = 31; nbits > 0; --nbits) {
                 if (pn[pos] & 1U << nbits) {
                     return 32 * pos + nbits + 1;
                 }
@@ -189,25 +183,24 @@ template <unsigned int BITS> unsigned int base_uint<BITS>::bits() const {
 }
 
 // Explicit instantiations for base_uint<256>
-template base_uint<256>::base_uint(const std::string &);
-template base_uint<256> &base_uint<256>::operator<<=(unsigned int);
-template base_uint<256> &base_uint<256>::operator>>=(unsigned int);
-template base_uint<256> &base_uint<256>::operator*=(uint32_t b32);
-template base_uint<256> &base_uint<256>::operator*=(const base_uint<256> &b);
+template base_uint<256>::base_uint(const std::string &) noexcept;
+template base_uint<256> &base_uint<256>::operator<<=(unsigned int) noexcept;
+template base_uint<256> &base_uint<256>::operator>>=(unsigned int) noexcept;
+template base_uint<256> &base_uint<256>::operator*=(uint32_t b32) noexcept;
+template base_uint<256> &base_uint<256>::operator*=(const base_uint<256> &b) noexcept;
 template base_uint<256> &base_uint<256>::operator/=(const base_uint<256> &b);
-template int base_uint<256>::CompareTo(const base_uint<256> &) const;
-template bool base_uint<256>::EqualTo(uint64_t) const;
-template double base_uint<256>::getdouble() const;
+template int base_uint<256>::CompareTo(const base_uint<256> &) const noexcept;
+template bool base_uint<256>::EqualTo(uint64_t) const noexcept;
+template double base_uint<256>::getdouble() const noexcept;
 template std::string base_uint<256>::GetHex() const;
 template std::string base_uint<256>::ToString() const;
-template void base_uint<256>::SetHex(const char *);
-template void base_uint<256>::SetHex(const std::string &);
-template unsigned int base_uint<256>::bits() const;
+template void base_uint<256>::SetHex(const char *) noexcept;
+template void base_uint<256>::SetHex(const std::string &) noexcept;
+template unsigned int base_uint<256>::bits() const noexcept;
 
 // This implementation directly uses shifts instead of going through an
 // intermediate MPI representation.
-arith_uint256 &arith_uint256::SetCompact(uint32_t nCompact, bool *pfNegative,
-                                         bool *pfOverflow) {
+arith_uint256 &arith_uint256::SetCompact(uint32_t nCompact, bool *pfNegative, bool *pfOverflow) noexcept {
     int nSize = nCompact >> 24;
     uint32_t nWord = nCompact & 0x007fffff;
     if (nSize <= 3) {
@@ -228,7 +221,7 @@ arith_uint256 &arith_uint256::SetCompact(uint32_t nCompact, bool *pfNegative,
     return *this;
 }
 
-uint32_t arith_uint256::GetCompact(bool fNegative) const {
+uint32_t arith_uint256::GetCompact(bool fNegative) const noexcept {
     int nSize = (bits() + 7) / 8;
     uint32_t nCompact = 0;
     if (nSize <= 3) {
@@ -251,17 +244,17 @@ uint32_t arith_uint256::GetCompact(bool fNegative) const {
     return nCompact;
 }
 
-uint256 ArithToUint256(const arith_uint256 &a) {
-    uint256 b;
-    for (int x = 0; x < a.WIDTH; ++x) {
-        WriteLE32(b.begin() + x * 4, a.pn[x]);
+uint256 ArithToUint256(const arith_uint256 &a) noexcept {
+    uint256 b{uint256::Uninitialized};
+    for (size_t x = 0; x < a.WIDTH; ++x) {
+        WriteLE32(b.data() + x * 4, a.pn[x]);
     }
     return b;
 }
-arith_uint256 UintToArith256(const uint256 &a) {
-    arith_uint256 b;
-    for (int x = 0; x < b.WIDTH; ++x) {
-        b.pn[x] = ReadLE32(a.begin() + x * 4);
+arith_uint256 UintToArith256(const uint256 &a) noexcept {
+    arith_uint256 b{arith_uint256::Uninitialized};
+    for (size_t x = 0; x < b.WIDTH; ++x) {
+        b.pn[x] = ReadLE32(a.data() + x * 4);
     }
     return b;
 }
