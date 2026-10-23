@@ -9,6 +9,7 @@
 #include <amount.h>
 #include <chain.h>
 #include <config.h>
+#include <consensus/consensus.h>
 #include <consensus/validation.h>
 #include <init.h>
 #include <interfaces/chain.h>
@@ -310,9 +311,8 @@ namespace {
             }
             return result;
         }
-        bool tryGetTxStatus(const TxId &txid,
-                            interfaces::WalletTxStatus &tx_status,
-                            int &num_blocks, int64_t &block_time) override {
+        bool tryGetTxStatus(const TxId &txid, interfaces::WalletTxStatus &tx_status, int &num_blocks,
+                            int64_t &block_time, BlockTicks &tip_ticks, BlockTicks &block_interval) override {
             auto locked_chain = m_wallet.chain().lock(true /* try_lock */);
             if (!locked_chain) {
                 return false;
@@ -328,9 +328,13 @@ namespace {
             if (std::optional<int> height = locked_chain->getHeight()) {
                 num_blocks = *height;
                 block_time = locked_chain->getBlockTime(*height);
+                tip_ticks = locked_chain->getTicks().value_or(BlockTicks{});
+                block_interval = locked_chain->getTickInterval().value_or(legacy::POW_TARGET_SPACING_TICKS);
             } else {
                 num_blocks = -1;
                 block_time = -1;
+                tip_ticks = BlockTicks{};
+                block_interval = legacy::POW_TARGET_SPACING_TICKS;
             }
             tx_status = MakeWalletTxStatus(*locked_chain, mi->second);
             return true;

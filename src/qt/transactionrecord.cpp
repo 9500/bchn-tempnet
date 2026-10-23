@@ -1,6 +1,6 @@
 // Copyright (c) 2011-2016 The Bitcoin Core developers
 // Copyright (c) 2022 The Bitcoin Cash Node developers
-// Copyright (c) 2017-2025 The Bitcoin developers
+// Copyright (c) 2017-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -157,8 +157,8 @@ TransactionRecord::decomposeTransaction(const interfaces::WalletTx &wtx) {
     return parts;
 }
 
-void TransactionRecord::updateStatus(const interfaces::WalletTxStatus &wtx,
-                                     int numBlocks, int64_t block_time) {
+void TransactionRecord::updateStatus(const interfaces::WalletTxStatus &wtx, int numBlocks, int64_t block_time,
+                                     const BlockTicks &tipTicks, const BlockTicks &blockInterval) {
     // Determine transaction status
 
     // Sort order, unrecorded transactions sort to the top
@@ -176,7 +176,10 @@ void TransactionRecord::updateStatus(const interfaces::WalletTxStatus &wtx,
     } else if (up_to_date && !wtx.is_final) {
         if (wtx.lock_time < LOCKTIME_THRESHOLD) {
             status.status = TransactionStatus::OpenUntilBlock;
-            status.open_for = wtx.lock_time - numBlocks;
+            // Calculate (estimate) how many more blocks until finality based on the lock_time translated to ticks
+            // and scaled to assume future blocks use the same block interval as the next block after the tip.
+            const BlockTicks lockTimeAsTicks = legacy::POW_TARGET_SPACING_TICKS * wtx.lock_time;
+            status.open_for = (lockTimeAsTicks.toSecs() - tipTicks.toSecs()) / blockInterval.toSecs();
         } else {
             status.status = TransactionStatus::OpenUntilDate;
             status.open_for = wtx.lock_time;
