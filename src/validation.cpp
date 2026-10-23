@@ -365,9 +365,9 @@ bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, const Bl
 
     CBlockIndex *tip = ::ChainActive().Tip();
     assert(tip != nullptr);
-    assert(mapper.HeightToTick(tip->nHeight) == tip->GetBlockTicks()); // sanity check insisted-upon during review
     const int mempoolHeight = tip->nHeight + 1;
     const auto mempoolTicks = tip->GetNextBlockTicks();
+    assert(mapper.HeightToTick(mempoolHeight) == mempoolTicks); // sanity check: the mapper must match the chain
 
     CBlockIndex index; // fake block to represent the mempool's hypothetical next block
     index.pprev = tip;
@@ -2699,7 +2699,15 @@ CBlockIndex *CChainState::FindMostWorkChain(const Consensus::Params &params) {
                 arith_uint256 requiredWork = pindexTip->nChainWork;
 
                 if (!IsUpgrade2027Enabled(params, pindexTip->pprev)) {
-                    // Old Amaury reorg protection heuristics (pre FABLOUS CHIP)
+                    // Old Amaury reorg protection heuristics
+                    //
+                    // This algorithm is used if all of the blocks from pindexFork
+                    // to pindexTip are mined under the pre-upgrade2027 rules. Once
+                    // the first upgraded block is mined, and is in our active chain,
+                    // we no longer take this branch. Towards that end, the use of
+                    // pindexTip->pprev above as the second argument to
+                    // IsUpgrade2027Enabled() (rather than using pindexTip) is
+                    // deliberate.
 
                     // A parked chain can be unparked if it has twice as much PoW
                     // accumulated as the main chain has since the fork block.
@@ -2735,9 +2743,10 @@ CBlockIndex *CChainState::FindMostWorkChain(const Consensus::Params &params) {
                     //
                     // * - The block ranges listed assume uniform 1-min blocks. Across block interval change boundaries,
                     //     the number of blocks in each tier above are not exactly the block ranges listed -- it's more
-                    //     about 60-tick "bands", but for simplicity in reading/understanding the above, we use the term
+                    //     about tick "bands", but for simplicity in reading/understanding the above, we use the term
                     //     "blocks" loosely since this branch will, >99% of the time, be taken for uniform 1-min blocks
-                    //     (the activation boundary happens only once and then after that blocks are uniformely spaced).
+                    //     (the activation boundary happens only once and then after that blocks are uniformly spaced,
+                    //     60-ticks apart).
                     Assume(pindexTip->GetBlockTicks() >= pindexFork->GetBlockTicks());
                     const BlockTicks tickDeltaSinceFork = pindexTip->TickDiff(pindexFork);
 
