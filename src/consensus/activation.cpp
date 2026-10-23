@@ -170,7 +170,7 @@ bool IsUpgrade12Enabled(const Consensus::Params &params, const CBlockIndex *pind
 // Upgrade 2027
 std::optional<int64_t> g_Upgrade2027TimeOverride;
 
-bool IsUpgrade2027EnabledForMTPPrev(const Consensus::Params &params, const int64_t nMedianTimePastPrev) {
+static bool IsUpgrade2027EnabledForMTPPrev(const Consensus::Params &params, const int64_t nMedianTimePastPrev) {
     // Implementation note: This upgrade shortens the block time from 10 mins -> 1 min. In the future,
     // any upgrade that wants to shorten or lengthen the block time must satisfy the following
     // constraints for the upgrade block and for the new interval chosen:
