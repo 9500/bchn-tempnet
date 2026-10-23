@@ -1282,8 +1282,6 @@ void PeerLogicValidation::ProcessGetBlockData(const Config &config, const NodeRe
                      __func__, pfrom->GetId());
         }
     }
-    // NB: Code below assumes that if `send` is set, then `pindex` is on the active chain! If that assumption changes,
-    // be careful and modify the below code!
     const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
     // Disconnect node in case we have reached the outbound limit for serving
     // historical blocks.
@@ -1306,8 +1304,7 @@ void PeerLogicValidation::ProcessGetBlockData(const Config &config, const NodeRe
     // Add two blocks buffer extension for possible races.
     if (send && !pfrom->HasPermission(PF_NOBAN)
         && (pfrom->GetLocalServices() & (NODE_NETWORK_LIMITED|NODE_NETWORK)) == NODE_NETWORK_LIMITED // pruned mode
-        // Note: At this point `pindex` definitely is on the active chain (enforced by `BlockRequestAllowed()` above),
-        // so this blockticks subtraction is always well defined and doesn't underflow.
+        && ::ChainActive().Ticks() > pindex->GetBlockTicks()
         && ::ChainActive().Ticks() - pindex->GetBlockTicks()
            > NODE_NETWORK_LIMITED_MIN_BLOCK_TICKS + 2 * pindex->GetTickDeltaForThisBlock()) {
         LogPrint(BCLog::NET, "Ignore block request below NODE_NETWORK_LIMITED threshold from peer=%d\n", pfrom->GetId());
