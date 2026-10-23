@@ -46,20 +46,6 @@ extern RecursiveMutex cs_main;
  */
 static const uint32_t MEMPOOL_HEIGHT = 0x7FFFFFFF;
 
-struct LockPoints {
-    // Will be set to the blockchain height and median time past values that
-    // would be necessary to satisfy all relative locktime constraints (BIP68)
-    // of this tx given our view of block chain history
-    int height;
-    int64_t time;
-    // As long as the current chain descends from the highest height block
-    // containing one of the inputs used in the calculation, then the cached
-    // values are still valid even after a reorg.
-    CBlockIndex *maxInputBlock;
-
-    LockPoints() : height(0), time(0), maxInputBlock(nullptr) {}
-};
-
 class CTxMemPool;
 
 /** \class CTxMemPoolEntry
@@ -93,8 +79,6 @@ class CTxMemPoolEntry {
     //! Used for determining the priority of the transaction for mining in a
     //! block
     Amount feeDelta;
-    //! Track the height and time at which tx was final
-    LockPoints lockPoints;
 
     //! If not nullptr, this entry has an associated DoubleSpendProof.
     //! We use a DspIdPtr here to use less memory than a direct DspId would
@@ -105,7 +89,7 @@ class CTxMemPoolEntry {
 public:
     CTxMemPoolEntry(const CTransactionRef &_tx, const Amount _nFee,
                     int64_t _nTime,
-                    bool spendsCoinbase, int64_t _sigChecks, LockPoints lp);
+                    bool spendsCoinbase, int64_t _sigChecks);
 
     uint64_t GetEntryId() const { return entryId; }
     //! This should only be set exactly once by addUnchecked() before entry insertion into the mempool.
@@ -124,13 +108,10 @@ public:
     Amount GetModifiedFee() const { return nFee + feeDelta; }
     CFeeRate GetModifiedFeeRate() const { return CFeeRate(GetModifiedFee(), GetTxVirtualSize()); }
     size_t DynamicMemoryUsage() const { return nUsageSize; }
-    const LockPoints &GetLockPoints() const { return lockPoints; }
 
     // Updates the fee delta used for mining priority score, and the
     // modified fees with descendants.
     void UpdateFeeDelta(Amount feeDelta);
-    // Update the LockPoints after a reorg
-    void UpdateLockPoints(const LockPoints &lp);
 
     bool GetSpendsCoinbase() const { return spendsCoinbase; }
 
@@ -152,15 +133,6 @@ struct update_fee_delta {
 
 private:
     Amount feeDelta;
-};
-
-struct update_lock_points {
-    explicit update_lock_points(const LockPoints &_lp) : lp(_lp) {}
-
-    void operator()(CTxMemPoolEntry &e) { e.UpdateLockPoints(lp); }
-
-private:
-    const LockPoints &lp;
 };
 
 // extracts a transaction id from CTxMemPoolEntry or CTransactionRef
