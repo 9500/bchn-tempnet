@@ -1,5 +1,5 @@
 // Copyright (c) 2011-2019 The Bitcoin Core developers
-// Copyright (c) 2020-2022 The Bitcoin developers
+// Copyright (c) 2020-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -15,10 +15,9 @@
 
 static void AddTx(const CTransactionRef &tx, const Amount &fee,
                   CTxMemPool &pool) EXCLUSIVE_LOCKS_REQUIRED(cs_main, pool.cs) {
-    LockPoints lp;
     pool.addUnchecked(CTxMemPoolEntry(tx, fee, /* time */ 0,
                                       /* spendsCoinbase */ false,
-                                      /* sigChecks */ 1, lp));
+                                      /* sigChecks */ 1));
 }
 
 static void RPCMempoolVerbose(benchmark::State &state) {

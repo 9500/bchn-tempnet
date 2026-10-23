@@ -1,5 +1,5 @@
 // Copyright (c) 2011-2016 The Bitcoin Core developers
-// Copyright (c) 2021-2022 The Bitcoin developers
+// Copyright (c) 2021-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -15,8 +15,7 @@ static void AddTx(const CTransactionRef &tx, const Amount &nFee, CTxMemPool &poo
     int64_t nTime = 0;
     bool spendsCoinbase = false;
     unsigned int nSigChecks = 1;
-    LockPoints lp;
-    pool.addUnchecked(CTxMemPoolEntry(tx, nFee, nTime, spendsCoinbase, nSigChecks, lp));
+    pool.addUnchecked(CTxMemPoolEntry(tx, nFee, nTime, spendsCoinbase, nSigChecks));
 }
 
 // Right now this is only testing eviction performance in an extremely small

@@ -55,7 +55,6 @@ class CValidationState;
 struct FlatFilePos;
 struct ChainTxData;
 struct PrecomputedTransactionData;
-struct LockPoints;
 
 namespace Consensus {
 struct Params;
@@ -538,27 +537,14 @@ void UpdateCoins(CCoinsViewCache &view, const CTransaction &tx, CTxUndo &txundo,
                  int nHeight);
 
 /**
- * Test whether the LockPoints height and time are still valid on the current
- * chain.
- */
-bool TestLockPointValidity(const LockPoints *lp)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-
-/**
  * Check if transaction will be BIP 68 final in the next block to be created.
  *
  * Simulates calling SequenceLocks() with data from the tip of the current
- * active chain. Optionally stores in LockPoints the resulting height and time
- * calculated and the hash of the block needed for calculation or skips the
- * calculation and uses the LockPoints passed in for evaluation. The LockPoints
- * should not be considered valid if CheckSequenceLocks returns false.
+ * active chain.
  *
  * See consensus/consensus.h for flag definitions.
  */
-bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx,
-                        int flags, LockPoints *lp = nullptr,
-                        bool useExistingLockPoints = false)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, int flags) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 /**
  * Closure representing one script verification.

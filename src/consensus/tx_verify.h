@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2022 The Bitcoin developers
+// Copyright (c) 2018-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -44,26 +44,11 @@ bool ContextualCheckTransaction(const Consensus::Params &params,
                                 int64_t nMedianTimePastPrev);
 
 /**
- * Calculates the block height and previous block's median time past at which
- * the transaction will be considered final in the context of BIP 68.
- * Also removes from the vector of input heights any entries which did not
- * correspond to sequence locked inputs as they do not affect the calculation.
- */
-std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx,
-                                               int flags,
-                                               std::vector<int> *prevHeights,
-                                               const CBlockIndex &block);
-
-bool EvaluateSequenceLocks(const CBlockIndex &block,
-                           std::pair<int, int64_t> lockPair);
-
-/**
  * Check if transaction is final per BIP 68 sequence numbers and can be included
  * in a block. Consensus critical. Takes as input a list of heights at which
  * tx's inputs (in order) confirmed.
  */
-bool SequenceLocks(const CTransaction &tx, int flags,
-                   std::vector<int> *prevHeights, const CBlockIndex &block);
+bool SequenceLocks(const CTransaction &tx, int flags, std::vector<int> *prevHeights, const CBlockIndex &block);
 
 /// Returns the minimum transaction size (100 for post-MagneticAnomaly, 65 for post-Upgrade9), or 0 if before those
 /// two upgrades have activated (no enforced minimum).
