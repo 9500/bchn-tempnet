@@ -7,6 +7,7 @@
 #include <consensus/consensus.h>
 #include <serialize.h>
 
+#include <cassert>
 #include <compare> // for comparison <=>
 #include <cstdint>
 #include <string>
@@ -153,7 +154,9 @@ public:
     /// Advance the algorithm's state to the next block (N + 1), given the next block (N + 1) block size,
     /// algorithm state for this block (N), and global algorithm configuration.
     State NextBlockState(const Config &config, BlockTicks nextBlockInterval, uint64_t nextBlockSize) const {
-        return State{NextBlockStateBase(config, blockInterval, nextBlockSize), nextBlockInterval};
+        State ret{NextBlockStateBase(config, blockInterval, nextBlockSize), nextBlockInterval};
+        assert(ret.IsValid(config));
+        return ret;
     }
 
     /// Calculate algorithm's look-ahead block size limit, for a block N blocks ahead of current one. This is a

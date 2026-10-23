@@ -52,7 +52,7 @@ struct BlockHeightToTickMapper {
     // Shorthand for: `this->HeightToTick(toHeight) - this->HeightToTick(fromHeight)`
     BlockTicks TicksElapsed(BlockHeight fromHeight, BlockHeight toHeight) const noexcept;
 
-    // Get the interval for block `height`; the next block after `height` will be mined at this interval.
+    // Get the interval for mining the next block after `height`
     BlockTicks GetBlockTickIntervalForHeight(BlockHeight height) const noexcept;
 
     // Get the latest entry (greatest height) from the schedule
