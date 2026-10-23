@@ -365,6 +365,7 @@ bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, const Bl
 
     CBlockIndex *tip = ::ChainActive().Tip();
     assert(tip != nullptr);
+    assert(mapper.HeightToTick(tip->nHeight) == tip->GetBlockTicks()); // sanity check insisted-upon during review
     const int mempoolHeight = tip->nHeight + 1;
     const auto mempoolTicks = tip->GetNextBlockTicks();
 
