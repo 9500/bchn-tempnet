@@ -32,7 +32,6 @@
 #include <utility>
 #include <vector>
 
-class CBlockIndex;
 class Config;
 class DoubleSpendProof;
 class DoubleSpendProofStorage;
