@@ -319,7 +319,7 @@ enum ServiceFlags : uint64_t {
     // compact filters on block data
     NODE_CF = (1 << 8),
     // NODE_NETWORK_LIMITED means the same as NODE_NETWORK with the limitation
-    // of only serving the last 288 (2 day) blocks
+    // of only serving the last 288 * 10 min or 2880 * 1 min (2 day) blocks
     // See BIP159 for details on how this is implemented.
     NODE_NETWORK_LIMITED = (1 << 10),
 

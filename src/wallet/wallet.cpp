@@ -5044,7 +5044,7 @@ auto CMerkleTx::GetTickDepthInMainChain(interfaces::Chain::Lock &locked_chain) c
 
 BlockTicks CMerkleTx::GetBlockTicksToMaturity(interfaces::Chain::Lock &locked_chain) const {
     if (!IsCoinBase()) {
-        return BlockTicks{0};;
+        return BlockTicks{0};
     }
 
     const auto res = GetTickDepthInMainChain(locked_chain);

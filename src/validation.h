@@ -108,7 +108,7 @@ static constexpr unsigned int BLOCK_STALLING_TIMEOUT = 2;
  * that if a peer sends less than this number, we reached its tip. Changing this
  * value is a protocol upgrade.
  *
- * TODO: This should probably scale once the blocktime is 1 min but it requires
+ * This should probably scale once the blocktime is 1 min but it requires
  * a protocol upgrade.
  */
 static constexpr unsigned int MAX_HEADERS_RESULTS = 2000;
@@ -132,7 +132,7 @@ static constexpr int MAX_CMPCTBLOCK_DEPTH = 5;
  * MAX_HEADERS_RESULTS for the FABLOUS changes -- however this constant and
  * in particular MAX_HEADERS_RESULTS does need to eventually be re-engineered
  * since they may be too low, and are legacy values chosen out of thin air in
- * an environment where internet speeds wer 10x or 100x slower than today.
+ * an environment where internet speeds were 10x or 100x slower than today.
  */
 static constexpr unsigned int BLOCK_DOWNLOAD_WINDOW = 1024;
 /** Time to wait (in seconds) between writing blocks/block index to disk. */
