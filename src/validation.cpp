@@ -1073,18 +1073,20 @@ static void CheckForkWarningConditions() EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
         return;
     }
 
-    // If our best fork is no longer within 72 blocks (+/- 12 hours if no one
-    // mines it) of our head, drop it
+    // If our best fork is no longer within 72 * 10 min blocks (+/- 12 hours if no one mines it) of our head, drop it
     if (pindexBestForkTip &&
-        ::ChainActive().Height() - pindexBestForkTip->nHeight >= 72) {
+        ::ChainActive().Tip()->TickDiffSecs(pindexBestForkTip) >= 72 * legacy::POW_TARGET_SPACING_TICKS.toSecs()) {
         pindexBestForkTip = nullptr;
     }
+
+    const unsigned numBlocks = 6 * std::max<unsigned>(1, legacy::POW_TARGET_SPACING_TICKS
+                                                         / ::ChainActive().Tip()->GetTickDeltaForThisBlock());
 
     if (pindexBestForkTip ||
         (pindexBestInvalid &&
          pindexBestInvalid->nChainWork >
              ::ChainActive().Tip()->nChainWork +
-                 (GetBlockProof(*::ChainActive().Tip()) * 6))) {
+                 (GetBlockProof(*::ChainActive().Tip()) * numBlocks))) {
         if (!GetfLargeWorkForkFound() && pindexBestForkBase) {
             std::string warning =
                 std::string("'Warning: Large-work fork detected, forking after "
@@ -1120,21 +1122,20 @@ static void CheckForkWarningConditionsOnNewFork(CBlockIndex *pindexNewForkTip)
     AssertLockHeld(cs_main);
     // If we are on a fork that is sufficiently large, set a warning flag.
     const CBlockIndex *pfork = ::ChainActive().FindFork(pindexNewForkTip);
-
+    const unsigned numBlocks = pfork ? 7 * std::max<unsigned>(1, legacy::POW_TARGET_SPACING_TICKS
+                                                                 / pfork->GetTickDeltaForThisBlock())
+                                     : 7;
     // We define a condition where we should warn the user about as a fork of at
-    // least 7 blocks with a tip within 72 blocks (+/- 12 hours if no one mines
-    // it) of ours. We use 7 blocks rather arbitrarily as it represents just
+    // least 7 10-min blocks (or equivalent) with a tip within 72 10-min blocks (+/- 12 hours if no one mines
+    // it) of ours. We use 7 10-min blocks rather arbitrarily as it represents just
     // under 10% of sustained network hash rate operating on the fork, or a
     // chain that is entirely longer than ours and invalid (note that this
     // should be detected by both). We define it this way because it allows us
-    // to only store the highest fork tip (+ base) which meets the 7-block
+    // to only store the highest fork tip (+ base) which meets the 7 10-min-block
     // condition and from this always have the most-likely-to-cause-warning fork
-    if (pfork &&
-        (!pindexBestForkTip ||
-         pindexNewForkTip->nHeight > pindexBestForkTip->nHeight) &&
-        pindexNewForkTip->nChainWork - pfork->nChainWork >
-            (GetBlockProof(*pfork) * 7) &&
-        ::ChainActive().Height() - pindexNewForkTip->nHeight < 72) {
+    if (pfork && (!pindexBestForkTip || pindexNewForkTip->GetBlockTicks() > pindexBestForkTip->GetBlockTicks())
+        && pindexNewForkTip->nChainWork - pfork->nChainWork > (GetBlockProof(*pfork) * numBlocks)
+        && ::ChainActive().Tip()->TickDiffSecs(pindexNewForkTip) < 72 * legacy::POW_TARGET_SPACING_TICKS.toSecs()) {
         pindexBestForkTip = pindexNewForkTip;
         pindexBestForkBase = pfork;
     }

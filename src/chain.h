@@ -430,6 +430,17 @@ public:
     }
 
     /**
+     *  Get the tick difference between `pindex` and `this`, as seconds.
+     *  @return The difference, in ticks expressed as seconds, between `this` and `pindex`, e.g.:
+     *          `this->GetBlockTicks().toSecs() - pindex->GetBlockTicks().toSecs()`.
+     *          If `pindex` has a larger tick count than `this`, will return a negative value.
+     */
+    int64_t TickDiffSecs(const CBlockIndex *pindex) const {
+        auto a = GetBlockTicks(), b = pindex ? pindex->GetBlockTicks() : BlockTicks{};
+        return a.toSecs() - b.toSecs();
+    }
+
+    /**
      *  @return The most recent ancestor of `pindex` that has tick depth of at least `ticks` with respect to `this`.
      *          Will return `nullptr` if `ticks > this->GetBlockTicks()`.
      *  @see TickDiff()
