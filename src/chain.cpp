@@ -179,18 +179,7 @@ int64_t GetBlockProofEquivalentTime(const CBlockIndex &to,
         r = from.nChainWork - to.nChainWork;
         sign = -1;
     }
-    // NOTE: For the below to always be correct, please ensure that all code paths that set nChainWork also set
-    //       block ticks & nHeight correctly.
-    const int64_t ticksDelta = [&] {
-        return to.TickDiff(&from).toSecs();
-    }();
-    const int64_t heightDelta = [&] {
-        int a = from.nHeight, b = to.nHeight;
-        if (b < a) { std::swap(b, a); }
-        return b - a;
-    }();
-    const int64_t avgSpacing = !heightDelta ? 0 : ticksDelta / heightDelta;
-    r = r * arith_uint256(avgSpacing) / GetBlockProof(tip);
+    r = r * arith_uint256(tip.GetTickDeltaForThisBlock().toSecs<uint64_t>()) / GetBlockProof(tip);
     if (r.bits() > 63) {
         return sign * std::numeric_limits<int64_t>::max();
     }
