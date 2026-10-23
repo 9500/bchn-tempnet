@@ -125,7 +125,12 @@ static void WalletTxToJSON(interfaces::Chain &chain,
     int confirms = wtx.GetDepthInMainChain(locked_chain);
     entry.emplace_back("confirmations", confirms);
     auto res = wtx.GetTickDepthInMainChain(locked_chain);
-    entry.emplace_back("confirmations_ticks", !res.conflicts && !res.mempool ? res.tickDepth.toSecs() : 0);
+    const int64_t confirmations_ticks = !res.conflicts && !res.mempool ? res.tickDepth.toSecs()
+                                                                         // we want conflicted txns to show "negative
+                                                                         // depth" to the conflicting tx's depth
+                                                                       : (res.conflicts ? res.tickDepth.toSecs() * -1
+                                                                                        : 0 /* mempool tx */);
+    entry.emplace_back("confirmations_ticks", confirmations_ticks);
     if (wtx.IsCoinBase()) {
         entry.emplace_back("generated", true);
     }
@@ -1228,7 +1233,7 @@ static UniValue addmultisigaddress(const Config &config,
 struct tallyitem {
     Amount nAmount{Amount::zero()};
     int nConf{std::numeric_limits<int>::max()};
-    std::optional<BlockTicks> tickDepth;
+    int64_t tickDepth{std::numeric_limits<int64_t>::max()};
     std::vector<uint256> txids;
     bool fIsWatchonly{false};
     tallyitem() {}
@@ -1310,15 +1315,10 @@ static UniValue::Array ListReceived(const Config &config, interfaces::Chain::Loc
             tallyitem &item = mapTally[address];
             item.nAmount += txout.nValue;
             item.nConf = std::min(item.nConf, nDepth);
-            if (!resDepth.conflicts && !resDepth.mempool && resDepth.tickDepth > BlockTicks{0}) {
-                if (!item.tickDepth) {
-                    item.tickDepth = resDepth.tickDepth;
-                } else {
-                    item.tickDepth = std::min(*item.tickDepth, resDepth.tickDepth);
-                }
-            } else {
-                item.tickDepth.reset();
-            }
+            int64_t td = resDepth.tickDepth.toSecs();
+            if (resDepth.conflicts) td *= -1; // negate for conflicts
+            else if (resDepth.mempool) td = 0; // 0 = mempool
+            item.tickDepth = std::min(item.tickDepth, td);
             item.txids.push_back(wtx.GetId());
             if (mine & ISMINE_WATCH_ONLY) {
                 item.fIsWatchonly = true;
@@ -1353,7 +1353,7 @@ static UniValue::Array ListReceived(const Config &config, interfaces::Chain::Loc
 
         Amount nAmount = Amount::zero();
         int nConf = std::numeric_limits<int>::max();
-        std::optional<BlockTicks> tickDepth;
+        int64_t tickDepth = std::numeric_limits<int64_t>::max();
         bool fIsWatchonly = false;
         if (it != mapTally.end()) {
             nAmount = (*it).second.nAmount;
@@ -1377,7 +1377,7 @@ static UniValue::Array ListReceived(const Config &config, interfaces::Chain::Loc
             obj.emplace_back("address", EncodeDestination(address, config));
             obj.emplace_back("amount", ValueFromAmount(nAmount));
             obj.emplace_back("confirmations", nConf == std::numeric_limits<int>::max() ? 0 : nConf);
-            obj.emplace_back("confirmations_ticks", tickDepth.value_or(BlockTicks{}).toSecs());
+            obj.emplace_back("confirmations_ticks", tickDepth == std::numeric_limits<int64_t>::max() ? 0 : tickDepth);
             obj.emplace_back("label", label);
             UniValue::Array transactions;
             if (it != mapTally.end()) {
@@ -1396,7 +1396,7 @@ static UniValue::Array ListReceived(const Config &config, interfaces::Chain::Loc
         for (const auto &entry : label_tally) {
             Amount nAmount = entry.second.nAmount;
             int nConf = entry.second.nConf;
-            const auto &tickDepth = entry.second.tickDepth;
+            const int64_t tickDepth = entry.second.tickDepth;
             UniValue::Object obj;
             obj.reserve(5 + entry.second.fIsWatchonly);
             if (entry.second.fIsWatchonly) {
@@ -1404,7 +1404,7 @@ static UniValue::Array ListReceived(const Config &config, interfaces::Chain::Loc
             }
             obj.emplace_back("amount", ValueFromAmount(nAmount));
             obj.emplace_back("confirmations", nConf == std::numeric_limits<int>::max() ? 0 : nConf);
-            obj.emplace_back("confirmations_ticks", tickDepth.value_or(BlockTicks{}).toSecs());
+            obj.emplace_back("confirmations_ticks", tickDepth == std::numeric_limits<int64_t>::max() ? 0 : tickDepth);
             obj.emplace_back("label", entry.first);
             ret.emplace_back(std::move(obj));
         }
