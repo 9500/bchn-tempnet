@@ -22,7 +22,6 @@ class Config;
 
 // Lower-level utils //
 
-/** Returns the generated coin */
 /** Returns the generated coinbase coin */
 std::pair<COutPoint, Amount> MineBlock(const Config &config, const CScript &coinbase_scriptPubKey,
                                        const std::vector<CTransactionRef> &extraTxns = {});
