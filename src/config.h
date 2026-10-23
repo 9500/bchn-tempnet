@@ -59,7 +59,7 @@ public:
     /** Returns the maximum mined block size in bytes.
         Note that the returned value is scaled to the target blockInterval. So for 10 mins it's a 1:1 scale, for 1-min
         block times, the returned value is 1/10th of that, etc. */
-    virtual uint64_t GetGeneratedBlockSize(BlockTicks blockInterval, std::optional<uint64_t> currentMaxBlockSizeAleadyScaled) const = 0;
+    virtual uint64_t GetGeneratedBlockSize(BlockTicks blockInterval, std::optional<uint64_t> currentMaxBlockSizeAlreadyScaled) const = 0;
     /** The maximum amount of RAM to be used in the mempool before TrimToSize is called. */
     virtual void SetMaxMemPoolSize(uint64_t maxMemPoolSize) = 0;
     virtual uint64_t GetMaxMemPoolSize() const = 0;
@@ -101,7 +101,7 @@ public:
     void NotifyMaxBlockSizeLookAheadGuessChanged(uint64_t) const override;
     void SetGeneratedBlockSizeBytes(uint64_t blockSize) override;
     bool SetGeneratedBlockSizePercent(double percent) override;
-    uint64_t GetGeneratedBlockSize(BlockTicks blockInterval, std::optional<uint64_t> currentMaxBlockSizeAleadyScaled) const override;
+    uint64_t GetGeneratedBlockSize(BlockTicks blockInterval, std::optional<uint64_t> currentMaxBlockSizeAlreadyScaled) const override;
     void SetMaxMemPoolSize(uint64_t maxMemPoolSize) override { nMaxMemPoolSize = maxMemPoolSize; }
     uint64_t GetMaxMemPoolSize() const override { return nMaxMemPoolSize; }
     //! Note: `rate` may not exceed MAX_INV_BROADCAST_RATE (1 million)

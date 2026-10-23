@@ -107,7 +107,7 @@ BlockTicks ClientModel::getHeaderTipNextBlockInterval() const {
     if (cachedBestNextBlockInterval == -1) {
         refreshHeaderTipCacheVars();
     }
-    return BlockTicks{static_cast<uint64_t>(cachedBestNextBlockInterval)};;
+    return BlockTicks{static_cast<uint64_t>(cachedBestNextBlockInterval)};
 }
 
 void ClientModel::updateTimer() {

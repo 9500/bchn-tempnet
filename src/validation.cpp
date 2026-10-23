@@ -2750,7 +2750,7 @@ CBlockIndex *CChainState::FindMostWorkChain(const Consensus::Params &params) {
                     } else if (tickDeltaSinceFork < four10MinBlocks) {
                         // Note that we don't guard against overflow here. We assume that `deltaWork` when multiplied by
                         // `tickDeltaSinceForkSquared` will not overflow. This should be the case always unless somehow
-                        // the chain we are on has some crazy impossibly high difficulty where we somehow got 2^224
+                        // the chain we are on has some crazy impossibly high difficulty where we somehow got 2^233
                         // worth of work since pindexFork (if that occurs it means Bitcoin breaks since nChainWork has
                         // wrapped around or will wrap around soon anyway; so we have bigger problems than this reorg
                         // protection algo not working to spec in that case).
