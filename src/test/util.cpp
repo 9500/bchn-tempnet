@@ -142,7 +142,9 @@ std::vector<uint8_t> Uncompress(Span<const uint8_t> compressedBytes, size_t unco
 }
 
 Upgrade2027Disabler::Upgrade2027Disabler() : saved_g_Upgrade2027TimeOverride{::g_Upgrade2027TimeOverride} {
-    ::g_Upgrade2027TimeOverride = std::numeric_limits<int64_t>::max();
+    /* Note: a time ridiculously far into the future -- we don't use INT64_MAX here to avoid potential overlflow in
+       software_outdated.cpp */
+    ::g_Upgrade2027TimeOverride = (int64_t{1} << 48) - 1;
 }
 
 Upgrade2027Disabler::~Upgrade2027Disabler() {

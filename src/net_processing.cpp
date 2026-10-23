@@ -4255,7 +4255,7 @@ bool PeerLogicValidation::SendMessages(const Config &config, NodeRef pto,
             // Estimate the number of headers we are asking for -- we may cross the activation boundary for upgrade2027
             // (1 min block times) so use some heuristics there to guess roughly the number of headers to expect. We
             // cannot know in advance the exact time of activation and/or which header it lands on but we can roughly
-            // guess here with some reasonable ballpark so as to keep state.nHeaderSyncTimeout reasonably accurate.
+            // guess here with some reasonable ballpark so as to keep state.nHeadersSyncTimeout reasonably accurate.
             const int64_t estNumHeaders = [&consensusParams]{
                 const int64_t adjNow = GetAdjustedTime();
                 const int64_t activation1MinBlocks = GetUpgrade2027ActivationTime(consensusParams);
