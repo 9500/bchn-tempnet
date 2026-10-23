@@ -3934,6 +3934,20 @@ static bool ContextualCheckBlock(const CBlock &block, CValidationState &state,
         }
     }
 
+    // CHIP-2025-03 Faster Blocks for Bitcoin Cash:
+    // To prevent collision with pre-BIP34 coinbase txns, the following rule was added after the upgrade:
+    // "A coinbase transaction is invalid if its version is 1 AND its locktime is 0 AND the sum of its outputs is
+    //  at least 25 BCH."
+    if (const auto &tx = block.vtx[0]; tx->nVersion == 1 && tx->nLockTime == 0 /* do the cheap integer checks first */
+            && IsUpgrade2027Enabled(params, pindexPrev)) {
+        if (tx->GetValueOut() >= 25 * COIN) {
+            return state.DoS(100, false, REJECT_INVALID, "bad-cb-shape", false,
+                             "A coinbase transaction may not have the following combination:"
+                             " nVersion==1 && nLockTime==0 && nValueOut >= 25 " + CURRENCY_UNIT);
+        }
+    }
+
+
     return true;
 }
 

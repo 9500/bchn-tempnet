@@ -64,7 +64,7 @@ uint64_t GetMinimumTxSize(const Consensus::Params &params, const CBlockIndex *pi
 bool ContextualCheckTransaction(const Consensus::Params &params,
                                 const CTransaction &tx, CValidationState &state,
                                 const int nHeight, const int64_t nLockTimeCutoff,
-                                const int64_t nMedianTimePastPrev,
+                                const int64_t nMedianTimePastPrev [[maybe_unused]],
                                 const BlockTicks &blockTicks) {
     if (!IsFinalTx(tx, blockTicks, nLockTimeCutoff)) {
         // While this is only one transaction, we use txns in the error to
@@ -85,19 +85,6 @@ bool ContextualCheckTransaction(const Consensus::Params &params,
         // CHIP 2021-01 Restrict Transaction Version
         if (tx.nVersion > CTransaction::MAX_CONSENSUS_VERSION || tx.nVersion < CTransaction::MIN_CONSENSUS_VERSION) {
             return state.DoS(100, false, REJECT_INVALID, "bad-txns-version");
-        }
-    }
-
-    if (tx.nVersion == 1 && tx.nLockTime == 0 /* do the cheap integer checks first for speed */
-        && IsUpgrade2027EnabledForMTPPrev(params, nMedianTimePastPrev) && tx.IsCoinBase()) {
-        // CHIP-2025-03 Faster Blocks for Bitcoin Cash:
-        // To prevent collision with pre-BIP34 coinbase txns, the following rule was added after the upgrade:
-        // "A coinbase transaction is invalid if its version is 1 AND its locktime is 0 AND the sum of its outputs is
-        //  at least 25 BCH."
-        if (/*tx.nVersion == 1 && tx.nLockTime == 0 &&*/ tx.GetValueOut() >= 25 * COIN) {
-            return state.DoS(100, false, REJECT_INVALID, "bad-cb-shape", false,
-                             "A coinbase transaction may not have the following combination:"
-                             " nVersion==1 && nLockTime==0 && nValueOut >= 25 " + CURRENCY_UNIT);
         }
     }
 
