@@ -58,7 +58,7 @@ struct CustomArgumentsFixture {
             std::cerr.imbue(loc);
         }
 
-        // Process CLI override for the upgrade2027 activation time (code snippet is same as in src/init.cpp)
+        // Process CLI override for the upgrade2027 activation time (code snippet is similar to the one in src/init.cpp)
         if (gArgs.IsArgSet("-upgrade2027activationtime")) {
             const auto val = gArgs.GetArg("-upgrade2027activationtime", 0);
             if (val < 0) {
