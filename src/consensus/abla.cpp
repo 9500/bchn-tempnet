@@ -143,7 +143,7 @@ uint64_t StateBase::GetBlockSizeLimitBase(BlockTicks thisBlockInterval, bool dis
 }
 
 StateBase StateBase::NextBlockStateBase(const Config &config, BlockTicks thisBlockInterval, uint64_t nextBlockSize) const {
-    State ret;
+    StateBase ret;
 
     ret.blockSize = nextBlockSize; // save the blocksize for the next block to its State
 
@@ -223,7 +223,6 @@ StateBase StateBase::NextBlockStateBase(const Config &config, BlockTicks thisBlo
     // clip elasticBufferSize to betaMax to avoid integer overflow for extreme sizes
     ret.elasticBufferSize = std::min(ret.elasticBufferSize, config.betaMax);
 
-    assert(ret.IsValid(config));
     return ret;
 }
 

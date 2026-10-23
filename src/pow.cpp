@@ -291,10 +291,10 @@ arith_uint256 CalculateASERT_TickBased(const arith_uint256 &refTarget,
     // overflows easily. 32 leading zero bits is more than enough.
     assert((powLimit >> 224) == 0);
 
-    // Tick diff should NOT be negative or zero.
+    // Tick diff should NOT be negative.
     assert(nTickDiff >= 0);
 
-    // Ideal block times should not be 0
+    // Ideal block times should not be 0 or negative.
     assert(nAnchorIdealBlockTime > 0 && nNextIdealBlockTime > 0);
 
     int64_t blockIntervalRatio;
@@ -356,7 +356,7 @@ arith_uint256 CalculateASERT_TickBased(const arith_uint256 &refTarget,
     ) >> 48);
     // this is always < 2^241 since refTarget < 2^224
     arith_uint256 nextTarget = refTarget;
-    // multiply by 65536 * 2^(dractional part)
+    // multiply by 65536 * 2^(fractional part)
     nextTarget *= factor;
 
     // multiply by 2^(integer part) / 65536
