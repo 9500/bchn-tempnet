@@ -70,7 +70,7 @@ public:
     static constexpr Uninitialized_t Uninitialized{};
     explicit constexpr base_uint(Uninitialized_t) noexcept {}
 
-    constexpr const base_uint operator~() const noexcept {
+    constexpr base_uint operator~() const noexcept {
         base_uint ret{Uninitialized};
         for (size_t i = 0; i < WIDTH; ++i) {
             ret.pn[i] = ~pn[i];
@@ -78,7 +78,7 @@ public:
         return ret;
     }
 
-    constexpr const base_uint operator-() const noexcept {
+    constexpr base_uint operator-() const noexcept {
         base_uint ret{Uninitialized};
         for (size_t i = 0; i < WIDTH; ++i) {
             ret.pn[i] = ~pn[i];
@@ -271,7 +271,7 @@ public:
     void SetHex(const std::string &str) noexcept;
     std::string ToString() const;
 
-    static constexpr size_t size() noexcept { return sizeof(std::declval<base_uint>().pn); }
+    static constexpr size_t size() noexcept { return sizeof(pn); }
 
     /**
      * Returns the position of the highest bit set plus one, or zero if the

@@ -6,20 +6,16 @@
 #include <arith_uint256.h>
 
 #include <uint256.h>
-#include <util/defer.h>
 #include <version.h>
 
 #include <test/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
 
-#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
 #include <limits>
-#include <memory>
-#include <new>
 #include <sstream>
 #include <string>
 
@@ -680,33 +676,21 @@ BOOST_AUTO_TEST_CASE(getmaxcoverage) {
     CHECKBITWISEOPERATOR(R1, ~R2, &)
 }
 
-// Use of the new Uninitialized c'tor
+// The Uninitialized c'tor leaves the limbs indeterminate, so it is only valid where every limb is written before it is
+// read. Reading an indeterminate value is ill-formed during constant evaluation, so these fail to compile if an
+// operator built on it ever reads a limb first.
+static_assert(~arith_uint256{} == arith_uint256{} - arith_uint256{1});
+static_assert(-arith_uint256{1} == ~arith_uint256{});
+static_assert(-arith_uint256{} == arith_uint256{});
+
 BOOST_AUTO_TEST_CASE(uninitialized_vs_default_ctor) {
-    std::allocator<arith_uint256> allocator;
-    arith_uint256 *uninitialized = allocator.allocate(1);
-    Defer d = [&] { allocator.deallocate(uninitialized, 1); }; // free mem on scope end
+    // Overwritten in full after Uninitialized construction: the value is whatever was written.
+    arith_uint256 a{arith_uint256::Uninitialized};
+    a = 0x0123456789abcdefULL;
+    BOOST_CHECK_EQUAL(a.GetHex(), "0000000000000000000000000000000000000000000000000123456789abcdef");
 
-    uint8_t *rawmem = std::launder(reinterpret_cast<uint8_t *>(uninitialized));
-    static constexpr uint8_t uninitializedByte = 0xfa;
-    const auto end = rawmem + sizeof(arith_uint256);
-    // fill raw memory with a known byte
-    std::fill(rawmem, end, uninitializedByte);
-
-    // construct using the `Uninitialized` tag to tel the class not to clear mem
-    arith_uint256 *a = std::construct_at(uninitialized, arith_uint256::Uninitialized);
-    // We want to do this, but it's UB: BOOST_CHECK_EQUAL(a->GetHex(), "fafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafa");
-    std::destroy_at(a);
-    // So, we just verify that the raw memory remains untouched
-    rawmem = std::launder(rawmem);
-    BOOST_CHECK(std::all_of(rawmem, end, [](const uint8_t val){ return val == uninitializedByte; }));
-
-    // while we are here, do the same with the default c'tor to verify that it zeroes out memory
-    a = std::construct_at(uninitialized);
-    BOOST_CHECK_EQUAL(a->GetHex(), "0000000000000000000000000000000000000000000000000000000000000000");
-    std::destroy_at(a);
-    // verify that the raw memory remains cleared
-    rawmem = std::launder(rawmem);
-    BOOST_CHECK(std::all_of(rawmem, end, [](const uint8_t val){ return val == 0; }));
+    // The default c'tor zeroes every limb.
+    BOOST_CHECK_EQUAL(arith_uint256{}.GetHex(), "0000000000000000000000000000000000000000000000000000000000000000");
 }
 
 BOOST_AUTO_TEST_SUITE_END()
