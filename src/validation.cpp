@@ -371,7 +371,7 @@ bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, const Bl
 
     CBlockIndex index; // fake block to represent the mempool's hypothetical next block
     index.pprev = tip;
-    // SequenceLocks() uses ::ChainActive().Height()+1 to evaluate height
+    // CheckSequenceLocks() uses ::ChainActive().Height()+1 to evaluate height
     // based locks because when SequenceLocks() is called within ConnectBlock(),
     // the height of the block *being* evaluated is what is used. Thus if we
     // want to know if a transaction can be part of the *next* block, we need to
