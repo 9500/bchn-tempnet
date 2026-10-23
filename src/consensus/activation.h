@@ -100,3 +100,5 @@ extern std::optional<int64_t> g_Upgrade2027TimeOverride;
 
 /** Check if May 15th, 2027 protocol upgrade has activated. */
 bool IsUpgrade2027Enabled(const Consensus::Params &params, const CBlockIndex *pindexPrev);
+/** Returns the activation MTP for the 2027 upgrade */
+int64_t GetUpgrade2027ActivationTime(const Consensus::Params &params);
