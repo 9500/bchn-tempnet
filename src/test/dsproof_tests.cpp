@@ -328,8 +328,7 @@ BOOST_FIXTURE_TEST_CASE(dsproof_doublespend_mempool, EnsureClearedMempoolTestCha
 
     // next, mine a bunch of blocks that send coinbase to p2pkh
     auto CheckFunc = [&](auto) {
-        AssertLockHeld(cs_main);
-        LOCK(g_mempool.cs);
+        LOCK2(cs_main, g_mempool.cs);
         // belt-and-suspenders check that coinbase tx cannot have double spend proofs
         bool isProtected;
         BOOST_CHECK(!DoubleSpendProof::checkIsProofPossibleForAllInputsOfTx(g_mempool, *m_coinbase_txns.back(), &isProtected));
@@ -339,7 +338,6 @@ BOOST_FIXTURE_TEST_CASE(dsproof_doublespend_mempool, EnsureClearedMempoolTestCha
     CreateMaturityTicksWorthOfBlocks(&scriptPubKey, CheckFunc);
     CreateMaturityTicksWorthOfBlocks(&scriptPubKey, CheckFunc);
     {
-        LOCK(cs_main);
         const CBlock b = CreateAndProcessBlock({}, scriptPubKey);
         m_coinbase_txns.push_back(b.vtx[0]);
         CheckFunc(0);

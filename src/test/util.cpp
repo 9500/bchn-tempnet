@@ -79,11 +79,11 @@ size_t MatureCurrentTip(const Config &config, const CScript *scriptPubKey) {
     if (!scriptPubKey) {
         scriptPubKey = &(tmpSPK.emplace() << OP_TRUE);
     }
-    auto GetTicks = [](bool next = false) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+    auto GetTicks = [](bool next = false) {
+        LOCK(cs_main);
         const CBlockIndex * const tip = ::ChainActive().Tip();
         return tip ? tip->GetBlockTicks() + (next ? tip->GetTickDeltaForNextBlock() : BlockTicks{0}) : BlockTicks{0};
     };
-    LOCK(cs_main);
     const auto maturity = GetTicks() + kCoinbaseMaturityTicks;
     size_t ct{};
     while (GetTicks(true) < maturity) {
