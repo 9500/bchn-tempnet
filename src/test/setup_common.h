@@ -150,7 +150,7 @@ struct TestChainSetup : public TestingSetup {
      * used, which, if it's not valid, will be made into a valid key first.
      *
      * @param func (optional) - If valid, `func(nBlocks)` will be called after each block is created, where `nBlocks` is
-     * the count of the number of blocks created thus far (1, 2, 3, etc..). This function is called with `cs_main` held!
+     * the count of the number of blocks created thus far (1, 2, 3, etc..).
      *
      * @return the number of blocks created
      **/

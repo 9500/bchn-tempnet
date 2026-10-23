@@ -237,7 +237,8 @@ size_t TestChainSetup::CreateMaturityTicksWorthOfBlocks(const CScript *coinbaseS
     // we must force-disable block index checking while we mine blocks, since it slows this process down for 1000-block chains somewhat
     const auto raiiReEnabler = TemporarilyDisableCheckBlockIndex(GetConfig());
 
-    auto GetNextTicks = []() EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+    auto GetNextTicks = []() {
+        LOCK(cs_main);
         if (auto *tip = ::ChainActive().Tip()) {
             return tip->GetBlockTicks() + tip->GetTickDeltaForNextBlock();
         }
@@ -255,7 +256,6 @@ size_t TestChainSetup::CreateMaturityTicksWorthOfBlocks(const CScript *coinbaseS
         coinbaseScriptPubKey = &(tmpSPK.emplace() << coinbaseKey.GetPubKey() << OP_CHECKSIG);
     }
     size_t count = 0;
-    LOCK(cs_main);
     // This loop creates enough blocks to ensure that at least the 1st coinbase is spendable
     const auto maturity = GetNextTicks() + kCoinbaseMaturityTicks;
     while (GetNextTicks() < maturity) {
