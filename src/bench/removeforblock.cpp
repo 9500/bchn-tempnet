@@ -18,7 +18,9 @@
 #include <validation.h>
 
 #include <cassert>
+#include <cstdio>
 #include <list>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -33,25 +35,41 @@ static const CScript SCRIPT_SIG = CScript()
     << std::vector<uint8_t>(100, 0xff)
     << ByteView(REDEEM_SCRIPT);
 
-/// Mine new utxos
-static std::vector<CTxIn> createUTXOs(const Config& config, size_t n) {
-    std::vector<CTxIn> utxos;
-    utxos.reserve(n);
+/// Mine a new utxo that has nValue == desiredAmount (may create coinbase txns and mature them to achieve this)
+using UTXO = std::pair<COutPoint, Amount>;
+static UTXO createUTXO(const Config& config, const Amount desiredAmount) {
+    assert(MoneyRange(desiredAmount));
+    std::vector<UTXO> utxos;
+    Amount total;
+    // Mine enough coinbases to meet `desiredAmount`
+    do {
+        utxos.push_back(MineBlock(config, SCRIPT_PUB_KEY));
+        total += utxos.back().second;
+    } while (total < desiredAmount);
 
-    for (size_t i = 0; i < n; ++i) {
-        utxos.emplace_back(MineBlock(config, SCRIPT_PUB_KEY));
+    // Mature the above utxos
+    MatureCurrentTip(config);
+
+    // Merge all coins into a single coin that is == desiredAmount
+    CMutableTransaction tx;
+    tx.vin.reserve(utxos.size());
+    tx.vout.reserve(1);
+    for (const auto & [outpt, _] : utxos) {
+        tx.vin.emplace_back(outpt, SCRIPT_SIG);
     }
+    tx.vout.push_back(CTxOut{desiredAmount, SCRIPT_PUB_KEY});
+    auto ptx = MakeTransactionRef(std::move(tx));
 
-    for (size_t i = 0; i < COINBASE_MATURITY + 1; ++i) {
-        MineBlock(config, SCRIPT_PUB_KEY);
-    }
+    // Mine the above txn
+    MineBlock(config, SCRIPT_PUB_KEY, {{ptx}});
 
-    return utxos;
+    // Return the UTXO
+    return {COutPoint(ptx->GetId(), 0), ptx->vout[0].nValue};
 }
 
 static void benchRemoveForBlock(const Config& config, benchmark::State& state,
-                                const size_t nTx, const unsigned blockMB, const bool allowUnconfChains) {
-    assert(nTx > 0 && blockMB > 0);
+                                const size_t nTx, const double blockMB, const bool allowUnconfChains) {
+    assert(nTx > 0 && blockMB > 0.);
 
     // save initial state
     const auto origBlockMinTxFee = gArgs.GetArg("-blockmintxfee", "");
@@ -63,21 +81,18 @@ static void benchRemoveForBlock(const Config& config, benchmark::State& state,
         g_mempool.clear();
     });
 
-    const auto utsIn = createUTXOs(config, 1);
-    assert(utsIn.size() == 1);
-    std::vector<CTxIn> utxos;
-    using TxInAmtPair = std::pair<CTxIn, Amount>;
-    using TxInAmtList = std::list<TxInAmtPair>;
-    TxInAmtList ins;
-    ins.emplace_back(utsIn.back(), 50 * COIN);
+    const auto utxo = createUTXO(config, 50 * COIN);
+    assert(utxo.second == 50 * COIN);
+    using UTXOList = std::list<UTXO>;
+    UTXOList ins;
+    ins.push_back(utxo);
 
-    auto SpendTxInToMempool = [&config](const CTxIn &txIn, const Amount val, const size_t fanoutSize,
-                                        const bool unchecked = false) -> TxInAmtList {
-        TxInAmtList ret;
+    auto SpendTxInToMempool = [&config](const COutPoint &outpoint, const Amount val, const size_t fanoutSize,
+                                        const bool unchecked = false) -> UTXOList {
+        UTXOList ret;
         assert(fanoutSize > 0);
         CMutableTransaction tx;
-        tx.vin.push_back(txIn);
-        tx.vin.back().scriptSig = SCRIPT_SIG;
+        tx.vin.emplace_back(outpoint, SCRIPT_SIG);
         while (tx.vout.size() < fanoutSize) {
             tx.vout.emplace_back(int64_t((val / SATOSHI) / fanoutSize) * SATOSHI, SCRIPT_PUB_KEY);
         }
@@ -85,7 +100,7 @@ static void benchRemoveForBlock(const Config& config, benchmark::State& state,
         const auto &txId = rtx->GetId();
         unsigned outN = 0;
         for (const auto &out : rtx->vout) {
-            ret.emplace_back(CTxIn(txId, outN++), out.nValue);
+            ret.emplace_back(COutPoint(txId, outN++), out.nValue);
         }
         LOCK(cs_main);
         if (unchecked) {
@@ -101,9 +116,9 @@ static void benchRemoveForBlock(const Config& config, benchmark::State& state,
     };
 
     while (ins.size() < nTx) {
-        const auto [txIn, val] = ins.front();
+        const auto [outpoint, val] = ins.front();
         ins.pop_front();
-        auto inList = SpendTxInToMempool(txIn, val, 100 /* fanoutSize */);
+        auto inList = SpendTxInToMempool(outpoint, val, 100 /* fanoutSize */);
         // add the utxos we just generated to the input list at the end
         ins.splice(ins.end(), inList);
     }
@@ -115,8 +130,8 @@ static void benchRemoveForBlock(const Config& config, benchmark::State& state,
         LogPrint(BCLog::MEMPOOL, "(%s 2) mempool size: %i\n", __func__,  g_mempool.size());
     }
 
-    for (const auto & [txIn, val] : ins) {
-        SpendTxInToMempool(txIn, val, 1 /* fanoutSize */, true /* unchecked */);
+    for (const auto & [outpoint, val] : ins) {
+        SpendTxInToMempool(outpoint, val, 1 /* fanoutSize */, true /* unchecked */);
     }
     ins.clear(); // we don't need these inputs anymore
 
@@ -126,8 +141,16 @@ static void benchRemoveForBlock(const Config& config, benchmark::State& state,
 
     BlockAssembler::Options opts;
     opts.blockMinFeeRate = CFeeRate{Amount::zero()};
-    opts.nConsensusCurrentBlockSizeLimit = config.GetDefaultConsensusBlockSize();
+    opts.nConsensusCurrentBlockSizeLimit = config.GetDefaultConsensusBlockSize(WITH_LOCK(cs_main, return ::ChainActive().Tip()->GetTickDeltaForNextBlock()));
     opts.nMaxGeneratedBlockSize = blockMB * ONE_MEGABYTE;
+    if (opts.nConsensusCurrentBlockSizeLimit < opts.nMaxGeneratedBlockSize) [[unlikely]] {
+        // Uh oh.. this can only mean that Upgrade2027 is activated. Cannot satisfy the blocksize requested.
+        // This branch is not normally taken because we enforce that Upgrade2027Disabler is active when we run through
+        // here but is left in here for belt-and-suspenders.
+        std::cerr << strprintf("WARNING: nConsensusCurrentBlockSizeLimit < nMaxGeneratedBlockSize (%i < %i). Is the 1"
+                               " min blocktime upgrade activated? Please update bench_bitcoin, removeforblock.cpp!\n",
+                               opts.nConsensusCurrentBlockSizeLimit, opts.nMaxGeneratedBlockSize);
+    }
     const auto pblktemplate = BlockAssembler{config, ::g_mempool, opts}.CreateNewBlock(SCRIPT_PUB_KEY);
     const auto &block = pblktemplate->block;
 
@@ -183,7 +206,14 @@ static void RemoveForBlock8MB_UnconfChains(benchmark::State& state) {
     benchRemoveForBlock(config, state, 450'000, 8, true);
 }
 
-BENCHMARK(RemoveForBlock32MB, 1);
-BENCHMARK(RemoveForBlock8MB, 1);
-BENCHMARK(RemoveForBlock32MB_UnconfChains, 1);
-BENCHMARK(RemoveForBlock8MB_UnconfChains, 1);
+// Called each time the benchmark is evaluated; explicitly disable upgrade 2027 (since we need 32MB blocks).
+static void DisableUpgrade2027(benchmark::State &state) {
+    if (!state.anyData.has_value()) {
+        state.anyData = std::make_shared<Upgrade2027Disabler>();
+    }
+}
+
+BENCHMARK(RemoveForBlock32MB, 1, {}, false, DisableUpgrade2027);
+BENCHMARK(RemoveForBlock8MB, 1, {}, false, DisableUpgrade2027);
+BENCHMARK(RemoveForBlock32MB_UnconfChains, 1, {}, false, DisableUpgrade2027);
+BENCHMARK(RemoveForBlock8MB_UnconfChains, 1, {}, false, DisableUpgrade2027);

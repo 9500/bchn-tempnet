@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2026 The Bitcoin developers
+// Copyright (c) 2021-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -18,6 +18,7 @@
 
 #include <list>
 #include <queue>
+#include <utility>
 #include <vector>
 
 /// This file contains benchmarks focusing on chained transactions in the
@@ -33,36 +34,35 @@ static const CScript SCRIPT_SIG = CScript()
     << ByteView(REDEEM_SCRIPT);
 
 /// Mine new utxos
-static std::vector<CTxIn> createUTXOs(const Config& config, size_t n) {
-    std::vector<CTxIn> utxos;
+using UTXO = std::pair<COutPoint, Amount>;
+static std::vector<UTXO> createUTXOs(const Config& config, size_t n) {
+    std::vector<UTXO> utxos;
     utxos.reserve(n);
 
     for (size_t i = 0; i < n; ++i) {
-        utxos.emplace_back(MineBlock(config, SCRIPT_PUB_KEY));
+        utxos.push_back(MineBlock(config, SCRIPT_PUB_KEY));
     }
 
-    for (size_t i = 0; i < COINBASE_MATURITY + 1; ++i) {
-        MineBlock(config, SCRIPT_PUB_KEY);
-    }
+    // Mature all the above utxos
+    MatureCurrentTip(config);
 
     return utxos;
 }
 
 /// Create a transaction spending a coinbase utxo
-static CTransactionRef toTx(const Config&, CTxIn txin) {
+static CTransactionRef toTx(const UTXO &utxo) {
     CMutableTransaction tx;
-    tx.vin.emplace_back(txin);
-    tx.vin.back().scriptSig = SCRIPT_SIG;
-    tx.vout.emplace_back(25 * COIN - 1337 * SATOSHI, SCRIPT_PUB_KEY);
-    return MakeTransactionRef(tx);
+    tx.vin.emplace_back(utxo.first, SCRIPT_SIG);
+    tx.vout.emplace_back(utxo.second - 1337 * SATOSHI, SCRIPT_PUB_KEY);
+    return MakeTransactionRef(std::move(tx));
 }
 
 /// Creates a chain of transactions with 1-input-1-output.
-static std::vector<CTransactionRef> oneInOneOutChain(const Config& config,
-                                                     CTxIn utxo,
+static std::vector<CTransactionRef> oneInOneOutChain(const Config &,
+                                                     const UTXO &utxo,
                                                      const size_t chainLength)
 {
-    auto firstTx = toTx(config, std::move(utxo));
+    auto firstTx = toTx(utxo);
 
     // Build the chain
     std::vector<CTransactionRef> chain = { firstTx };
@@ -71,7 +71,7 @@ static std::vector<CTransactionRef> oneInOneOutChain(const Config& config,
         const COutPoint parent(chain.back()->GetId(), 0);
         const Amount inAmount(chain.back()->vout[0].nValue);
         CMutableTransaction tx;
-        tx.vin.emplace_back(CTxIn(parent, SCRIPT_SIG));
+        tx.vin.emplace_back(parent, SCRIPT_SIG);
         tx.vout.emplace_back(inAmount - 1337 * SATOSHI, SCRIPT_PUB_KEY);
         chain.emplace_back(MakeTransactionRef(tx));
     }
@@ -96,8 +96,8 @@ static std::vector<CTransactionRef> twoInOneOutTree(const Config& config,
     chain.reserve(txs);
 
     std::queue<CTransactionRef> queue;
-    for (auto txin : createUTXOs(config, leafs)) {
-        auto tx = toTx(config, std::move(txin));
+    for (const auto &utxo : createUTXOs(config, leafs)) {
+        auto tx = toTx(utxo);
         queue.push(tx);
         chain.emplace_back(tx);
     }
@@ -164,8 +164,8 @@ static void benchReorg(const Config& config,
                        bool includeMempoolTxRemoval)
 {
     std::vector<std::vector<CTransactionRef>> chains;
-    for (auto &utxo : createUTXOs(config, reorgDepth)) {
-        chains.emplace_back(oneInOneOutChain(config, std::move(utxo), chainSizePerBlock));
+    for (const auto &utxo : createUTXOs(config, reorgDepth)) {
+        chains.emplace_back(oneInOneOutChain(config, utxo, chainSizePerBlock));
     }
 
     // Current tip will be last valid block.
@@ -384,14 +384,14 @@ static void Reorg10BlocksWith500TxChainSkipMempool(benchmark::State& state) {
 /// Generate a block with 50 1-input-1-output transactions
 static void GenerateBlock50ChainedTxs(benchmark::State& state) {
     const Config& config = GetConfig();
-    const CTxIn utxo = createUTXOs(config, 1).back();
+    const auto utxo = createUTXOs(config, 1).back();
     benchGenerateNewBlock(config, state, { oneInOneOutChain(config, utxo, 50) });
 }
 
 /// Generate a block with 500 1-input-1-output transactions
 static void GenerateBlock500ChainedTxs(benchmark::State& state) {
     const Config& config = GetConfig();
-    const CTxIn utxo = createUTXOs(config, 1).back();
+    const auto utxo = createUTXOs(config, 1).back();
     benchGenerateNewBlock(config, state, { oneInOneOutChain(config, utxo, 500) });
 }
 

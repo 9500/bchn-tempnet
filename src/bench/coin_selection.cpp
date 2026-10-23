@@ -50,7 +50,8 @@ static void CoinSelection(benchmark::State &state) {
     // Create groups
     std::vector<OutputGroup> groups;
     for (const auto &wtx : wtxs) {
-        COutput output(wtx.get(), 0 /* iIn */, 6 * 24 /* nDepthIn */,
+        COutput output(wtx.get(), 0 /* iIn */, {6 * 24 /* nDepthIn */,
+                                                6 * 24 * legacy::POW_TARGET_SPACING_TICKS /* nTicksIn */},
                        true /* spendable */, true /* solvable */,
                        true /* safe */);
         groups.emplace_back(output.GetInputCoin(), 6, false);
@@ -83,7 +84,7 @@ static void add_coin(const CWallet &wallet, const Amount nValue, int nInput,
     tx.vout[nInput].nValue = nValue;
     auto wtx =
         std::make_unique<CWalletTx>(&wallet, MakeTransactionRef(std::move(tx)));
-    set.emplace_back(COutput(wtx.get(), nInput, 0, true, true, true).GetInputCoin(), 0, true);
+    set.emplace_back(COutput(wtx.get(), nInput, {0, BlockTicks{0}}, true, true, true).GetInputCoin(), 0, true);
     wtxn.emplace_back(std::move(wtx));
 }
 

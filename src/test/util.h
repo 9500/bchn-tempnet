@@ -57,4 +57,10 @@ class Upgrade2027Disabler {
 public:
     Upgrade2027Disabler();
     ~Upgrade2027Disabler();
+
+    // not copyable or movable
+    Upgrade2027Disabler(const Upgrade2027Disabler &) = delete;
+    Upgrade2027Disabler(Upgrade2027Disabler &&) = delete;
+    Upgrade2027Disabler & operator=(const Upgrade2027Disabler &) = delete;
+    Upgrade2027Disabler & operator=(Upgrade2027Disabler &&) = delete;
 };

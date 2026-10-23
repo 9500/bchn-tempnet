@@ -9,6 +9,7 @@
 #include <script/interpreter.h>
 #include <span.h>
 #include <test/libauth_testing_setup.h>
+#include <test/util.h>
 #include <tinyformat.h>
 #include <util/string.h>
 #include <validation.h>
@@ -72,6 +73,13 @@ void BenchCompleted(const State &state, Printer &printer, const Test &test, cons
                     TxStandard testStd, TxStandard useStd);
 
 const auto TxStd2Letter = LibauthTestingSetup::TxStd2Letter;
+
+// We require upgrade 2027 be disabled for these benches (it interferes with the hard-coded BIP68 finality stuff)
+static void DisableUpgrade2027(State &state) {
+    if (!state.anyData.has_value()) {
+        state.anyData = std::make_shared<Upgrade2027Disabler>();
+    }
+}
 
 // This function adds LibAuth benches at runtime based on compiled-in JSON from the compiled-in Libauth test vectors.
 void registerBenches(const std::string &arg) {
@@ -147,7 +155,9 @@ void registerBenches(const std::string &arg) {
                         BenchCompleted(s, p, test, packDesc, txStd, txStd);
                     },
                     // resuseChain = true for faster evals
-                    true
+                    true,
+                    // (For now) We require the disabling of the 1 min blocktime upgrade
+                    DisableUpgrade2027
                 );
                 baselineAdded = &test;
                 ++addCt;
@@ -173,8 +183,10 @@ void registerBenches(const std::string &arg) {
                             BenchCompleted(s, p, test, packDesc, testStd, useStd);
                         },
                         // resuseChain = true for faster evals
-                        true
-                        );
+                        true,
+                        // (For now) We require the disabling of the 1 min blocktime upgrade
+                        DisableUpgrade2027
+                    );
                     ++addCt;
                 }
             };
