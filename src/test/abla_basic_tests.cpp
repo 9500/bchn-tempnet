@@ -1,4 +1,4 @@
-// Copyright (c) 2023 The Bitcoin developers
+// Copyright (c) 2023-present The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -155,18 +155,29 @@ BOOST_AUTO_TEST_CASE(state_ctors) {
     BOOST_CHECK_EQUAL(state0.GetBlockSize(), 0u);
     BOOST_CHECK_EQUAL(state0.GetControlBlockSize(), 0u);
     BOOST_CHECK_EQUAL(state0.GetElasticBufferSize(), 0u);
+    BOOST_CHECK(state0.GetBlockInterval() == legacy::POW_TARGET_SPACING_TICKS);
 
     // Non-default constructed State however is valid and has some default values from Config
-    const abla::State state(config, 12345u);
-    BOOST_CHECK(state.IsValid(config));
-    BOOST_CHECK_EQUAL(state.GetBlockSize(), 12345u);
-    BOOST_CHECK_EQUAL(state.GetControlBlockSize(), config.epsilon0);
-    BOOST_CHECK_EQUAL(state.GetElasticBufferSize(), config.beta0);
+    const abla::State state1(config, 12345u);
+    BOOST_CHECK(state1.IsValid(config));
+    BOOST_CHECK_EQUAL(state1.GetBlockSize(), 12345u);
+    BOOST_CHECK_EQUAL(state1.GetControlBlockSize(), config.epsilon0);
+    BOOST_CHECK_EQUAL(state1.GetElasticBufferSize(), config.beta0);
+    BOOST_CHECK(state1.GetBlockInterval() == legacy::POW_TARGET_SPACING_TICKS);
+
+    // Convenience c'tor, intentionally make an invalid state
+    const abla::State state2(1, 2, 3, BlockTicks{4});
+    BOOST_CHECK(!state2.IsValid(config));
+    BOOST_CHECK_EQUAL(state2.GetBlockSize(), 1);
+    BOOST_CHECK_EQUAL(state2.GetControlBlockSize(), 2);
+    BOOST_CHECK_EQUAL(state2.GetElasticBufferSize(), 3);
+    BOOST_CHECK(state2.GetBlockInterval() == BlockTicks{4});
 }
 
 BOOST_AUTO_TEST_CASE(state_getblocksizelimit) {
     const abla::Config config = abla::Config::MakeDefault();
     abla::State state(config, 12345u);
+    const BlockTicks ticks = legacy::POW_TARGET_SPACING_TICKS;
 
     // Basic test -- value should be what we expect
     BOOST_REQUIRE(state.IsValid(config));
@@ -177,12 +188,13 @@ BOOST_AUTO_TEST_CASE(state_getblocksizelimit) {
     const uint64_t hugeCBS = config.epsilonMax / 3u, hugeEBS = config.betaMax / 3u;
     BOOST_REQUIRE_GT(hugeCBS, MAX_CONSENSUS_BLOCK_SIZE);
     BOOST_REQUIRE_GT(hugeEBS, MAX_CONSENSUS_BLOCK_SIZE);
-    state = abla::State::FromTuple({6789u, hugeCBS, hugeEBS});
+    state = abla::State::FromTuple({6789u, hugeCBS, hugeEBS, ticks});
     BOOST_REQUIRE(state.IsValid(config));
     BOOST_CHECK_EQUAL(state.GetControlBlockSize(), hugeCBS);
     BOOST_CHECK_EQUAL(state.GetElasticBufferSize(), hugeEBS);
     BOOST_CHECK_GT(state.GetControlBlockSize() + state.GetElasticBufferSize(), MAX_CONSENSUS_BLOCK_SIZE);
-    // test effect of the `disable2GBCap` flag (defaults to false but we test that the default is false too)
+    BOOST_CHECK(state.GetBlockInterval() == ticks);
+    // test effect of the `disable2GBCap` flag (defaults to false but we verify that is the case)
     BOOST_CHECK_EQUAL(state.GetBlockSizeLimit(), MAX_CONSENSUS_BLOCK_SIZE);
     BOOST_CHECK_EQUAL(state.GetBlockSizeLimit(false), MAX_CONSENSUS_BLOCK_SIZE);
     BOOST_CHECK_EQUAL(state.GetBlockSizeLimit(true), state.GetControlBlockSize() + state.GetElasticBufferSize());
@@ -191,14 +203,15 @@ BOOST_AUTO_TEST_CASE(state_getblocksizelimit) {
 BOOST_AUTO_TEST_CASE(state_algo_blocksize_exceeds_max_block_size) {
     // Try a corner case: the state's blockSize exceeds what the algo expects (it should clamp the size used internally)
     const abla::Config config = abla::Config::MakeDefault();
+    const BlockTicks ticks = legacy::POW_TARGET_SPACING_TICKS;
     const uint64_t hugeCBS = config.epsilonMax / 3u, hugeEBS = config.betaMax / 3u;
-    const auto state = abla::State::FromTuple({6789u, hugeCBS, hugeEBS});
+    const auto state = abla::State::FromTuple({6789u, hugeCBS, hugeEBS, ticks});
     BOOST_REQUIRE(state.IsValid(config));
     for (const bool disable2GBCap : {false, true}) {
         // test at max
         const uint64_t delta = 1'000'000'000u;
         const uint64_t exceedsMax = state.GetBlockSizeLimit(disable2GBCap) + delta;
-        const auto overSaturated = abla::State::FromTuple({exceedsMax, hugeCBS, hugeEBS});
+        const auto overSaturated = abla::State::FromTuple({exceedsMax, hugeCBS, hugeEBS, ticks});
         BOOST_REQUIRE(overSaturated.IsValid(config));
         if (disable2GBCap) {
             BOOST_CHECK_EQUAL(exceedsMax,
@@ -207,34 +220,34 @@ BOOST_AUTO_TEST_CASE(state_algo_blocksize_exceeds_max_block_size) {
             BOOST_CHECK_EQUAL(exceedsMax,
                               delta + MAX_CONSENSUS_BLOCK_SIZE);
         }
-        const auto saturated = abla::State::FromTuple({exceedsMax - delta, hugeCBS, hugeEBS});
+        const auto saturated = abla::State::FromTuple({exceedsMax - delta, hugeCBS, hugeEBS, ticks});
         BOOST_CHECK(overSaturated != saturated);
-        const auto osNext = overSaturated.NextBlockState(config, 123u);
-        const auto sNext = saturated.NextBlockState(config, 123u);
+        const auto osNext = overSaturated.NextBlockState(config, ticks, 123u);
+        const auto sNext = saturated.NextBlockState(config, ticks, 123u);
         if (disable2GBCap){
             BOOST_CHECK(osNext == sNext);
         } else {
             BOOST_CHECK(osNext != sNext);
         }
-        BOOST_CHECK_EQUAL(overSaturated.GetNextBlockSizeLimit(config, disable2GBCap),
-                          saturated.GetNextBlockSizeLimit(config, disable2GBCap));
+        BOOST_CHECK_EQUAL(overSaturated.GetNextBlockSizeLimit(config, ticks, disable2GBCap),
+                          saturated.GetNextBlockSizeLimit(config, ticks, disable2GBCap));
         BOOST_CHECK_EQUAL(sNext.GetBlockSizeLimit(disable2GBCap),
-                          saturated.GetNextBlockSizeLimit(config, disable2GBCap));
+                          saturated.GetNextBlockSizeLimit(config, ticks, disable2GBCap));
         BOOST_CHECK_EQUAL(osNext.GetBlockSizeLimit(disable2GBCap),
-                          overSaturated.GetNextBlockSizeLimit(config, disable2GBCap));
+                          overSaturated.GetNextBlockSizeLimit(config, ticks, disable2GBCap));
 
         // Test that abuse of algo with "overLimit" blockSize values such as u64max leads to "clamping" of the
         // blockSize used internally for advancing the state, and no overflows occur, and it's the same as if just the
         // maxBlockSize were used.
         const auto u64max = std::numeric_limits<uint64_t>::max();
         for (const uint64_t overLimit : {(hugeCBS + hugeEBS) * 2, (hugeCBS + hugeEBS) * 3, u64max}) {
-            auto mstate = abla::State::FromTuple({overLimit, hugeCBS, hugeEBS});
+            auto mstate = abla::State::FromTuple({overLimit, hugeCBS, hugeEBS, ticks});
             BOOST_REQUIRE(mstate.IsValid(config));
             const auto N = 2048;
-            const auto lookaheadLimit = mstate.CalcLookaheadBlockSizeLimit(config, N, disable2GBCap);
+            const auto lookaheadLimit = mstate.CalcLookaheadBlockSizeLimitWorstCase(config, N, abla::BASE_BLOCK_INTERVAL, disable2GBCap);
             for (size_t i = 0; i < N; ++i) {
                 // this forces overLimit to the algo for all in-between states
-                mstate = mstate.NextBlockState(config, overLimit);
+                mstate = mstate.NextBlockState(config, ticks, overLimit);
             }
             // end result should still be the same as if the max block size per state was used, not overLimit
             BOOST_CHECK_EQUAL(lookaheadLimit, mstate.GetBlockSizeLimit(disable2GBCap));
@@ -245,6 +258,7 @@ BOOST_AUTO_TEST_CASE(state_algo_blocksize_exceeds_max_block_size) {
 BOOST_AUTO_TEST_CASE(state_isvalid) {
     const abla::Config config = abla::Config::MakeDefault();
     const char *err = nullptr;
+    const BlockTicks ticks = legacy::POW_TARGET_SPACING_TICKS;
 
     abla::State state(config, 80);
 
@@ -253,7 +267,7 @@ BOOST_AUTO_TEST_CASE(state_isvalid) {
 
     // Invalid due to controlBlockSize < config.epsilon0
     const auto badCBS = config.epsilon0 - 1;
-    state = abla::State::FromTuple({80, badCBS, config.beta0});
+    state = abla::State::FromTuple({80, badCBS, config.beta0, ticks});
     BOOST_CHECK_EQUAL(state.GetControlBlockSize(), badCBS);
     BOOST_CHECK(!state.IsValid(config, &err));
     BOOST_CHECK(std::string_view{err}.find("invalid controlBlockSize state") != std::string_view::npos);
@@ -261,7 +275,7 @@ BOOST_AUTO_TEST_CASE(state_isvalid) {
 
     // Invalid due to controlBlockSize > config.epsilonMax
     const auto badCBS2 = config.epsilonMax + 1;
-    state = abla::State::FromTuple({80, badCBS2, config.beta0});
+    state = abla::State::FromTuple({80, badCBS2, config.beta0, ticks});
     BOOST_CHECK_EQUAL(state.GetControlBlockSize(), badCBS2);
     BOOST_CHECK(!state.IsValid(config, &err));
     BOOST_CHECK(std::string_view{err}.find("invalid controlBlockSize state") != std::string_view::npos);
@@ -269,7 +283,7 @@ BOOST_AUTO_TEST_CASE(state_isvalid) {
 
     // Invalid due to elasticBufferSize < config.beta0
     const auto badEBS = config.beta0 - 1;
-    state = abla::State::FromTuple({80, config.epsilon0, badEBS});
+    state = abla::State::FromTuple({80, config.epsilon0, badEBS, ticks});
     BOOST_CHECK_EQUAL(state.GetElasticBufferSize(), badEBS);
     BOOST_CHECK(!state.IsValid(config, &err));
     BOOST_CHECK(std::string_view{err}.find("invalid elasticBufferSize state") != std::string_view::npos);
@@ -277,11 +291,21 @@ BOOST_AUTO_TEST_CASE(state_isvalid) {
 
     // Invalid due to elasticBufferSize > config.betaMax
     const auto badEBS2 = config.betaMax + 1;
-    state = abla::State::FromTuple({80, config.epsilon0, badEBS2});
+    state = abla::State::FromTuple({80, config.epsilon0, badEBS2, ticks});
     BOOST_CHECK_EQUAL(state.GetElasticBufferSize(), badEBS2);
     BOOST_CHECK(!state.IsValid(config, &err));
     BOOST_CHECK(std::string_view{err}.find("invalid elasticBufferSize state") != std::string_view::npos);
     err = "";
+
+    // Invalid due to out-of-range ticks
+    const BlockTicks one = BlockTicks{1};
+    for (const BlockTicks &badTicks : {BlockTicks{0}, abla::MIN_BLOCK_INTERVAL - one, abla::MAX_BLOCK_INTERVAL + one}) {
+        state = abla::State::FromTuple({80, config.epsilon0, config.beta0, badTicks});
+        BOOST_CHECK(state.GetBlockInterval() == badTicks);
+        BOOST_CHECK(!state.IsValid(config, &err));
+        BOOST_CHECK(std::string_view{err}.find("invalid blockInterval state") != std::string_view::npos);
+        err = "";
+    }
 }
 
 BOOST_AUTO_TEST_CASE(state_tostring) {
@@ -289,17 +313,18 @@ BOOST_AUTO_TEST_CASE(state_tostring) {
     const abla::State state(config, 80u);
 
     BOOST_CHECK_EQUAL(state.ToString(),
-                      "abla::State(blockSize=80, controlBlockSize=16000000, elasticBufferSize=16000000)");
+                      "abla::State(blockSize=80, controlBlockSize=16000000, elasticBufferSize=16000000, blockInterval=600)");
 }
 
 BOOST_AUTO_TEST_CASE(state_tuple) {
-    const auto state = abla::State::FromTuple({1, 2, 3});
+    const auto state = abla::State::FromTuple({1, 2, 3, BlockTicks{4}});
     BOOST_CHECK_EQUAL(state.GetBlockSize(), 1);
     BOOST_CHECK_EQUAL(state.GetControlBlockSize(), 2);
     BOOST_CHECK_EQUAL(state.GetElasticBufferSize(), 3);
+    BOOST_CHECK(state.GetBlockInterval() == BlockTicks{4});
 
     const auto tup = state.ToTuple();
-    BOOST_CHECK(tup == std::tuple(1, 2, 3));
+    BOOST_CHECK(tup == std::tuple(1, 2, 3, BlockTicks{4}));
 }
 
 BOOST_AUTO_TEST_CASE(state_ser) {
@@ -310,13 +335,16 @@ BOOST_AUTO_TEST_CASE(state_ser) {
         const uint64_t randomSize = rng.rand64(),
                        randomCBS = rng.randrange(config.epsilonMax),
                        randomEBS = rng.randrange(config.betaMax);
-        const abla::State state = abla::State::FromTuple({randomSize, randomCBS, randomEBS});
+        const BlockTicks ticks = abla::MIN_BLOCK_INTERVAL
+                                 + BlockTicks{rng.randrange((abla::MAX_BLOCK_INTERVAL - abla::MIN_BLOCK_INTERVAL).value() + 1u)};
+        const abla::State state = abla::State::FromTuple({randomSize, randomCBS, randomEBS, ticks});
+
         BOOST_REQUIRE(state.IsValid(config));
         BOOST_REQUIRE_EQUAL(state.GetBlockSize(), randomSize);
         BOOST_REQUIRE_EQUAL(state.GetControlBlockSize(), randomCBS);
         BOOST_REQUIRE_EQUAL(state.GetElasticBufferSize(), randomEBS);
 
-        // test ser/deser cycle
+        // test ser/deser cycle -- note that we only ser/unser StateBase, without the ticks (which live in CBlockIndex)
         std::vector<uint8_t> v1;
         CVectorWriter(SER_DISK, INIT_PROTO_VERSION, v1, 0) << state;
         BOOST_CHECK(!v1.empty());
@@ -324,12 +352,13 @@ BOOST_AUTO_TEST_CASE(state_ser) {
         BOOST_CHECK_EQUAL(state2.GetBlockSize(), 0);
         BOOST_CHECK_EQUAL(state2.GetControlBlockSize(), 0);
         BOOST_CHECK_EQUAL(state2.GetElasticBufferSize(), 0);
-        // after unser, state2 should equal state
+        // after unser, state2 will equal state only for the serialized values
         VectorReader(SER_DISK, INIT_PROTO_VERSION, v1, 0) >> state2;
-        BOOST_CHECK(state == state2);
         BOOST_CHECK_EQUAL(state2.GetBlockSize(), randomSize);
         BOOST_CHECK_EQUAL(state2.GetControlBlockSize(), randomCBS);
         BOOST_CHECK_EQUAL(state2.GetElasticBufferSize(), randomEBS);
+        // but for the block interval it will get the default value
+        BOOST_CHECK(state2.GetBlockInterval() == abla::BASE_BLOCK_INTERVAL);
     }
 }
 
@@ -352,12 +381,12 @@ BOOST_AUTO_TEST_CASE(feature_fixedsize) {
     BOOST_CHECK_EQUAL(stateFixed.GetBlockSizeLimit(), defBlkSz);
 
     // However, the normal (dynamic) config will grow if blocks are full
-    BOOST_CHECK_GT(stateNormal.CalcLookaheadBlockSizeLimit(confNormal, 2048), defBlkSz);
+    BOOST_CHECK_GT(stateNormal.CalcLookaheadBlockSizeLimitWorstCase(confNormal, 2048), defBlkSz);
     // But the fixed config never grows and stays at default
-    BOOST_CHECK_EQUAL(stateFixed.CalcLookaheadBlockSizeLimit(confFixed, 2048), defBlkSz);
+    BOOST_CHECK_EQUAL(stateFixed.CalcLookaheadBlockSizeLimitWorstCase(confFixed, 2048), defBlkSz);
 
-    BOOST_CHECK_GT(stateNormal.CalcLookaheadBlockSizeLimit(confNormal, 2048),
-                   stateFixed.CalcLookaheadBlockSizeLimit(confFixed, 2048));
+    BOOST_CHECK_GT(stateNormal.CalcLookaheadBlockSizeLimitWorstCase(confNormal, 2048),
+                   stateFixed.CalcLookaheadBlockSizeLimitWorstCase(confFixed, 2048));
 }
 
 /**
