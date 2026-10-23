@@ -2067,8 +2067,9 @@ bool AppInitParameterInteraction(Config &config) {
     // Process CLI/conf override for the upgrade2027 activation time
     if (gArgs.IsArgSet("-upgrade2027activationtime")) {
         const auto val = gArgs.GetArg("-upgrade2027activationtime", 0);
-        if (val < 0) {
-            return InitError("Invalid -upgrade2027activationtime, must be a positive integer");
+        const auto & optAsertAnchor = config.GetChainParams().GetConsensus().asertAnchorParams;
+        if (const int64_t thresh = !optAsertAnchor ? 0 : optAsertAnchor->nPrevBlockTime; val < thresh) {
+            return InitError(strprintf("Invalid -upgrade2027activationtime, must be an integer >= %d", thresh));
         }
         ::g_Upgrade2027TimeOverride.emplace(val);
         LogPrintf("Using upgrade 2027 activation time override: %d\n", val);
