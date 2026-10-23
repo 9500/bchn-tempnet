@@ -9,6 +9,7 @@
 #include <chainparams.h>
 #include <coins.h>
 #include <config.h>
+#include <consensus/activation.h>
 #include <consensus/consensus.h>
 #include <consensus/merkle.h>
 #include <consensus/tx_verify.h>
@@ -24,6 +25,7 @@
 #include <validation.h>
 
 #include <test/setup_common.h>
+#include <test/util.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -82,13 +84,15 @@ static CBlockIndexPtr CreateBlockIndex(int nHeight) {
     CBlockIndexPtr index(new CBlockIndex);
     index->nHeight = nHeight;
     index->pprev = ::ChainActive().Tip();
+    index->SetBlockTicks(legacy::POW_TARGET_SPACING_TICKS * nHeight);
+    index->SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS);
     return index;
 }
 
 static bool TestSequenceLocks(const CTransaction &tx)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
     LOCK(::g_mempool.cs);
-    return CheckSequenceLocks(::g_mempool, tx, BlockHeightToTickMapper{} /* <-- TODO: upddate this for blocktime CHIP? */);
+    return CheckSequenceLocks(::g_mempool, tx, BlockHeightToTickMapper{});
 }
 
 // Test suite for feerate transaction selection.
@@ -197,8 +201,14 @@ BOOST_AUTO_TEST_CASE(CheckCoinbase_ABLA) {
                  COINBASE_FLAGS));
 }
 
+struct Upgrade2027DisablerTestingSetup : Upgrade2027Disabler, TestingSetup {};
+
 // NOTE: These tests rely on CreateNewBlock doing its own self-validation!
-BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
+//
+// Due to the nature of this test, we must force upgrade2027 to be disabled (10 min block times are requierd here).
+// This is because this test uses MAINNET and it has pre-computed block hashes it targets (via the blockinfo struct
+// declared up top); thus, using 1-min blocks would change the hashes thereby invalidating this test.
+BOOST_FIXTURE_TEST_CASE(CreateNewBlock_validity, Upgrade2027DisablerTestingSetup) {
     // Note that by default, these tests run with size accounting enabled.
     GlobalConfig config;
     const CChainParams &chainparams = config.GetChainParams();
@@ -366,7 +376,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         next->pprev = prev;
         next->nHeight = prev->nHeight + 1;
         next->SetBlockTicks(prev ? prev->GetNextBlockTicks() : BlockTicks{0});
-        next->SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS); /* TODO: update this for blocktime CHIP? */
+        next->SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS);
         next->BuildSkip();
         ::ChainActive().SetTip(next);
     }
@@ -381,7 +391,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         next->pprev = prev;
         next->nHeight = prev->nHeight + 1;
         next->SetBlockTicks(prev ? prev->GetNextBlockTicks() : BlockTicks{0});
-        next->SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS); /* TODO: update this for blocktime CHIP? */
+        next->SetTickDeltaForNextBlock(legacy::POW_TARGET_SPACING_TICKS);
         next->BuildSkip();
         ::ChainActive().SetTip(next);
     }
@@ -459,7 +469,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     BOOST_CHECK(
         SequenceLocks(CTransaction(tx), flags, prevheights,
                       *CreateBlockIndex(::ChainActive().Tip()->nHeight + 2),
-                      BlockHeightToTickMapper{} /* TODO: Maybe test 1-min blockstimes here too? */));
+                      BlockHeightToTickMapper{}));
 
     // Relative time locked.
     tx.vin[0].prevout = COutPoint(txFirst[1]->GetId(), 0);
@@ -493,7 +503,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     BOOST_CHECK(
         SequenceLocks(CTransaction(tx), flags, prevheights,
                       *CreateBlockIndex(::ChainActive().Tip()->nHeight + 1),
-                      BlockHeightToTickMapper{} /* TODO: Maybe test 1-min blockstimes here too? */));
+                      BlockHeightToTickMapper{}));
     for (size_t i = 0; i < CBlockIndex::nMedianTimeSpan; ++i) {
         // Undo tricked MTP.
         CBlockIndex * const pindex = ::ChainActive().Tip()->GetAncestor(::ChainActive().Tip()->nHeight - i);
@@ -602,14 +612,18 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
         pindex->nTime += 512;
         pindex->ClearCachedMTPValue();
     }
-    ::ChainActive().Tip()->nHeight++;
+    const auto savedTipTicks = ::ChainActive().Tip()->GetBlockTicks();
+    // Note: the below 2 lines are absolutely evil, but this is how this test works!
+    ::ChainActive().Tip()->nHeight++; // evil
+    ::ChainActive().Tip()->SetBlockTicks(::ChainActive().Tip()->GetNextBlockTicks()); // evil
     SetMockTime(::ChainActive().Tip()->GetMedianTimePast() + 1);
 
     BOOST_CHECK(pblocktemplate = AssemblerForTest(config, g_mempool)
                                      .CreateNewBlock(scriptPubKey));
     BOOST_CHECK_EQUAL(pblocktemplate->block.vtx.size(), 5UL);
 
-    ::ChainActive().Tip()->nHeight--;
+    ::ChainActive().Tip()->nHeight--; // undo the evil
+    ::ChainActive().Tip()->SetBlockTicks(savedTipTicks); // undo the evil
     SetMockTime(0);
     g_mempool.clear();
 
@@ -623,7 +637,8 @@ static void CallCreateNewBlockOnceToFullyInit(BlockAssembler &ba) {
 }
 
 static void CheckBlockMaxSize(Config &config, uint64_t size, uint64_t expected) {
-    config.SetGeneratedBlockSizeBytes(size);
+    const double ratio = legacy::POW_TARGET_SPACING_TICKS.value() / double(::ChainActive().Tip()->GetTickDeltaForNextBlock().value());
+    config.SetGeneratedBlockSizeBytes(size * ratio);
 
     BlockAssembler ba(config, g_mempool);
     BOOST_CHECK_EQUAL(ba.GetMaxGeneratedBlockSize(), 0); // freshly-constructed class always has 0 here
@@ -644,8 +659,7 @@ static void CheckBlockMaxSizePercent(Config &config, std::optional<double> optPe
 
 BOOST_AUTO_TEST_CASE(BlockAssembler_construction) {
     GlobalConfig config;
-
-    const BlockTicks blockInterval = legacy::POW_TARGET_SPACING_TICKS; // TODO: update this for blocktime CHIP?
+    const BlockTicks blockInterval = WITH_LOCK(::cs_main, return ::ChainActive().Tip())->GetTickDeltaForNextBlock();
 
     // check that generated block size can never exceed default max block size
     {
@@ -711,7 +725,7 @@ BOOST_AUTO_TEST_CASE(BlockAssembler_construction) {
         BlockAssembler ba(freshConfig, g_mempool);
         BOOST_CHECK_EQUAL(ba.GetMaxGeneratedBlockSize(), 0);
         CallCreateNewBlockOnceToFullyInit(ba);
-        auto defbs = freshConfig.GetDefaultConsensusBlockSize();
+        auto defbs = freshConfig.GetDefaultConsensusBlockSize(blockInterval);
         BOOST_CHECK_EQUAL(ba.GetMaxGeneratedBlockSize(), defbs - hardCodedCoinbaseReserved);
     }
 }
