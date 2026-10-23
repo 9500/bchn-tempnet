@@ -339,15 +339,14 @@ namespace {
             tx_status = MakeWalletTxStatus(*locked_chain, mi->second);
             return true;
         }
-        WalletTx getWalletTxDetails(const TxId &txid, WalletTxStatus &tx_status,
-                                    WalletOrderForm &order_form,
-                                    bool &in_mempool,
-                                    int &num_blocks) override {
+        WalletTx getWalletTxDetails(const TxId &txid, WalletTxStatus &tx_status, WalletOrderForm &order_form,
+                                    bool &in_mempool, BlockTicks &tip_ticks, BlockTicks &block_interval) override {
             auto locked_chain = m_wallet.chain().lock();
             LOCK(m_wallet.cs_wallet);
             auto mi = m_wallet.mapWallet.find(txid);
             if (mi != m_wallet.mapWallet.end()) {
-                num_blocks = locked_chain->getHeight().value_or(-1);
+                tip_ticks = locked_chain->getTicks().value_or(BlockTicks{});
+                block_interval = locked_chain->getTickInterval().value_or(legacy::POW_TARGET_SPACING_TICKS);
                 in_mempool = mi->second.InMempool();
                 order_form = mi->second.vOrderForm;
                 tx_status = MakeWalletTxStatus(*locked_chain, mi->second);
