@@ -46,8 +46,10 @@ TEST_EXIT_PASSED = 0
 TEST_EXIT_FAILED = 1
 TEST_EXIT_SKIPPED = 77
 
-# Timestamp is Dec. 1st, 2019 at 00:00:00
-TIMESTAMP_IN_THE_PAST = 1575158400
+# Timestamp is: Sun Nov 15 14:49:39 2020
+# This is the time around when ASERT activated and is now required as the
+# baseline due to the existence of upgrade2027.
+TIMESTAMP_IN_THE_PAST = 1605451779
 
 
 class SkipTest(Exception):
