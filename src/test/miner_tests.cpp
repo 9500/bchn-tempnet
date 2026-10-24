@@ -636,17 +636,16 @@ static void CallCreateNewBlockOnceToFullyInit(BlockAssembler &ba) {
     ba.CreateNewBlock(CScript() << OP_TRUE, 1e-3);
 }
 
-static void CheckBlockMaxSize(Config &config, uint64_t size, uint64_t expected) {
-    const double ratio = legacy::POW_TARGET_SPACING_TICKS.value() / double(::ChainActive().Tip()->GetTickDeltaForNextBlock().value());
-    config.SetGeneratedBlockSizeBytes(size * ratio);
+static void CheckBlockMaxSize(Config &config, uint64_t sizeScaledTo10MinBlocks, uint64_t expectedActualSize) {
+    config.SetGeneratedBlockSizeBytes(sizeScaledTo10MinBlocks);
 
     BlockAssembler ba(config, g_mempool);
     BOOST_CHECK_EQUAL(ba.GetMaxGeneratedBlockSize(), 0); // freshly-constructed class always has 0 here
     CallCreateNewBlockOnceToFullyInit(ba); // must call CreateNewBlock() to have `config` options "take effect"
-    BOOST_CHECK_EQUAL(ba.GetMaxGeneratedBlockSize(), expected);
+    BOOST_CHECK_EQUAL(ba.GetMaxGeneratedBlockSize(), expectedActualSize);
 }
 
-static void CheckBlockMaxSizePercent(Config &config, std::optional<double> optPercent, uint64_t expected) {
+static void CheckBlockMaxSizePercent(Config &config, std::optional<double> optPercent, uint64_t expectedActualSize) {
     if (optPercent) {
         BOOST_CHECK(config.SetGeneratedBlockSizePercent(*optPercent));
     }
@@ -654,13 +653,14 @@ static void CheckBlockMaxSizePercent(Config &config, std::optional<double> optPe
     BlockAssembler ba(config, g_mempool);
     BOOST_CHECK_EQUAL(ba.GetMaxGeneratedBlockSize(), 0); // freshly-constructed class always has 0 here
     CallCreateNewBlockOnceToFullyInit(ba); // must call CreateNewBlock() to have `config` options "take effect"
-    BOOST_CHECK_EQUAL(ba.GetMaxGeneratedBlockSize(), expected);
+    BOOST_CHECK_EQUAL(ba.GetMaxGeneratedBlockSize(), expectedActualSize);
 }
 
 BOOST_AUTO_TEST_CASE(BlockAssembler_construction) {
     GlobalConfig config;
     const BlockTicks blockInterval = WITH_LOCK(::cs_main, return ::ChainActive().Tip())->GetTickDeltaForNextBlock();
-
+    const uint64_t ratio = legacy::POW_TARGET_SPACING_TICKS / blockInterval;
+    assert(ratio == 1 || ratio == 10); // this test assumes 10 min or 1 min block time, nothing else.
     // check that generated block size can never exceed default max block size
     {
         const auto defbs = config.GetDefaultConsensusBlockSize(blockInterval);
@@ -669,7 +669,7 @@ BOOST_AUTO_TEST_CASE(BlockAssembler_construction) {
                      largerVal = defbs + 100;
         BOOST_CHECK_NE(prevVal, largerVal); // ensure not equal for thoroughness
         // try and set generated block size beyond the conf. max block size (should fail)
-        config.SetGeneratedBlockSizeBytes(largerVal);
+        config.SetGeneratedBlockSizeBytes(largerVal * ratio);
         // check that we really did not raise the value until we actually grow the maxBlockSize
         BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(blockInterval, defbs), prevVal);
         BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(blockInterval, defbs + 1), prevVal + 1);
@@ -677,7 +677,7 @@ BOOST_AUTO_TEST_CASE(BlockAssembler_construction) {
         BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(blockInterval, largerVal), largerVal);
         BOOST_CHECK_EQUAL(config.GetGeneratedBlockSize(blockInterval, largerVal + 1), largerVal);
         // reset back
-        config.SetGeneratedBlockSizeBytes(prevVal);
+        config.SetGeneratedBlockSizeBytes(prevVal * ratio);
         // check bad percentages
         BOOST_CHECK(!config.SetGeneratedBlockSizePercent(101.0));
         BOOST_CHECK(!config.SetGeneratedBlockSizePercent(100.1));
@@ -691,30 +691,48 @@ BOOST_AUTO_TEST_CASE(BlockAssembler_construction) {
 
     // Test around low values
     CheckBlockMaxSize(config, 0, 1000);
-    CheckBlockMaxSize(config, 1000, 1000);
-    CheckBlockMaxSize(config, 1001, 1001);
-    CheckBlockMaxSize(config, 12345, 12345);
+    CheckBlockMaxSize(config, 1000 * ratio, 1000);
+    CheckBlockMaxSize(config, 1001 * ratio, 1001);
+    CheckBlockMaxSize(config, 12345 * ratio, 12345);
 
     // Test around one megabyte
-    CheckBlockMaxSize(config, ONE_MEGABYTE - 1001, ONE_MEGABYTE - 1001);
-    CheckBlockMaxSize(config, ONE_MEGABYTE - 1000, ONE_MEGABYTE - 1000);
-    CheckBlockMaxSize(config, ONE_MEGABYTE - 999, ONE_MEGABYTE - 999);
-    CheckBlockMaxSize(config, ONE_MEGABYTE, ONE_MEGABYTE);
+    CheckBlockMaxSize(config, (ONE_MEGABYTE - 1001) * ratio, ONE_MEGABYTE - 1001);
+    CheckBlockMaxSize(config, (ONE_MEGABYTE - 1000) * ratio, ONE_MEGABYTE - 1000);
+    CheckBlockMaxSize(config, (ONE_MEGABYTE - 999) * ratio, ONE_MEGABYTE - 999);
+    CheckBlockMaxSize(config, ONE_MEGABYTE * ratio, ONE_MEGABYTE);
 
-    // Now we can test the default max block size.
-    CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE - 1001, DEFAULT_CONSENSUS_BLOCK_SIZE - 1001);
-    CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE - 1000, DEFAULT_CONSENSUS_BLOCK_SIZE - 1000);
-    CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE - 998, DEFAULT_CONSENSUS_BLOCK_SIZE - 1000);
-    CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE - 999, DEFAULT_CONSENSUS_BLOCK_SIZE - 1000);
-    CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE, DEFAULT_CONSENSUS_BLOCK_SIZE - 1000);
+    if (!IsUpgrade2027Enabled(config.GetChainParams().GetConsensus(), ::ChainActive().Tip())) {
+        // Now we can test the default max block size.
+        CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE - 1001, DEFAULT_CONSENSUS_BLOCK_SIZE - 1001);
+        CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE - 1000, DEFAULT_CONSENSUS_BLOCK_SIZE - 1000);
+        CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE - 998, DEFAULT_CONSENSUS_BLOCK_SIZE - 1000);
+        CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE - 999, DEFAULT_CONSENSUS_BLOCK_SIZE - 1000);
+        CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE, DEFAULT_CONSENSUS_BLOCK_SIZE - 1000);
 
-    // Test percent mode
-    CheckBlockMaxSizePercent(config, 100.0, DEFAULT_CONSENSUS_BLOCK_SIZE - 1000);
-    CheckBlockMaxSizePercent(config, 50.0, DEFAULT_CONSENSUS_BLOCK_SIZE / 2);
-    CheckBlockMaxSizePercent(config, 10.0, DEFAULT_CONSENSUS_BLOCK_SIZE / 10);
-    CheckBlockMaxSizePercent(config, 1.0, DEFAULT_CONSENSUS_BLOCK_SIZE / 100);
-    CheckBlockMaxSizePercent(config, 0.25, DEFAULT_CONSENSUS_BLOCK_SIZE / 400);
-    CheckBlockMaxSizePercent(config, 25.0, DEFAULT_CONSENSUS_BLOCK_SIZE / 4);
+        // Test percent mode
+        CheckBlockMaxSizePercent(config, 100.0, DEFAULT_CONSENSUS_BLOCK_SIZE - 1000);
+        CheckBlockMaxSizePercent(config, 50.0, DEFAULT_CONSENSUS_BLOCK_SIZE / 2);
+        CheckBlockMaxSizePercent(config, 10.0, DEFAULT_CONSENSUS_BLOCK_SIZE / 10);
+        CheckBlockMaxSizePercent(config, 1.0, DEFAULT_CONSENSUS_BLOCK_SIZE / 100);
+        CheckBlockMaxSizePercent(config, 0.25, DEFAULT_CONSENSUS_BLOCK_SIZE / 400);
+        CheckBlockMaxSizePercent(config, 25.0, DEFAULT_CONSENSUS_BLOCK_SIZE / 4);
+    } else {
+        // Now we can test the default max block size.
+        CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE, DEFAULT_CONSENSUS_BLOCK_SIZE / ratio - 1000);
+        CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE - 998, DEFAULT_CONSENSUS_BLOCK_SIZE / ratio - 1000);
+        CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE - 999, DEFAULT_CONSENSUS_BLOCK_SIZE / ratio - 1000);
+        CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE - 1000, DEFAULT_CONSENSUS_BLOCK_SIZE / ratio - 1000);
+        CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE - 1001 * ratio, DEFAULT_CONSENSUS_BLOCK_SIZE / ratio - 1001);
+        CheckBlockMaxSize(config, DEFAULT_CONSENSUS_BLOCK_SIZE - 1002 * ratio, DEFAULT_CONSENSUS_BLOCK_SIZE / ratio - 1002);
+
+        // Test percent mode
+        CheckBlockMaxSizePercent(config, 100.0, DEFAULT_CONSENSUS_BLOCK_SIZE / ratio - 1000);
+        CheckBlockMaxSizePercent(config, 50.0, DEFAULT_CONSENSUS_BLOCK_SIZE / ratio / 2);
+        CheckBlockMaxSizePercent(config, 10.0, DEFAULT_CONSENSUS_BLOCK_SIZE / ratio / 10);
+        CheckBlockMaxSizePercent(config, 1.0, DEFAULT_CONSENSUS_BLOCK_SIZE / ratio / 100);
+        CheckBlockMaxSizePercent(config, 0.25, DEFAULT_CONSENSUS_BLOCK_SIZE / ratio / 400);
+        CheckBlockMaxSizePercent(config, 25.0, DEFAULT_CONSENSUS_BLOCK_SIZE / ratio / 4);
+    }
 
     // NB: If the generated block size parameter is not specified, the config object just defaults it to the default max
     // block size. But in that case the BlockAssembler ends up unconditionally reserving 1000 bytes of space for the
