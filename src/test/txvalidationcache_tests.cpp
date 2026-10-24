@@ -231,7 +231,7 @@ void TxValidationCacheSetup::checkinputs_test_inner(const bool schnorr) {
         funding_tx.vin.resize(1);
         funding_tx.vin[0].prevout = COutPoint(m_coinbase_txns[0]->GetId(), 0);
         funding_tx.vout.resize(1);
-        funding_tx.vout[0].nValue = 50 * COIN;
+        funding_tx.vout[0].nValue = m_coinbase_txns[0]->vout[0].nValue;
 
         noppyScriptPubKey << OP_IF << OP_NOP10 << OP_ENDIF << OP_1;
         funding_tx.vout[0].scriptPubKey = noppyScriptPubKey;
