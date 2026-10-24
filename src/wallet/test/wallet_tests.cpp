@@ -429,8 +429,8 @@ public:
                               changePos, error, coinControl, true, coinsel));
         BOOST_REQUIRE(tx);
 
-        // The anti-fee-sniping feature should set the lock time equal to the block height.
-        BOOST_CHECK_EQUAL(::ChainActive().Height(), tx->nLockTime);
+        // The anti-fee-sniping feature should set the lock time equal to the block ticks / 600.
+        BOOST_CHECK_EQUAL(::ChainActive().Ticks() / legacy::POW_TARGET_SPACING_TICKS, tx->nLockTime);
 
         CValidationState state;
         BOOST_CHECK(
