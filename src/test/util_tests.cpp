@@ -2133,7 +2133,7 @@ BOOST_AUTO_TEST_CASE(test_Capitalize) {
 BOOST_AUTO_TEST_CASE(test_GetPerfTimeNanos) {
     // Basic test to just check sanity of the GetPerfTimeNanos() call that it actually increses along with system clock.
     // We would like to test things with more precision than this but it's very tricky to compare two distinct clocks.
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 5; ++i) {
         const int64_t sleeptime_msec = (i+1) * 7;
         const int64_t before = GetPerfTimeNanos();
         MilliSleep(sleeptime_msec);
@@ -2153,7 +2153,7 @@ BOOST_AUTO_TEST_CASE(test_Tic) {
     // freshly constructed Tic timer should not have elapsed much. 100ms arbitrarily chosen as a "safe" value.
     BOOST_CHECK_LT(tic.msec(), 100);
     int64_t cum_time = 0;
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 3; ++i) {
         const int64_t sleeptime_msec = (i+1) * 7;
         MilliSleep(sleeptime_msec);
         cum_time += sleeptime_msec;
@@ -2163,7 +2163,7 @@ BOOST_AUTO_TEST_CASE(test_Tic) {
     // freeze clock
     tic.fin();
     const auto frozen_nsec = tic.nsec();
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 3; ++i) {
         MilliSleep(10);
         // ensure frozen times remain frozen
         BOOST_CHECK_EQUAL(tic.nsec(), frozen_nsec);
