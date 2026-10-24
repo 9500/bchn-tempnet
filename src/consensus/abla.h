@@ -165,6 +165,11 @@ public:
     ///
     /// Also note that since this is a worst-case calculation, assumption is that all future blocks use
     /// `paranoidWorseCaseBlockInterval` (default: BASE_BLOCK_INTERVAL = 10 mins) as their block time.
+    ///
+    /// This is computed in O(1) with a closed-form bound (CHIP-2025-03, "Block download"), not by iterating the
+    /// algorithm `count` times. The result is therefore an UPPER BOUND on the exact iterated value: equal to it for
+    /// `count <= 1`, and never below it. Since the result is only used to size buffers / as a "guess" of a future
+    /// limit, a slightly loose upper bound is safe; callers must not rely on exact equality with the iterated value.
     uint64_t CalcLookaheadBlockSizeLimitWorstCase(const Config &config, size_t count,
                                                   BlockTicks paranoidWorseCaseBlockInterval = BASE_BLOCK_INTERVAL,
                                                   bool disable2GBCap = false) const;

@@ -226,14 +226,66 @@ StateBase StateBase::NextBlockStateBase(const Config &config, BlockTicks thisBlo
     return ret;
 }
 
-uint64_t State::CalcLookaheadBlockSizeLimitWorstCase(const Config &config, size_t count,
-                                                     BlockTicks paranoidWorseCaseBlockInterval, bool disable2GBCap) const {
-    State lookaheadState{*this};
-    for (size_t i = 0; i < count; ++i) {
-        const uint64_t maxSize = lookaheadState.GetNextBlockSizeLimit(config, paranoidWorseCaseBlockInterval, disable2GBCap);
-        lookaheadState = lookaheadState.NextBlockState(config, paranoidWorseCaseBlockInterval, maxSize);
+namespace {
+
+/// Closed-form upper bound on `controlBlockSize + elasticBufferSize` after `k` further transitions, starting from a
+/// state whose own block is full (blockSize == its limit) with interval `tau`, where every following block is also
+/// full and also has interval `tau`. Exact for k == 0. (CHIP-2025-03, "Block download".)
+///
+/// For a full block the amplified size equals the amplified limit, so the scaling offset cancels and the control step
+/// is d = floor(eps * G / D), with G = tau * (zeta - B7) and D = 600 * B7 * gammaReciprocal. Hence
+///     eps_{n+1} <= eps_n * (1 + G/D)
+///     s_{n+1}   <= s_n + (1 + delta) * eps_n * G/D        (elastic buffer decay dropped)
+/// where s = eps + beta. The epsilonMax / betaMax clips only lower a component, so the bound survives them. Summing
+/// the geometric series and applying AM-GM, (1 + g)^k * (1 - k*g) <= 1, gives
+///     s_k <= s_0 + (1 + delta) * eps_0 * k*G / (D - k*G),    for k*G < D.
+/// Every integer step of the real drive truncates downward, so flooring the right-hand side stays an upper bound.
+uint64_t BoundSumAfterFullBlocks(const Config &config, uint64_t tau, uint64_t s0, uint64_t eps0, uint64_t k) {
+    if (k == 0) {
+        return s0;
     }
-    return lookaheadState.GetBlockSizeLimit(disable2GBCap);
+
+    const uint64_t G = tau * (config.zeta_xB7 - B7); // >= 1, since zeta_xB7 >= MIN_ZETA_XB7 > B7 and tau >= 1
+    const uint64_t D = BASE_BLOCK_INTERVAL.value() * B7 * config.gammaReciprocal;
+    const u128 sat = static_cast<u128>(config.epsilonMax) + static_cast<u128>(config.betaMax);
+
+    // Past the radius of the AM-GM form the bound is vacuous; fall back to the trivial maximum (a clip only lowers a
+    // component, so eps + beta can never exceed epsilonMax + betaMax). This also keeps D - k*G positive.
+    // For the mainnet parameters at tau = 600, D / G = 75876.
+    if (k >= D / G) {
+        return static_cast<uint64_t>(sat);
+    }
+
+    const uint64_t kG = k * G; // < D after the guard above, so no overflow
+    const u128 inc = static_cast<u128>(1 + config.delta) * static_cast<u128>(eps0) * static_cast<u128>(kG)
+                     / static_cast<u128>(D - kG);
+    return static_cast<uint64_t>(std::min<u128>(static_cast<u128>(s0) + inc, sat));
+}
+
+} // namespace
+
+uint64_t State::CalcLookaheadBlockSizeLimitWorstCase(const Config &config, size_t count, const BlockTicks tau,
+                                                     bool disable2GBCap) const {
+    if (count == 0) {
+        return GetBlockSizeLimit(disable2GBCap);
+    }
+
+    assert(tau >= MIN_BLOCK_INTERVAL && tau <= MAX_BLOCK_INTERVAL);
+
+    // The first transition is done exactly: it responds to this state's own stored block size and interval, and its
+    // result (a full block with interval `tau`) is the state the remaining `count - 1` blocks start from.
+    const State s = NextBlockState(config, tau, GetNextBlockSizeLimit(config, tau, disable2GBCap));
+
+    const uint64_t eps = s.GetControlBlockSize();
+    const uint64_t bound = BoundSumAfterFullBlocks(config, tau.value(), eps + s.GetElasticBufferSize(), eps,
+                                                   static_cast<uint64_t>(count - 1));
+
+    // Same readback as GetBlockSizeLimitBase(): scale by the interval, then apply the 2GB cap (if enabled).
+    uint64_t limit = muldiv(bound, tau.value(), BASE_BLOCK_INTERVAL.value());
+    if (!disable2GBCap) {
+        limit = std::min<uint64_t>(limit, MAX_CONSENSUS_BLOCK_SIZE);
+    }
+    return limit;
 }
 
 bool State::IsValid(const Config &config, const char **err) const {

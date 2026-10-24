@@ -109,12 +109,40 @@ class AblaState:
 
         return ret
 
-    def CalcLookaheadBlockSizeLimit(self, count, config=DEFAULT_ABLA_CONFIG):
+    # This is the old iterative method to calculate this, changed recently to the closed-form
+    def CalcLookaheadBlockSizeLimit_old_iterative(self, count, config=DEFAULT_ABLA_CONFIG):
         lookaheadState = self
         for i in range(count):
             maxSize = lookaheadState.GetNextBlockSizeLimit(config=config)
             lookaheadState = lookaheadState.NextBlockState(config=config, nextBlockSize=maxSize)
         return lookaheadState.GetBlockSizeLimit()
+
+    @staticmethod
+    def _BoundSumAfterFullBlocks(config, tau: int, s0: int, eps0: int, k: int):
+        baseBlockInterval = 600
+        G = tau * (config.zeta_xB7 - B7)
+        D = baseBlockInterval * B7 * config.gammaReciprocal
+        sat = config.epsilonMax + config.betaMax
+
+        if k >= (D // G):
+            return sat
+
+        kG = k * G
+        inc = (1 + config.delta) * eps0 * kG // (D - kG)
+        return min(s0 + inc, sat)
+
+    def CalcLookaheadBlockSizeLimit(self, count: int, config=DEFAULT_ABLA_CONFIG):
+        lookaheadState = self
+        if count == 0:
+            return lookaheadState.GetBlockSizeLimit()
+        # Every block is at the base interval of 600 seconds.
+        tau = 600
+        # The first transition is done exactly: it responds to this state's own stored block size, and its
+        # result (a full block) is the state the remaining `count - 1` blocks start from.
+        nextBlockSize = lookaheadState.GetNextBlockSizeLimit(config=config)
+        lookaheadState = lookaheadState.NextBlockState(config=config, nextBlockSize=nextBlockSize)
+        eps = lookaheadState.controlBlockSize
+        return self._BoundSumAfterFullBlocks(config, tau, eps + lookaheadState.elasticBufferSize, eps, count - 1)
 
     def __repr__(self):
         return f"<class 'AblaState' blockSize={self.blockSize} controlBlockSize={self.controlBlockSize}" \
