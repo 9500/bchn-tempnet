@@ -136,6 +136,15 @@ class BIP68Test(BitcoinTestFramework):
             self.nodes[0].getblockcount() - confirmations)
         return self.nodes[0].getblockheader(block_hash)["mediantime"]
 
+    def _get_tick_depth_for_next_block(self, confirmations):
+        confirmations -= 1
+        block_hash = self.nodes[0].getblockhash(self.nodes[0].getblockcount() - max(0, confirmations))
+        info = self.nodes[0].getblockchaininfo()
+        return info["next_target_time"] + (info["blocks_ticks"] - self.nodes[0].getblockheader(block_hash)["ticks"])
+
+    def _get_current_block_interval(self) -> int:
+        return self.nodes[0].getblockchaininfo()["next_target_time"]
+
     # Test that sequence locks are respected for transactions spending
     # confirmed inputs.
     def test_sequence_lock_confirmed_inputs(self):
@@ -143,6 +152,7 @@ class BIP68Test(BitcoinTestFramework):
         # transactions.
         max_outputs = 50
         addresses = []
+        recent_tip_hash = self.nodes[0].getblockchaininfo()["bestblockhash"]
         while len(addresses) < max_outputs:
             addresses.append(self.nodes[0].getnewaddress())
         while len(self.nodes[0].listunspent()) < 200:
@@ -153,6 +163,10 @@ class BIP68Test(BitcoinTestFramework):
             for i in range(num_outputs):
                 outputs[addresses[i]] = random.randint(1, 20) * 0.01
             self.nodes[0].sendmany("", outputs)
+            recent_tip_hash = self.generate(self.nodes[0], 1)[-1]
+        while self.nodes[0].getblockheader(recent_tip_hash)["confirmations_ticks"] < 600:
+            # If we are on the blocktime upgrade, do some fudging to make the below code work, so that all utxos are
+            # potentially spendable and have at least 600 ticks of confirmations with some nonzero sequence_value
             self.generate(self.nodes[0], 1)
 
         utxos = self.nodes[0].listunspent()
@@ -186,7 +200,7 @@ class BIP68Test(BitcoinTestFramework):
 
                     # 10% of the time, make the input sequence value pass
                     input_will_pass = (random.randint(1, 10) == 1)
-                    sequence_value = utxos[j]["confirmations"]
+                    sequence_value = self._get_tick_depth_for_next_block(utxos[j]["confirmations"]) // 600
                     if not input_will_pass:
                         sequence_value += 1
                         should_pass = False
@@ -240,6 +254,9 @@ class BIP68Test(BitcoinTestFramework):
                 # This raw transaction should be accepted
                 self.nodes[0].sendrawtransaction(rawtx)
                 utxos = self.nodes[0].listunspent()
+
+    def _get_cb_subsidy(self) -> int:
+        return int(COIN * self.nodes[0].getblockstats(self.nodes[0].getbestblockhash())["subsidy"])
 
     # Test that sequence locks on unconfirmed inputs must have nSequence
     # height or time of 0 to be accepted.
@@ -340,8 +357,15 @@ class BIP68Test(BitcoinTestFramework):
             tx2, self.nodes[0], use_height_lock=False)
         assert tx3.hash in self.nodes[0].getrawmempool()
 
+        prev_tip_ticks = self.nodes[0].getblockchaininfo()["blocks_ticks"]
+        # Need to mine 600 ticks worth of blocks for below test to work
         self.generate(self.nodes[0], 1)
         assert tx3.hash not in self.nodes[0].getrawmempool()
+        block_to_invalidate = self.nodes[0].getbestblockhash()
+        while self.nodes[0].getblockchaininfo()["blocks_ticks"] < prev_tip_ticks + 600:
+            self.generate(self.nodes[0], 1)
+        # This must hold for below to work
+        assert_equal(prev_tip_ticks + 600, self.nodes[0].getblockchaininfo()["blocks_ticks"])
 
         # One more test, this time using height locks
         tx4 = test_nonzero_locks(
@@ -371,7 +395,7 @@ class BIP68Test(BitcoinTestFramework):
         #
         # If we invalidate the tip, tx3 should get added to the mempool, causing
         # tx4 to be removed (fails sequence-lock).
-        self.nodes[0].invalidateblock(self.nodes[0].getbestblockhash())
+        self.nodes[0].invalidateblock(block_to_invalidate)
         assert tx4.hash not in self.nodes[0].getrawmempool()
         assert tx3.hash in self.nodes[0].getrawmempool()
 
@@ -383,7 +407,7 @@ class BIP68Test(BitcoinTestFramework):
             self.nodes[0].getblockcount() - 1), 16)
         height = self.nodes[0].getblockcount()
         for i in range(2):
-            block = create_block(tip, create_coinbase(height), cur_time)
+            block = create_block(tip, create_coinbase(height, nValue=self._get_cb_subsidy()), cur_time)
             block.nVersion = 3
             block.rehash()
             block.solve()
@@ -411,6 +435,11 @@ class BIP68Test(BitcoinTestFramework):
     # being run, then it's possible the test has activated the soft fork, and
     # this test should be moved to run earlier, or deleted.
     def test_bip68_not_consensus(self):
+        if self._get_current_block_interval() != 600 and self.get_csv_status():
+            # It just so happened that we ended up creating too many UTXOs in a previous test, and CSV got activated
+            # because we are beyond block 576. This can only really happen if the 1-min blocktime upgrade is activated.
+            # So, just force-reorg the chain to be somewhere below CSV height 576.
+            self.deactivateCSV()
         assert_equal(self.get_csv_status(), False)
         txid = self.nodes[0].sendtoaddress(self.nodes[0].getnewaddress(), 2)
 
@@ -450,7 +479,7 @@ class BIP68Test(BitcoinTestFramework):
         # make a block that violates bip68; ensure that the tip updates
         tip = int(self.nodes[0].getbestblockhash(), 16)
         block = create_block(
-            tip, create_coinbase(self.nodes[0].getblockcount() + 1))
+            tip, create_coinbase(self.nodes[0].getblockcount() + 1, nValue=self._get_cb_subsidy()))
         block.nVersion = 3
         block.vtx.extend(
             sorted([tx1, tx2, tx3], key=lambda tx: tx.get_id()))
@@ -476,6 +505,18 @@ class BIP68Test(BitcoinTestFramework):
         self.nodes[0].invalidateblock(self.nodes[0].getbestblockhash())
         connect_nodes(self.nodes[0], self.nodes[1])
         self.sync_blocks()
+
+    def deactivateCSV(self):
+        # activation should happen at block height 576
+        csv_activation_height = 576
+        disconnect_nodes(self.nodes[0], self.nodes[1])
+        for node in self.nodes:
+            height = node.getblockcount()
+            if height < csv_activation_height - 10:
+                continue
+            node.invalidateblock(node.getblockhash(csv_activation_height - 10))
+        connect_nodes(self.nodes[0], self.nodes[1])
+        self.sync_blocks(timeout=10)
 
     # Use self.nodes[1] to test that version 2 transactions are standard.
     def test_version2_relay(self):
