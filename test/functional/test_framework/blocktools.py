@@ -86,6 +86,7 @@ def serialize_script_num(value):
 
 def create_coinbase(height, pubkey=None, *, scriptPubKey=None, tokenData=None, pad_to_size=None, nValue=None):
     coinbase = CTransaction()
+    coinbase.nVersion = 2  # Set nVersion to 2 so that we never trigger the upgrade2027 >=25 BCH rule
     coinbase.vin.append(CTxIn(COutPoint(0, 0xffffffff),
                               ser_string(serialize_script_num(height)), 0xffffffff))
     coinbaseoutput = CTxOut()
