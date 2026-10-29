@@ -177,7 +177,8 @@ class ExampleTest(BitcoinTestFramework):
             # Calling the generate() rpc is easier, but this allows us to exactly
             # control the blocks and transactions.
             block = create_block(
-                self.tip, create_coinbase(height, nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True)),
+                self.tip, create_coinbase(height, nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True),
+                                          noAutoHalving=True),
                 self.block_time)
             block.solve()
             block_message = msg_block(block)
