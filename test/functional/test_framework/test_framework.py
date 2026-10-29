@@ -440,6 +440,47 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         blocks = generator.generatetoaddress(*args, **kwargs)
         return blocks
 
+    def mine_for_ticks(self, node, delta, address=None):
+        """Mine on `node` until its chaintip advances by `delta` ticks
+        (inclusive of each block's own interval; the same quantity as
+        `get_chaintip_ticks()`), and return the block hashes in order.
+
+        Batches are sized from the next block's interval and rounded up. The
+        interval only ever shrinks across the activation seam, so a batch can
+        undershoot but never overshoot, and a call spanning the seam needs no
+        special handling.
+
+        `delta` must be reachable at the interval granularity in force: every
+        chaintip tick is a multiple of 60, so `delta` must be too.
+        """
+        if address is None:
+            address = node.get_deterministic_priv_key().address
+        target = blocktools.get_chaintip_ticks(node) + delta
+        hashes = []
+        while blocktools.get_chaintip_ticks(node) < target:
+            remaining = target - blocktools.get_chaintip_ticks(node)
+            interval = blocktools.get_next_block_interval(node)
+            hashes.extend(self.generatetoaddress(node, -(-remaining // interval), address))
+        tip = blocktools.get_chaintip_ticks(node)
+        assert tip == target, f"mine_for_ticks: delta={delta} unreachable, landed at {tip} (target {target})"
+        return hashes
+
+    def mine_until_tick_depth(self, node, blockhash, depth_ticks, address=None):
+        """Mine on `node` until `blockhash` has tick depth >= `depth_ticks`,
+        landing exactly on it. Depth excludes the block's own interval (see
+        `get_block_tick_depth`), matching the finalization gate and the
+        maturity predicate.
+        """
+        if address is None:
+            address = node.get_deterministic_priv_key().address
+        while blocktools.get_block_tick_depth(node, blockhash) < depth_ticks:
+            interval = blocktools.get_next_block_interval(node)
+            self.generatetoaddress(
+                node, -(-(depth_ticks - blocktools.get_block_tick_depth(node, blockhash)) // interval), address)
+        got = blocktools.get_block_tick_depth(node, blockhash)
+        assert got == depth_ticks, (
+            f"mine_until_tick_depth: depth={depth_ticks} unreachable, landed at {got}")
+
     def sync_blocks(self, nodes=None, wait=1, timeout=60):
         """
         Wait until everybody has the same tip.

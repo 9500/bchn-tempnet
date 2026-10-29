@@ -112,6 +112,9 @@ MAX_TXOUT_PUBKEY_SCRIPT = 10000
 # From consensus/consensus.h
 MAX_CONSENSUS_BLOCK_SIZE = 2000 * ONE_MEGABYTE
 
+# Finalization threshold, in block ticks (10 legacy 10-minute blocks).
+DEFAULT_MAX_REORG_TICKS = 6000
+
 # The following are some node policy values, but also useful in tests.
 
 # Default setting for maximum generated size of block (soft limit)
