@@ -10,7 +10,9 @@ import time
 from test_framework.blocktools import (
     create_block,
     create_coinbase,
+    get_chaintip_ticks,
     get_coinbase_subsidy,
+    get_next_block_tick_depth,
 )
 from test_framework.messages import (
     COIN,
@@ -58,6 +60,14 @@ class BIP68Test(BitcoinTestFramework):
 
         # Generate some coins
         self.generate(self.nodes[0], 110)
+        # The cache chain is 200 uniform legacy blocks with the seam 6 blocks
+        # later, so the above crosses it if upgrade2027 is active. Either way
+        # every span below is measured in ticks, so both regimes are covered by
+        # the same code; this just records which one this run is in.
+        assert self.block_interval in (60, 600)
+        self.log.info("start: height=%d ticks=%d interval=%ds",
+                      self.nodes[0].getblockcount(),
+                      get_chaintip_ticks(self.nodes[0]), self.block_interval)
 
         self.log.info("Running test disable flag")
         self.test_disable_flag()
@@ -137,11 +147,17 @@ class BIP68Test(BitcoinTestFramework):
             self.nodes[0].getblockcount() - confirmations)
         return self.nodes[0].getblockheader(block_hash)["mediantime"]
 
-    def _get_tick_depth_for_next_block(self, confirmations):
-        confirmations -= 1
-        block_hash = self.nodes[0].getblockhash(self.nodes[0].getblockcount() - max(0, confirmations))
-        info = self.nodes[0].getblockchaininfo()
-        return info["next_target_time"] + (info["blocks_ticks"] - self.nodes[0].getblockheader(block_hash)["ticks"])
+    def _tick_depth_for_sequence(self, confirmations):
+        """Next-block tick depth of the coin with `confirmations` confirmations.
+
+        This is the quantity the height-mode sequence predicate constrains: a tx
+        spending the coin in the next block is mature iff
+        T(next) - T(coin) >= 600 * n, so n = depth // 600 is the largest passing
+        value and n + 1 the smallest failing one.
+        """
+        node = self.nodes[0]
+        height = node.getblockcount() - max(0, confirmations - 1)
+        return get_next_block_tick_depth(node, height)
 
     # Test that sequence locks are respected for transactions spending
     # confirmed inputs.
@@ -162,9 +178,13 @@ class BIP68Test(BitcoinTestFramework):
                 outputs[addresses[i]] = random.randint(1, 20) * 0.01
             self.nodes[0].sendmany("", outputs)
             recent_tip_hash = self.generate(self.nodes[0], 1)[-1]
-        while self.nodes[0].getblockheader(recent_tip_hash)["confirmations_ticks"] < 600:
-            # If we are on the blocktime upgrade, do some fudging to make the below code work, so that all utxos are
-            # potentially spendable and have at least 600 ticks of confirmations with some nonzero sequence_value
+        # `confirmations_ticks` is not the quantity the sequence predicate uses:
+        # a coin is mature in the next block iff its *next-block* tick depth is
+        # >= 600. Requiring that guarantees the newest utxo admits n = 1, so the
+        # "should pass" branch exercises a nonzero lock instead of degenerating
+        # to n = 0. A no-op at the legacy interval, where the tip already has
+        # 600 such ticks.
+        while get_next_block_tick_depth(self.nodes[0], recent_tip_hash) < 600:
             self.generate(self.nodes[0], 1)
 
         utxos = self.nodes[0].listunspent()
@@ -198,7 +218,7 @@ class BIP68Test(BitcoinTestFramework):
 
                     # 10% of the time, make the input sequence value pass
                     input_will_pass = (random.randint(1, 10) == 1)
-                    sequence_value = self._get_tick_depth_for_next_block(utxos[j]["confirmations"]) // 600
+                    sequence_value = self._tick_depth_for_sequence(utxos[j]["confirmations"]) // 600
                     if not input_will_pass:
                         sequence_value += 1
                         should_pass = False
@@ -356,15 +376,15 @@ class BIP68Test(BitcoinTestFramework):
             tx2, self.nodes[0], use_height_lock=False)
         assert tx3.hash in self.nodes[0].getrawmempool()
 
-        prev_tip_ticks = self.nodes[0].getblockchaininfo()["blocks_ticks"]
+        prev_tip_ticks = get_chaintip_ticks(self.nodes[0])
         # Need to mine 600 ticks worth of blocks for below test to work
         self.generate(self.nodes[0], 1)
         assert tx3.hash not in self.nodes[0].getrawmempool()
         block_to_invalidate = self.nodes[0].getbestblockhash()
-        while self.nodes[0].getblockchaininfo()["blocks_ticks"] < prev_tip_ticks + 600:
+        while get_chaintip_ticks(self.nodes[0]) < prev_tip_ticks + 600:
             self.generate(self.nodes[0], 1)
         # This must hold for below to work
-        assert_equal(prev_tip_ticks + 600, self.nodes[0].getblockchaininfo()["blocks_ticks"])
+        assert_equal(prev_tip_ticks + 600, get_chaintip_ticks(self.nodes[0]))
 
         # One more test, this time using height locks
         tx4 = test_nonzero_locks(
