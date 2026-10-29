@@ -214,7 +214,8 @@ class P2PAblaMessageSizeLimitTest(BitcoinTestFramework):
 
             # Confirm that blocksize limit grew, and that lookahead limit grew
             cur_abla_state = AblaState.FromRpcDict(self.get_header())
-            assert_greater_than(cur_abla_state.GetNextBlockSizeLimit(), DEFAULT_CONSENSUS_BLOCK_SIZE)
+            assert_greater_than(cur_abla_state.GetNextBlockSizeLimit(self.block_interval),
+                                DEFAULT_CONSENSUS_BLOCK_SIZE // self.interval_ratio)
             current_lookahead = self.get_lookahead_limit(cur_abla_state)
             assert_greater_than(current_lookahead, prev_lookahead)
 

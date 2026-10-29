@@ -4,7 +4,6 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test support for ABLA EBAA which activates with Upgrade10."""
 from test_framework.abla import AblaState
-from test_framework.blocktools import get_next_block_interval
 from test_framework.cdefs import (
     BLOCK_MAXBYTES_MAXSIGCHECKS_RATIO,
     DEFAULT_CONSENSUS_BLOCK_SIZE,
@@ -56,14 +55,6 @@ class AblaTest(BitcoinTestFramework):
                     return None
             bh = hdr.get('previousblockhash')
         return 0
-
-    @property
-    def block_interval(self):
-        return get_next_block_interval(self.nodes[0])
-
-    @property
-    def interval_ratio(self):
-        return 600 // self.block_interval
 
     def run_test(self):
         node = self.nodes[0]

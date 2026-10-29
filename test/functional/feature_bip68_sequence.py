@@ -10,7 +10,6 @@ import time
 from test_framework.blocktools import (
     create_block,
     create_coinbase,
-    get_next_block_interval,
     get_coinbase_subsidy,
 )
 from test_framework.messages import (
@@ -143,10 +142,6 @@ class BIP68Test(BitcoinTestFramework):
         block_hash = self.nodes[0].getblockhash(self.nodes[0].getblockcount() - max(0, confirmations))
         info = self.nodes[0].getblockchaininfo()
         return info["next_target_time"] + (info["blocks_ticks"] - self.nodes[0].getblockheader(block_hash)["ticks"])
-
-    @property
-    def block_interval(self) -> int:
-        return get_next_block_interval(self.nodes[0])
 
     # Test that sequence locks are respected for transactions spending
     # confirmed inputs.

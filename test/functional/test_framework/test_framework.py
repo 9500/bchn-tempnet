@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2019 The Bitcoin Core developers
-# Copyright (c) 2022-2026 The Bitcoin Cash Node developers
+# Copyright (c) 2022-present The Bitcoin Cash Node developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Base class for RPC testing."""
@@ -18,7 +18,7 @@ import time
 from typing import Callable, Optional
 
 from .authproxy import JSONRPCException
-from . import coverage
+from . import (blocktools, coverage)
 from .test_node import TestNode
 from .p2p import NetworkThread
 from .util import (
@@ -676,3 +676,15 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         config.read_file(open(self.options.configfile, encoding='utf-8'))
 
         return config["components"].getboolean("ENABLE_ZMQ")
+
+    @property
+    def block_interval(self) -> int:
+        """Returns the block interval in seconds of the next block after the tip."""
+        assert len(self.nodes) > 0
+        return blocktools.get_next_block_interval(self.nodes[0])
+
+    @property
+    def interval_ratio(self) -> int:
+        """Returns the block interval ratio as compared to classic 10-min blocks. 1-min blocks return 10 here, 10-min
+        blocks return 1."""
+        return 600 // self.block_interval
