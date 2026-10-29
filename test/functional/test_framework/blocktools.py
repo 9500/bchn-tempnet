@@ -309,3 +309,13 @@ def send_big_transactions(node, utxos, num, fee_multiplier):
         txid = node.sendrawtransaction(signresult["hex"], True)
         txids.append(txid)
     return txids
+
+
+def get_next_block_interval(node) -> int:
+    """Returns the block interval for the next block"""
+    return node.getblockchaininfo()["next_target_time"]
+
+
+def get_coinbase_subsidy(node) -> int:
+    """Returns the coinbase subsidy for the block at the tip"""
+    return int(COIN * node.getblockstats(node.getbestblockhash())["subsidy"])
