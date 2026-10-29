@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2017-2019 The Bitcoin Core developers
+# Copyright (c) 2019-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """An example functional test
@@ -14,7 +15,7 @@ is testing and *how* it's being tested
 from collections import defaultdict
 
 # Avoid wildcard * imports if possible
-from test_framework.blocktools import (create_block, create_coinbase)
+from test_framework.blocktools import (create_block, create_coinbase, get_coinbase_subsidy)
 from test_framework.messages import (CInv, MSG_BLOCK, msg_block, msg_getdata)
 from test_framework.p2p import (
     P2PInterface,
@@ -176,7 +177,8 @@ class ExampleTest(BitcoinTestFramework):
             # Calling the generate() rpc is easier, but this allows us to exactly
             # control the blocks and transactions.
             block = create_block(
-                self.tip, create_coinbase(height), self.block_time)
+                self.tip, create_coinbase(height, nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True)),
+                self.block_time)
             block.solve()
             block_message = msg_block(block)
             # Send message is used to send a P2P message to the node over our
