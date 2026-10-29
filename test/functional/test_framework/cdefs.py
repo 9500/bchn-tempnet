@@ -97,8 +97,11 @@ BLOCK_MAXBYTES_MAXSIGCHECKS_RATIO = 141
 MAX_STANDARD_TX_SIGOPS = MAX_TX_SIGOPS_COUNT // 5
 
 # Coinbase transaction outputs can only be spent after this number of new
-# blocks (network rule)
-COINBASE_MATURITY = 100
+# 10-min blocks (network rule, legacy, don't use in new code).
+LEGACY_COINBASE_MATURITY_10_MIN_BLOCKS = 100
+
+# The above rule expressed in terms of ticks. Use this for new code to account for 1-min blocks.
+COINBASE_MATURITY_TICKS = LEGACY_COINBASE_MATURITY_10_MIN_BLOCKS * 600
 
 # Minimum size a transaction can have after Magnetic Anomaly (post Nov. 15 2018 HF)
 MIN_TX_SIZE_MAGNETIC_ANOMALY = 100
@@ -149,5 +152,5 @@ if __name__ == "__main__":
     print("DEFAULT_CONSENSUS_BLOCK_SIZE = {} (bytes)".format(DEFAULT_CONSENSUS_BLOCK_SIZE))
     print("MAX_BLOCK_SIGOPS_PER_MB = {} (sigops)".format(MAX_BLOCK_SIGOPS_PER_MB))
     print("MAX_TX_SIGOPS_COUNT = {} (sigops)".format(MAX_TX_SIGOPS_COUNT))
-    print("COINBASE_MATURITY = {} (blocks)".format(COINBASE_MATURITY))
+    print("COINBASE_MATURITY = {} (blocks)".format(LEGACY_COINBASE_MATURITY_10_MIN_BLOCKS))
     print("DEFAULT_MAX_GENERATED_BLOCK_SIZE = {} (bytes)".format(DEFAULT_MAX_GENERATED_BLOCK_SIZE))

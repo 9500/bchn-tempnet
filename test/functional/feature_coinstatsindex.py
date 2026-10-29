@@ -17,7 +17,7 @@ from test_framework.blocktools import (
     create_coinbase,
 )
 
-from test_framework.cdefs import COINBASE_MATURITY
+from test_framework.cdefs import LEGACY_COINBASE_MATURITY_10_MIN_BLOCKS
 from test_framework.messages import (
     COIN,
     CTransaction,
@@ -87,7 +87,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
             del res['block_info'], res['total_unspendable_amount']
 
         # Generate a normal transaction and mine it
-        self.generate(node, COINBASE_MATURITY + 1)
+        self.generate(node, LEGACY_COINBASE_MATURITY_10_MIN_BLOCKS + 1)
 
         # Generate 3 txns that spend the same coin(s)
         addrs = [node.getnewaddress(), node.getnewaddress(), node.getnewaddress()]
