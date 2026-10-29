@@ -316,6 +316,19 @@ def get_next_block_interval(node) -> int:
     return node.getblockchaininfo()["next_target_time"]
 
 
-def get_coinbase_subsidy(node) -> int:
-    """Returns the coinbase subsidy for the block at the tip"""
-    return int(COIN * node.getblockstats(node.getbestblockhash())["subsidy"])
+def get_coinbase_subsidy(node, for_mining=False, include_fees=False) -> int:
+    """Returns the coinbase subsidy for the block at the tip (in satoshis), or the next block after the tip if
+    for_mining==True. Pass include_fees=True to return the subsidy + fee (that is, the max coinbase value aka total
+    coinbase reward)."""
+    if for_mining:
+        tmpl = node.getblocktemplate()
+        fees = 0
+        if not include_fees:
+            fees = sum(txn["fee"] for txn in tmpl["transactions"])
+        return tmpl["coinbasevalue"] - fees
+    else:
+        stats = node.getblockstats(node.getbestblockhash())
+        fees = 0
+        if include_fees:
+            fees = int(COIN * stats["totalfee"])
+        return int(COIN * stats["subsidy"]) + fees
