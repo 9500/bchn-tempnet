@@ -10,6 +10,8 @@ import time
 from test_framework.blocktools import (
     create_block,
     create_coinbase,
+    get_next_block_interval,
+    get_coinbase_subsidy,
 )
 from test_framework.messages import (
     COIN,
@@ -142,8 +144,9 @@ class BIP68Test(BitcoinTestFramework):
         info = self.nodes[0].getblockchaininfo()
         return info["next_target_time"] + (info["blocks_ticks"] - self.nodes[0].getblockheader(block_hash)["ticks"])
 
-    def _get_current_block_interval(self) -> int:
-        return self.nodes[0].getblockchaininfo()["next_target_time"]
+    @property
+    def block_interval(self) -> int:
+        return get_next_block_interval(self.nodes[0])
 
     # Test that sequence locks are respected for transactions spending
     # confirmed inputs.
@@ -255,8 +258,9 @@ class BIP68Test(BitcoinTestFramework):
                 self.nodes[0].sendrawtransaction(rawtx)
                 utxos = self.nodes[0].listunspent()
 
-    def _get_cb_subsidy(self) -> int:
-        return int(COIN * self.nodes[0].getblockstats(self.nodes[0].getbestblockhash())["subsidy"])
+    @property
+    def cb_subsidy(self) -> int:
+        return get_coinbase_subsidy(self.nodes[0])
 
     # Test that sequence locks on unconfirmed inputs must have nSequence
     # height or time of 0 to be accepted.
@@ -407,7 +411,7 @@ class BIP68Test(BitcoinTestFramework):
             self.nodes[0].getblockcount() - 1), 16)
         height = self.nodes[0].getblockcount()
         for i in range(2):
-            block = create_block(tip, create_coinbase(height, nValue=self._get_cb_subsidy()), cur_time)
+            block = create_block(tip, create_coinbase(height, nValue=self.cb_subsidy), cur_time)
             block.nVersion = 3
             block.rehash()
             block.solve()
@@ -435,7 +439,7 @@ class BIP68Test(BitcoinTestFramework):
     # being run, then it's possible the test has activated the soft fork, and
     # this test should be moved to run earlier, or deleted.
     def test_bip68_not_consensus(self):
-        if self._get_current_block_interval() != 600 and self.get_csv_status():
+        if self.block_interval != 600 and self.get_csv_status():
             # It just so happened that we ended up creating too many UTXOs in a previous test, and CSV got activated
             # because we are beyond block 576. This can only really happen if the 1-min blocktime upgrade is activated.
             # So, just force-reorg the chain to be somewhere below CSV height 576.
@@ -479,7 +483,7 @@ class BIP68Test(BitcoinTestFramework):
         # make a block that violates bip68; ensure that the tip updates
         tip = int(self.nodes[0].getbestblockhash(), 16)
         block = create_block(
-            tip, create_coinbase(self.nodes[0].getblockcount() + 1, nValue=self._get_cb_subsidy()))
+            tip, create_coinbase(self.nodes[0].getblockcount() + 1, nValue=self.cb_subsidy))
         block.nVersion = 3
         block.vtx.extend(
             sorted([tx1, tx2, tx3], key=lambda tx: tx.get_id()))

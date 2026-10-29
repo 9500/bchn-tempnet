@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-# Copyright (c) 2023-2024 The Bitcoin developers
+# Copyright (c) 2023-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test support for ABLA EBAA which activates with Upgrade10."""
 from test_framework.abla import AblaState
+from test_framework.blocktools import get_next_block_interval
 from test_framework.cdefs import (
     BLOCK_MAXBYTES_MAXSIGCHECKS_RATIO,
     DEFAULT_CONSENSUS_BLOCK_SIZE,
@@ -56,6 +57,14 @@ class AblaTest(BitcoinTestFramework):
             bh = hdr.get('previousblockhash')
         return 0
 
+    @property
+    def block_interval(self):
+        return get_next_block_interval(self.nodes[0])
+
+    @property
+    def interval_ratio(self):
+        return 600 // self.block_interval
+
     def run_test(self):
         node = self.nodes[0]
         addr, privkey = node.get_deterministic_priv_key()
@@ -72,8 +81,8 @@ class AblaTest(BitcoinTestFramework):
         # Ensure no ABLA state in headers
         assert 'ablastate' not in self.get_header()
 
-        # Check that blocksize limit is at the consensus default
-        assert_equal(node.getblocktemplatelight({})['sizelimit'], DEFAULT_CONSENSUS_BLOCK_SIZE)
+        # Check that blocksize limit is at the consensus default (scaled to the blocktime)
+        assert_equal(node.getblocktemplatelight({})['sizelimit'], DEFAULT_CONSENSUS_BLOCK_SIZE // self.interval_ratio)
 
         saved_height = self.get_height()
 
@@ -97,22 +106,22 @@ class AblaTest(BitcoinTestFramework):
         new_block_hash = node.generatetoaddress(1, addr)[0]  # Mine a full block
         new_block_size = node.getblock(new_block_hash, 1)['size']
         self.log.info(f"Mined block size: {new_block_size}")
-        assert_greater_than(new_block_size, abla.GetNextBlockSizeLimit() * 0.90)  # Ensure block was indeed full-ish
+        assert_greater_than(new_block_size, abla.GetNextBlockSizeLimit(self.block_interval) * 0.90)  # Ensure block was indeed full-ish
 
-        new_abla_state = abla.NextBlockState(new_block_size)  # Advance abla state
+        new_abla_state = abla.NextBlockState(new_block_size, self.block_interval)  # Advance abla state
 
         # Should match what we expect
         assert_equal(new_abla_state, AblaState.FromRpcDict(self.get_header()))
 
         # Since last block was full, limit should have grown
-        next_block_size_limit = new_abla_state.GetNextBlockSizeLimit()
-        assert_greater_than(next_block_size_limit, abla.GetNextBlockSizeLimit())
+        next_block_size_limit = new_abla_state.GetNextBlockSizeLimit(self.block_interval)
+        assert_greater_than(next_block_size_limit, abla.GetNextBlockSizeLimit(self.block_interval))
 
         # Ensure mining (using percentmaxblocksize=100.0) reports correct value
         mining_limit = next_block_size_limit
         gbtl = node.getblocktemplatelight({})
         mi = node.getmininginfo()
-        assert_greater_than(gbtl['sizelimit'], DEFAULT_CONSENSUS_BLOCK_SIZE)
+        assert_greater_than(gbtl['sizelimit'], DEFAULT_CONSENSUS_BLOCK_SIZE // self.interval_ratio)
         assert_equal(mi['miningblocksizelimit'], mining_limit)
         assert_equal(gbtl['sizelimit'], next_block_size_limit)
         # Check sigop limit of the block
@@ -142,15 +151,28 @@ class AblaTest(BitcoinTestFramework):
         # Mine beyond the initial 32 MB limit to test ABLA actually allowing for bigger blocks.
         self.restart_node(0, extra_args=self.base_extra_args + [f'-upgrade10activationheight={activation_height}',
                                                                 '-percentblockmaxsize=100'])
-        assert_greater_than_or_equal(node.getmempoolinfo()['bytes'], DEFAULT_CONSENSUS_BLOCK_SIZE * 2)
-        new_block_hash = node.generatetoaddress(2, addr)[1]  # Mine 2 full blocks to bump ABLA state >32MB
-        assert_equal(new_block_hash, node.getbestblockhash())  # Ensure blocks actually accepted & connected
-        new_block_size = node.getblock(new_block_hash, 1)['size']
-        new_abla_state = new_abla_state.NextBlockState(new_block_size)  # Advance abla state
-        self.log.info(f"Mined block size: {new_block_size}")
-        assert_greater_than(new_abla_state.GetBlockSizeLimit(), DEFAULT_CONSENSUS_BLOCK_SIZE)
-        assert_greater_than(new_abla_state.GetNextBlockSizeLimit(), DEFAULT_CONSENSUS_BLOCK_SIZE)
-        assert_greater_than(new_block_size, DEFAULT_CONSENSUS_BLOCK_SIZE)
+        assert_greater_than_or_equal(node.getmempoolinfo()['bytes'], DEFAULT_CONSENSUS_BLOCK_SIZE)
+        # Mine 2 (or 20 if 1 min blocks) full blocks to bump ABLA state >32MB (3.2MB)
+        blockhashes = node.generatetoaddress(2 * self.interval_ratio, addr)
+        assert_equal(blockhashes[-1], node.getbestblockhash())  # Ensure blocks actually accepted & connected
+        for new_block_hash in blockhashes:
+            header = node.getblockheader(new_block_hash)
+            new_block_size = node.getblock(new_block_hash, 1)['size']
+            prev_block_limit = new_abla_state.GetBlockSizeLimit()
+            new_abla_state = new_abla_state.NextBlockState(new_block_size, header["target_time"])  # Advance abla state
+            new_block_limit = new_abla_state.GetBlockSizeLimit()
+            self.log.info(f"Mined block size: {new_block_size} (limit: {new_block_limit})")
+            assert_equal(new_abla_state, AblaState.FromRpcDict(header['ablastate']))
+            assert_greater_than(new_block_limit, prev_block_limit)
+        assert_greater_than(new_abla_state.GetBlockSizeLimit(), DEFAULT_CONSENSUS_BLOCK_SIZE // self.interval_ratio)
+        assert_greater_than(new_abla_state.GetNextBlockSizeLimit(self.block_interval),
+                            DEFAULT_CONSENSUS_BLOCK_SIZE // self.interval_ratio)
+        if self.interval_ratio == 1:
+            # On 10-min block times we actually broke past the limit when mining
+            assert_greater_than(new_block_size, DEFAULT_CONSENSUS_BLOCK_SIZE)
+        else:
+            # For 1-min we didn't manage to break past 3.2 MB due to coinbase reserved space, so allow some fuzz
+            assert_greater_than(new_block_size, int(DEFAULT_CONSENSUS_BLOCK_SIZE // self.interval_ratio * 0.99))
 
         # "Abusing" the node by restarting it again with upgrade10 activation at the first block height should make the
         # node figure out how to recover and have the correct abla state for the activation block, which is now genesis.
@@ -167,7 +189,8 @@ class AblaTest(BitcoinTestFramework):
         for ht in range(1, last_height + 1):
             bh = node.getblockhash(ht)
             size = node.getblock(bh, 1)['size']
-            new_abla = abla.NextBlockState(size)
+            interval = node.getblockheader(bh)['target_time']
+            new_abla = abla.NextBlockState(size, nextBlockInterval=interval)
             assert_equal(AblaState.FromRpcDict(self.get_header(bh)), new_abla)
             abla = new_abla
 

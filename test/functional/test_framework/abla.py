@@ -7,7 +7,9 @@ from .cdefs import DEFAULT_CONSENSUS_BLOCK_SIZE, MAX_CONSENSUS_BLOCK_SIZE, ONE_M
 
 B7 = 1 << 7
 MAX_UINT64 = 2**64 - 1
-
+BASE_BLOCK_INTERVAL = 600
+MIN_BLOCK_INTERVAL = 1
+MAX_BLOCK_INTERVAL = 600
 
 def _muldiv(x, y, z):
     assert z != 0
@@ -57,31 +59,37 @@ DEFAULT_ABLA_CONFIG = AblaConfig()
 
 # noinspection PyPep8Naming
 class AblaState:
-    __slots__ = ("blockSize", "controlBlockSize", "elasticBufferSize")
+    __slots__ = ("blockSize", "controlBlockSize", "elasticBufferSize", "blockInterval")
 
-    def __init__(self, config=DEFAULT_ABLA_CONFIG, blockSize=None, *, controlBlockSize=None, elasticBufferSize=None):
+    def __init__(self, config=DEFAULT_ABLA_CONFIG, blockSize=None, *, controlBlockSize=None, elasticBufferSize=None,
+                 blockInterval=None):
         self.blockSize = blockSize or 0
         self.controlBlockSize = config.epsilon0 if controlBlockSize is None else controlBlockSize
         self.elasticBufferSize = config.beta0 if elasticBufferSize is None else elasticBufferSize
+        self.blockInterval = BASE_BLOCK_INTERVAL if blockInterval is None else blockInterval
 
     @classmethod
     def FromRpcDict(cls, d, config=DEFAULT_ABLA_CONFIG):
         if 'ablastate' in d:
             # Was a header, drill-down into the ablastate dict
             return cls.FromRpcDict(d['ablastate'], config=config)
-        return cls(config=config, blockSize=d['blocksize'], controlBlockSize=d['epsilon'], elasticBufferSize=d['beta'])
+        return cls(config=config, blockSize=d['blocksize'], controlBlockSize=d['epsilon'], elasticBufferSize=d['beta'],
+                   blockInterval=d['blockinterval'])
 
     def GetBlockSizeLimit(self):
-        return min(self.controlBlockSize + self.elasticBufferSize, MAX_CONSENSUS_BLOCK_SIZE)
+        val = _muldiv(self.controlBlockSize + self.elasticBufferSize, self.blockInterval, BASE_BLOCK_INTERVAL)
+        return min(val, MAX_CONSENSUS_BLOCK_SIZE)
 
-    def GetNextBlockSizeLimit(self, config=DEFAULT_ABLA_CONFIG):
-        return self.NextBlockState(config=config, nextBlockSize=0).GetBlockSizeLimit()
+    def GetNextBlockSizeLimit(self, nextBlockInterval, config=DEFAULT_ABLA_CONFIG):
+        return self.NextBlockState(config=config, nextBlockInterval=nextBlockInterval, nextBlockSize=0).GetBlockSizeLimit()
 
-    def NextBlockState(self, nextBlockSize, config=DEFAULT_ABLA_CONFIG):
-        ret = AblaState(config=config, blockSize=nextBlockSize)
+    def NextBlockState(self, nextBlockSize, nextBlockInterval, config=DEFAULT_ABLA_CONFIG):
+        ret = AblaState(config=config, blockSize=nextBlockSize, blockInterval=nextBlockInterval)
 
-        clampedBlockSize = min(self.blockSize, self.controlBlockSize + self.elasticBufferSize)
-        amplifiedCurrentBlockSize = _muldiv(config.zeta_xB7, clampedBlockSize, B7)
+        tau = self.blockInterval
+        clampedBlockSize = min(self.blockSize, _muldiv(self.controlBlockSize + self.elasticBufferSize, tau,
+                                                       BASE_BLOCK_INTERVAL))
+        amplifiedCurrentBlockSize = _muldiv(config.zeta_xB7, _muldiv(clampedBlockSize, BASE_BLOCK_INTERVAL, tau), B7)
 
         # control buffer function
         if amplifiedCurrentBlockSize > self.controlBlockSize:
@@ -89,14 +97,16 @@ class AblaState:
             amplifiedBlockSizeLimit = _muldiv(config.zeta_xB7, self.controlBlockSize + self.elasticBufferSize, B7)
             bytesMax = amplifiedBlockSizeLimit - self.controlBlockSize
             scalingOffset = _muldiv(_muldiv(config.zeta_xB7, self.elasticBufferSize, B7), bytesToAdd, bytesMax)
-            ret.controlBlockSize = self.controlBlockSize + (bytesToAdd - scalingOffset) // config.gammaReciprocal
+            ret.controlBlockSize = self.controlBlockSize + _muldiv(bytesToAdd - scalingOffset, tau,
+                                                                   config.gammaReciprocal * BASE_BLOCK_INTERVAL)
         else:
             bytesToRemove = self.controlBlockSize - amplifiedCurrentBlockSize
-            ret.controlBlockSize = self.controlBlockSize - bytesToRemove // config.gammaReciprocal
+            ret.controlBlockSize = self.controlBlockSize - _muldiv(bytesToRemove, tau,
+                                                                   config.gammaReciprocal * BASE_BLOCK_INTERVAL)
             ret.controlBlockSize = max(ret.controlBlockSize, config.epsilon0)
 
         # elastic buffer function
-        bufferDecay = self.elasticBufferSize // config.thetaReciprocal
+        bufferDecay = _muldiv(self.elasticBufferSize, tau, config.thetaReciprocal * BASE_BLOCK_INTERVAL)
         if amplifiedCurrentBlockSize > self.controlBlockSize:
             bytesToAdd = (ret.controlBlockSize - self.controlBlockSize) * config.delta
             ret.elasticBufferSize = self.elasticBufferSize - bufferDecay + bytesToAdd
@@ -113,8 +123,9 @@ class AblaState:
     def CalcLookaheadBlockSizeLimit_old_iterative(self, count, config=DEFAULT_ABLA_CONFIG):
         lookaheadState = self
         for i in range(count):
-            maxSize = lookaheadState.GetNextBlockSizeLimit(config=config)
-            lookaheadState = lookaheadState.NextBlockState(config=config, nextBlockSize=maxSize)
+            maxSize = lookaheadState.GetNextBlockSizeLimit(config=config, nextBlockInterval=BASE_BLOCK_INTERVAL)
+            lookaheadState = lookaheadState.NextBlockState(config=config, nextBlockSize=maxSize,
+                                                           nextBlockInterval=BASE_BLOCK_INTERVAL)
         return lookaheadState.GetBlockSizeLimit()
 
     @staticmethod
@@ -136,23 +147,24 @@ class AblaState:
         if count == 0:
             return lookaheadState.GetBlockSizeLimit()
         # Every block is at the base interval of 600 seconds.
-        tau = 600
+        tau = BASE_BLOCK_INTERVAL
         # The first transition is done exactly: it responds to this state's own stored block size, and its
         # result (a full block) is the state the remaining `count - 1` blocks start from.
-        nextBlockSize = lookaheadState.GetNextBlockSizeLimit(config=config)
-        lookaheadState = lookaheadState.NextBlockState(config=config, nextBlockSize=nextBlockSize)
+        nextBlockSize = lookaheadState.GetNextBlockSizeLimit(config=config, nextBlockInterval=tau)
+        lookaheadState = lookaheadState.NextBlockState(config=config, nextBlockSize=nextBlockSize,
+                                                       nextBlockInterval=tau)
         eps = lookaheadState.controlBlockSize
         return self._BoundSumAfterFullBlocks(config, tau, eps + lookaheadState.elasticBufferSize, eps, count - 1)
 
     def __repr__(self):
         return f"<class 'AblaState' blockSize={self.blockSize} controlBlockSize={self.controlBlockSize}" \
-               f" elasticBufferSize={self.elasticBufferSize}>"
+               f" elasticBufferSize={self.elasticBufferSize} blockInterval={self.blockInterval}>"
 
     def __str__(self):
         return repr(self)
 
     def as_tup(self):
-        return self.blockSize, self.controlBlockSize, self.elasticBufferSize
+        return self.blockSize, self.controlBlockSize, self.elasticBufferSize, self.blockInterval
 
     def __eq__(self, other):
         return self.as_tup() == other.as_tup()
