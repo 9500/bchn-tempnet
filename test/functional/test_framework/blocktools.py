@@ -316,6 +316,33 @@ def get_next_block_interval(node) -> int:
     return node.getblockchaininfo()["next_target_time"]
 
 
+def get_chaintip_ticks(node) -> int:
+    """Cumulative ticks of the chaintip, inclusive of its own interval."""
+    return node.getblockchaininfo()["blocks_ticks"]
+
+
+def get_block_ticks(node, blockhash) -> int:
+    """Cumulative ticks of `blockhash`, inclusive of its own interval."""
+    return node.getblockheader(blockhash)["ticks"]
+
+
+def get_next_block_ticks(node) -> int:
+    """Ticks of the block that would be mined on top of the current tip.
+    This is what the mempool evaluates maturity/locktime against."""
+    return get_chaintip_ticks(node) + get_next_block_interval(node)
+
+
+def get_block_tick_depth(node, blockhash) -> int:
+    """`T(tip) - T(blockhash)`, i.e. the exclusion of the block's own interval.
+    This is the quantity the finalization gate and the maturity predicate use."""
+    return get_chaintip_ticks(node) - get_block_ticks(node, blockhash)
+
+
+def get_next_block_tick_depth(node, blockhash) -> int:
+    """Tick depth of `blockhash` as evaluated by a tx in the next block."""
+    return get_next_block_ticks(node) - get_block_ticks(node, blockhash)
+
+
 def get_coinbase_subsidy(node, for_mining=False, include_fees=False) -> int:
     """Returns the coinbase subsidy for the block at the tip (in satoshis), or the next block after the tip if
     for_mining==True. Pass include_fees=True to return the subsidy + fee (that is, the max coinbase value aka total

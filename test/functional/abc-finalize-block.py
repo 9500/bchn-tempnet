@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-# Copyright (c) 2018-2021 The Bitcoin developers
+# Copyright (c) 2018-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the finalizeblock RPC calls."""
 
 import time
 
+from test_framework.blocktools import (
+    get_block_ticks,
+    get_chaintip_ticks,
+)
+from test_framework.cdefs import DEFAULT_MAX_REORG_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -27,12 +32,24 @@ class FinalizeBlockTest(BitcoinTestFramework):
         self.finalization_delay = 2 * 60 * 60
 
     def run_test(self):
+        def assert_finalized_at_gate(node):
+            """The finalized block is the shallowest block at or beyond one
+            full finalization depth below the tip. Stated as the gate itself,
+            so it holds at any interval and across the seam."""
+            fin = node.getfinalizedblockhash()
+            assert fin != "", "expected a finalized block"
+            tip = get_chaintip_ticks(node)
+            assert tip - get_block_ticks(node, fin) >= DEFAULT_MAX_REORG_TICKS
+            child = node.getblockheader(fin).get("nextblockhash")
+            assert child, "finalized block must not be the tip"
+            assert tip - get_block_ticks(node, child) < DEFAULT_MAX_REORG_TICKS
+
         node = self.nodes[0]
 
         self.mocktime = int(time.time())
 
         self.log.info("Test block finalization...")
-        self.generatetoaddress(node, 10, node.get_deterministic_priv_key().address)
+        self.mine_for_ticks(node, DEFAULT_MAX_REORG_TICKS)
         tip = node.getbestblockhash()
         node.finalizeblock(tip)
         assert_equal(node.getbestblockhash(), tip)
@@ -92,7 +109,13 @@ class FinalizeBlockTest(BitcoinTestFramework):
         wait_for_block(node, invalid_block)
 
         # Later block headers are rejected
-        for i in range(2, 9):
+        # Mine until the fork point's parent is the shallowest block at the
+        # gate below alt_node's tip. A block adds at most one interval, so
+        # stopping as soon as the depth reaches `depth - interval` lands the
+        # parent in the band [depth - interval, depth).
+        fork_interval = alt_node.getblockheader(fork_block)["target_time"]
+        while get_chaintip_ticks(alt_node) - get_block_ticks(alt_node, fork_block) \
+                < DEFAULT_MAX_REORG_TICKS - fork_interval:
             self.generatetoaddress(alt_node,
                 1, alt_node.get_deterministic_priv_key().address)
             assert_raises_rpc_error(-5, RPC_BLOCK_NOT_FOUND_ERROR,
@@ -128,8 +151,9 @@ class FinalizeBlockTest(BitcoinTestFramework):
         assert_equal(node.getbestblockhash(), tip)
         assert_equal(node.getfinalizedblockhash(), fork_block)
 
-        assert_equal(alt_node.getfinalizedblockhash(), node.getblockheader(
-            node.getfinalizedblockhash())['previousblockhash'])
+        # Auto-finalization is a tick-depth rule, not a height coincidence:
+        # assert the gate rather than a specific parent relationship.
+        assert_finalized_at_gate(alt_node)
 
         # The node will now accept that chain as the finalized block moved back.
         # Generate a new block on alt_node to trigger getheader from node
@@ -197,12 +221,15 @@ class FinalizeBlockTest(BitcoinTestFramework):
         node.reconsiderblock(alt_node.getbestblockhash())
         block_to_autofinalize = self.generatetoaddress(alt_node,
             1, alt_node.get_deterministic_priv_key().address)[-1]
-        alt_node_new_tip = self.generatetoaddress(alt_node,
-            9, alt_node.get_deterministic_priv_key().address)[-1]
+        # Mine until alt_node_tip sits one finalization depth below the new
+        # tip, so it becomes the auto-finalized block.
+        self.mine_until_tick_depth(alt_node, alt_node_tip, DEFAULT_MAX_REORG_TICKS)
+        alt_node_new_tip = alt_node.getbestblockhash()
         wait_for_tip(node, alt_node_new_tip)
 
         assert_equal(node.getbestblockhash(), alt_node.getbestblockhash())
-        assert_equal(node.getfinalizedblockhash(), alt_node_tip)
+        assert_finalized_at_gate(node)
+        assert_equal(node.getfinalizedblockhash(), alt_node.getfinalizedblockhash())
         assert_equal(alt_node.getfinalizedblockhash(), alt_node_tip)
 
         self.log.info(
@@ -301,9 +328,9 @@ class FinalizeBlockTest(BitcoinTestFramework):
         #                           >(220)-> // ->(250 tip)
         #                          /
         # (200)->(201)-> // ->(209)->(210)
-        blocks = self.generatetoaddress(delay_node,
-            20, alt_node.get_deterministic_priv_key().address)
-        reboot_autofinalized_block = blocks[10]
+        # Two full depths with no delay: still nothing finalized, because the
+        # aging gate has not expired.
+        blocks = self.mine_for_ticks(delay_node, 2 * DEFAULT_MAX_REORG_TICKS)
         new_tip = blocks[-1]
         wait_for_tip(delay_node, new_tip)
 
@@ -324,8 +351,9 @@ class FinalizeBlockTest(BitcoinTestFramework):
             1, delay_node.get_deterministic_priv_key().address)[-1]
         wait_for_tip(delay_node, new_tip)
 
-        assert_equal(delay_node.getfinalizedblockhash(),
-                     reboot_autofinalized_block)
+        # Auto-finalization resumed and landed on the gate. Do not pin the
+        # specific block: `blocks[10]` was only correct for a 20-block batch.
+        assert_finalized_at_gate(delay_node)
 
 
 if __name__ == '__main__':
