@@ -10,9 +10,12 @@ import time
 from test_framework.blocktools import (
     create_block,
     create_coinbase,
+    get_block_confirmations_ticks,
+    get_block_interval,
     get_chaintip_ticks,
     get_coinbase_subsidy,
     get_next_block_tick_depth,
+    get_next_block_interval,
 )
 from test_framework.messages import (
     COIN,
@@ -46,6 +49,12 @@ SEQUENCE_LOCKTIME_MASK = 0x0000ffff
 NOT_FINAL_ERROR = "non-BIP68-final (code 64)"
 
 
+# The framework cache chain is 200 legacy blocks and MTP crosses the activation
+# time 6 blocks later, so the seam block is always the 7th block mined here.
+# `mempool_spend_coinbase.py` relies on the same two facts.
+CACHE_HEIGHT = 200
+SEAM_HEIGHT = CACHE_HEIGHT + 6
+
 class BIP68Test(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
@@ -58,16 +67,20 @@ class BIP68Test(BitcoinTestFramework):
     def run_test(self):
         self.relayfee = self.nodes[0].getnetworkinfo()["relayfee"]
 
+        # The cache chain is 200 uniform legacy blocks with the seam 6 blocks
+        # later. Every span below is measured in ticks, so the same code covers
+        # both regimes; this just records which one this run is in.
+        assert_equal(self.nodes[0].getblockcount(), CACHE_HEIGHT)
+        assert_equal(self.block_interval, 600)
+        self.log.info("Start: height=%d ticks=%d interval=%ds",
+                      CACHE_HEIGHT, get_chaintip_ticks(self.nodes[0]), self.block_interval)
+
+        # Must precede the bulk generate below, which runs past the seam.
+        self.log.info("Running test sequence-lock-across-seam")
+        self.test_sequence_lock_across_seam()
+
         # Generate some coins
         self.generate(self.nodes[0], 110)
-        # The cache chain is 200 uniform legacy blocks with the seam 6 blocks
-        # later, so the above crosses it if upgrade2027 is active. Either way
-        # every span below is measured in ticks, so both regimes are covered by
-        # the same code; this just records which one this run is in.
-        assert self.block_interval in (60, 600)
-        self.log.info("start: height=%d ticks=%d interval=%ds",
-                      self.nodes[0].getblockcount(),
-                      get_chaintip_ticks(self.nodes[0]), self.block_interval)
 
         self.log.info("Running test disable flag")
         self.test_disable_flag()
@@ -78,8 +91,7 @@ class BIP68Test(BitcoinTestFramework):
         self.log.info("Running test sequence-lock-unconfirmed-inputs")
         self.test_sequence_lock_unconfirmed_inputs()
 
-        self.log.info(
-            "Running test BIP68 not consensus before versionbits activation")
+        self.log.info("Running test BIP68 not consensus before versionbits activation")
         self.test_bip68_not_consensus()
 
         self.log.info("Activating BIP68 (and 112/113)")
@@ -90,6 +102,56 @@ class BIP68Test(BitcoinTestFramework):
         self.test_version2_relay()
 
         self.log.info("Passed")
+
+    # A coin confirmed in the seam block under-states the passing relative-lock
+    # value: `confirmations_ticks` adds the coin's own interval (600), while the
+    # predicate measures to the end of the spending block (60), so a naive
+    # `confirmations_ticks // 600` reports one unit more than consensus allows.
+    def test_sequence_lock_across_seam(self):
+        node = self.nodes[0]
+        self.generate(node, SEAM_HEIGHT - 1 - node.getblockcount())
+        assert_equal(node.getblockcount(), SEAM_HEIGHT - 1)
+
+        # Fund a regular output confirmed in the seam block itself, which is
+        # still mined at the legacy interval.
+        fund_txid = node.sendtoaddress(node.getnewaddress(), 5)
+        self.generate(node, 1)
+        assert_equal(node.getblockcount(), SEAM_HEIGHT)
+        assert_equal(get_block_interval(node, SEAM_HEIGHT), 600)
+        assert_equal(get_chaintip_ticks(node), SEAM_HEIGHT * 600)
+
+        if get_next_block_interval(node) != 60:
+            assert not self.options.upgrade2027activation
+            self.log.info("Seam sequence test skipped: no upgrade2027 seam in this run")
+            return
+
+        # Eight 60-tick blocks put the coin at next-block depth 540, so n = 1
+        # is not satisfied.
+        self.generate(node, 8)
+        assert_equal(get_next_block_tick_depth(node, SEAM_HEIGHT), 540)
+        assert_equal(get_block_confirmations_ticks(node, SEAM_HEIGHT), 1080)
+        assert_equal(get_block_confirmations_ticks(node, SEAM_HEIGHT) // 600, 1)
+
+        coin = next(u for u in node.listunspent() if u["txid"] == fund_txid)
+        tx = CTransaction()
+        tx.nVersion = 2
+        tx.vin = [CTxIn(COutPoint(int(coin["txid"], 16), coin["vout"]),
+                        nSequence=1)]
+        tx.vout = [CTxOut(int(coin["amount"] * COIN) - 1000, CScript([b'a']))]
+        pad_tx(tx)
+        tx.rehash()
+        rawtx = node.signrawtransactionwithwallet(ToHex(tx))["hex"]
+
+        # conf_ticks says 1080 (n = 1), but the span is only 540 ticks.
+        assert_raises_rpc_error(-26, NOT_FINAL_ERROR, node.sendrawtransaction, rawtx)
+
+        # One more block reaches exactly 600 ticks and the same spend is taken.
+        self.generate(node, 1)
+        assert_equal(get_next_block_tick_depth(node, SEAM_HEIGHT), 600)
+        assert_equal(get_block_confirmations_ticks(node, SEAM_HEIGHT), 1140)
+        node.sendrawtransaction(rawtx)
+        self.generate(node, 1)
+        self.log.info("Seam: n=1 rejected at depth 540 (conf_ticks 1080), accepted at depth 600 (conf_ticks 1140)")
 
     # Test that BIP68 is not in effect if tx version is 1, or if
     # the first sequence bit is set.
