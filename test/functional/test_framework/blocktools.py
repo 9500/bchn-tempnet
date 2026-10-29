@@ -84,7 +84,8 @@ def serialize_script_num(value):
 # otherwise an anyone-can-spend output.
 
 
-def create_coinbase(height, pubkey=None, *, scriptPubKey=None, tokenData=None, pad_to_size=None, nValue=None):
+def create_coinbase(height, pubkey=None, *, scriptPubKey=None, tokenData=None, pad_to_size=None, nValue=None,
+                    noAutoHalving=False):
     coinbase = CTransaction()
     coinbase.nVersion = 2  # Set nVersion to 2 so that we never trigger the upgrade2027 >=25 BCH rule
     coinbase.vin.append(CTxIn(COutPoint(0, 0xffffffff),
@@ -94,8 +95,9 @@ def create_coinbase(height, pubkey=None, *, scriptPubKey=None, tokenData=None, p
         coinbaseoutput.nValue = int(nValue)
     else:
         coinbaseoutput.nValue = 50 * COIN
-    halvings = int(height / 150)  # regtest
-    coinbaseoutput.nValue >>= halvings
+    if not noAutoHalving:
+        halvings = int(height / 150)  # regtest
+        coinbaseoutput.nValue >>= halvings
     if scriptPubKey is not None:
         coinbaseoutput.scriptPubKey = scriptPubKey
     elif pubkey is not None:
