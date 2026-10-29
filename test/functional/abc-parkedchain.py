@@ -169,9 +169,25 @@ class ParkedChainTest(BitcoinTestFramework):
                 return False
             wait_until(check_block)
 
-        def check_reorg_protection(depth, extra_blocks):
-            self.log.info(
-                "Test deep reorg parking, {} block deep".format(depth))
+        def parking_penalty_blocks(depth_blocks, depth_ticks):
+            """P, in units of one block's work, per the tick-based unpark ramp.
+
+            P/D = (clamp(d,600,2400)/2400)^2, D being the defender's work since the fork.
+            A chain at depth D + k stays parked for k <= P and is unparked by the next block.
+            """
+            clamped = min(max(depth_ticks, 600), 2400)
+            return depth_blocks * clamped * clamped // (2400 * 2400)
+
+        def check_reorg_protection(depth_ticks):
+            # Depths are given in ticks, not blocks: the unpark penalty is tick-keyed, so at
+            # 600 ticks 600/1200/1800/2400/3000/3600/60000 are the legacy 1/2/3/4/5/6/100
+            # blocks, while at 60 ticks they are 10/20/30/40/50/60/1000. The one-block
+            # boundary case arrives as `self.block_interval` ticks, since the parking *trigger*
+            # is block-count keyed and must stay one block at either interval.
+            depth = depth_ticks // self.block_interval
+            extra_blocks = parking_penalty_blocks(depth, depth_ticks)
+            self.log.info("Test deep reorg parking, {} ticks ({} blocks) deep".format(
+                depth_ticks, depth))
 
             # Invalidate the tip on node 0, so it doesn't follow node 1.
             node.invalidateblock(node.getbestblockhash())
@@ -182,27 +198,27 @@ class ParkedChainTest(BitcoinTestFramework):
             self.generatetoaddress(node,
                                    nblocks=depth,
                                    address=node.getnewaddress(label='coinbase'))
-            # extra block should now find themselves parked
+            # The chain is now inside the ramp's tolerance (D + P), so these blocks park.
             for i in range(extra_blocks):
                 self.generate(node, 1)
                 wait_for_parked_block(node.getbestblockhash())
 
-            # If we mine one more block, the node reorgs.
+            # One block past D + P, so the parking test no longer holds and the node reorgs.
             self.generate(node, 1)
             wait_until(lambda: parking_node.getbestblockhash()
                        == node.getbestblockhash())
 
-        check_reorg_protection(1, 0)
-        check_reorg_protection(2, 0)
-        check_reorg_protection(3, 1)
-        check_reorg_protection(4, 4)
-        check_reorg_protection(5, 5)
-        check_reorg_protection(6, 6)
-        check_reorg_protection(100, 100)
+        # Tick depths to exercise: the trigger boundary (one block, expressed in ticks) plus the
+        # ramp anchors. Depths are in ticks because the penalty is tick-keyed, but the trigger is
+        # block-count keyed, so the boundary case must scale with the interval while the anchors
+        # must not. At 600 ticks this is the legacy 1/1/2/3/4/5/6/100 blocks; at 60 ticks it is
+        # 1/10/20/30/40/50/60/1000 blocks.
+        for depth_ticks in sorted({self.block_interval, 600, 1200, 1800, 2400, 3000, 3600, 60000}):
+            check_reorg_protection(depth_ticks)
 
         # try deep reorg with a log check.
         with parking_node.assert_debug_log(["Park block"]):
-            check_reorg_protection(3, 1)
+            check_reorg_protection(1800)
 
         self.log.info(
             "Accepting many blocks at once (possibly out of order) should not park if there is no reorg.")
@@ -223,25 +239,28 @@ class ParkedChainTest(BitcoinTestFramework):
             raise AssertionError("Parked block when there was no deep reorg")
 
         self.log.info("Test that unparking works when -parkdeepreorg=0")
-        # Set up parking node height = fork + 4, node height = fork + 5
+        # Set the defender at the 2x lock-in depth (2400 ticks since the fork) and the
+        # competitor at 3000 ticks, then walk the competitor up to exactly D + P (== 2D once
+        # d >= 2400) and one interval past it. At 600 ticks this is the legacy 4/5 blocks,
+        # +3, +1; at 60 ticks it is 40/50 blocks, +30, +1.
         node.invalidateblock(node.getbestblockhash())
-        self.generate(parking_node, 3)
-        self.generatetoaddress(node,
-                               nblocks=5,
-                               address=node.getnewaddress(label='coinbase'))
+        self.mine_for_ticks(parking_node, 2400 - self.block_interval)
+        self.mine_for_ticks(node, 3000)
         wait_for_parked_block(node.getbestblockhash())
-        # Restart the parking node without parkdeepreorg.
-        self.restart_node(1, ["-parkdeepreorg=0"])
+        # Restart the parking node without parkdeepreorg, preserving the arguments the harness
+        # injected (restart_node replaces self.extra_args[1], and dropping
+        # -upgrade2027activationtime would reload this chain at 600 ticks and reject it).
+        restart_args = [a for a in self.extra_args[1] if not a.startswith('-parkdeepreorg')]
+        self.restart_node(1, ["-parkdeepreorg=0"] + restart_args)
         parking_node = self.nodes[1]
         connect_nodes_bi(node, parking_node)
         # The other chain should still be marked 'parked'.
         wait_for_parked_block(node.getbestblockhash())
-        # Three more blocks is not enough to unpark. Even though its PoW is
-        # larger, we are still following the delayed-unparking rules.
-        self.generate(node, 3)
+        # Reaching exactly D + P is not enough to unpark: the comparison is strict.
+        self.mine_for_ticks(node, 1800)
         wait_for_parked_block(node.getbestblockhash())
-        # Final block pushes over the edge, and should unpark.
-        self.generate(node, 1)
+        # Past D + P, the chain unparks.
+        self.mine_for_ticks(node, 600)
         wait_until(lambda: parking_node.getbestblockhash() ==
                    node.getbestblockhash(), timeout=5)
 
