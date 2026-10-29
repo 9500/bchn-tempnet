@@ -7,7 +7,7 @@
 """
 
 from decimal import Decimal
-from test_framework.cdefs import COINBASE_MATURITY
+from test_framework.cdefs import LEGACY_COINBASE_MATURITY_10_MIN_BLOCKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_approx,
@@ -38,7 +38,7 @@ class SimulateTxTest(BitcoinTestFramework):
         w1 = node.get_wallet_rpc('w1')
         w2 = node.get_wallet_rpc('w2')
 
-        self.generatetoaddress(node, COINBASE_MATURITY + 1, w0.getnewaddress())
+        self.generatetoaddress(node, LEGACY_COINBASE_MATURITY_10_MIN_BLOCKS + 1, w0.getnewaddress())
         assert_equal(w0.getbalance(), 50.0)
         assert_equal(w1.getbalance(), 0.0)
 

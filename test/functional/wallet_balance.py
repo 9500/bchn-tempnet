@@ -4,7 +4,7 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the wallet balance RPC methods."""
-from test_framework.cdefs import COINBASE_MATURITY
+from test_framework.cdefs import LEGACY_COINBASE_MATURITY_10_MIN_BLOCKS
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
@@ -73,14 +73,14 @@ class WalletTest(BitcoinTestFramework):
         assert_equal(len(self.nodes[1].listunspent(query_options={'include_immature_coinbase': True})), 1)
         assert_equal(len(self.nodes[1].listunspent(query_options={'include_immature_coinbase': False})), 0)
 
-        self.generatetoaddress(self.nodes[1], COINBASE_MATURITY, RANDOM_COINBASE_ADDRESS)
+        self.generatetoaddress(self.nodes[1], LEGACY_COINBASE_MATURITY_10_MIN_BLOCKS, RANDOM_COINBASE_ADDRESS)
         self.sync_all()
 
         # Verify listunspent returns all immature coinbases if 'include_immature_coinbase' is set
         # Wallet will see the coinbases going to the imported 'RANDOM_COINBASE_ADDRESS'
         assert_equal(len(self.nodes[0].listunspent(query_options={'include_immature_coinbase': False})), 1)
         assert_equal(len(self.nodes[0].listunspent(query_options={'include_immature_coinbase': True})),
-                     COINBASE_MATURITY + 1)
+                     LEGACY_COINBASE_MATURITY_10_MIN_BLOCKS + 1)
 
         assert_equal(self.nodes[0].getbalance(), 50)
         assert_equal(self.nodes[1].getbalance(), 50)

@@ -345,6 +345,18 @@ def get_next_block_tick_depth(node, blockhash) -> int:
     return get_next_block_ticks(node) - get_block_ticks(node, blockhash)
 
 
+def get_block_confirmations_ticks(node, blockhash_or_height: Union[int, str]) -> int:
+    """Get the number of confirmations for a block on the main chain. Returns -1 if the block is not on the main
+    chain. The number of confirmations is get_block_tick_depth() with the block's own target_time added, so
+    for instance the confirmations for the tip is equivalent to its 'target_time'."""
+    if isinstance(blockhash_or_height, int):
+        blockhash = node.getblockhash(blockhash_or_height)
+    else:
+        assert isinstance(blockhash_or_height, str)
+        blockhash = blockhash_or_height
+    return node.getblockheader(blockhash)["confirmations_ticks"]
+
+
 def get_coinbase_subsidy(node, for_mining=False, include_fees=False) -> int:
     """Returns the coinbase subsidy for the block at the tip (in satoshis), or the next block after the tip if
     for_mining==True. Pass include_fees=True to return the subsidy + fee (that is, the max coinbase value aka total

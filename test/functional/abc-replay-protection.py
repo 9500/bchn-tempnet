@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2015-2016 The Bitcoin Core developers
-# Copyright (c) 2017-2022 The Bitcoin developers
+# Copyright (c) 2017-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """
@@ -15,8 +15,10 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
     create_tx_with_script,
+    get_block_confirmations_ticks,
     make_conform_to_ctor,
 )
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.key import ECKey
 from test_framework.messages import (
     COIN,
@@ -69,7 +71,8 @@ class ReplayProtectionTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
         # First create the coinbase
         height = self.block_heights[base_block_hash] + 1
-        coinbase = create_coinbase(height)
+        # NB: Setting the nValue to 5 BCH is safe both with and without the 1-min blocktime upgrade activated
+        coinbase = create_coinbase(height, nValue=5 * COIN)
         coinbase.rehash()
         block = create_block(base_block_hash, coinbase, block_time)
 
@@ -129,15 +132,15 @@ class ReplayProtectionTest(BitcoinTestFramework):
 
         # Now we need that block to mature so we can spend the coinbase.
         maturity_blocks = []
-        for i in range(99):
-            block(5000 + i)
+        for i in range(0, COINBASE_MATURITY_TICKS - self.block_interval, self.block_interval):
+            block(55000 + len(maturity_blocks))
             maturity_blocks.append(self.tip)
             save_spendable_output()
         node.p2p.send_blocks_and_test(maturity_blocks, node)
 
         # collect spendable outputs now to avoid cluttering the code later on
         out = []
-        for i in range(100):
+        while spendable_outputs:
             out.append(get_spendable_output())
 
         # Generate a key pair to test P2SH sigops count
@@ -150,18 +153,18 @@ class ReplayProtectionTest(BitcoinTestFramework):
             # Fund transaction
             script = CScript([public_key, OP_CHECKSIG])
             txfund = create_tx_with_script(
-                spend.tx, spend.n, b'', 50 * COIN - 1000, script)
+                spend.tx, spend.n, b'', 5 * COIN - 1000, script)
             txfund.rehash()
 
             # Spend transaction
             txspend = CTransaction()
-            txspend.vout.append(CTxOut(50 * COIN - 2000, CScript([OP_TRUE])))
+            txspend.vout.append(CTxOut(5 * COIN - 2000, CScript([OP_TRUE])))
             txspend.vin.append(CTxIn(COutPoint(txfund.sha256, 0), b''))
 
             # Sign the transaction
             sighashtype = (forkvalue << 8) | SIGHASH_ALL | SIGHASH_FORKID
             sighash = SignatureHashForkId(
-                script, txspend, 0, sighashtype, 50 * COIN - 1000)
+                script, txspend, 0, sighashtype, 5 * COIN - 1000)
             sig = private_key.sign_ecdsa(sighash) + \
                 bytes(bytearray([SIGHASH_ALL | SIGHASH_FORKID]))
             txspend.vin[0].scriptSig = CScript([sig])
