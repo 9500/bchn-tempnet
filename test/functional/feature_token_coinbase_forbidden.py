@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022-2026 The Bitcoin developers
+# Copyright (c) 2022-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test that ensures coinbase txns may create "fake" token data outputs pre-activation, as well as outputs that send to
@@ -10,7 +10,8 @@ import random
 from typing import DefaultDict, List, Union
 
 from test_framework import address
-from test_framework.blocktools import create_block, create_coinbase
+from test_framework.blocktools import create_block, create_coinbase, get_coinbase_subsidy
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.key import ECKey
 from test_framework.messages import (
     CBlock,
@@ -82,6 +83,11 @@ class TokenCoinbaseForbiddenTest(BitcoinTestFramework):
         nTime = FromHex(CBlock(), node.getblock(blockhashes[-1], 0)).nTime + 1
         height = node.getblockchaininfo()["blocks"] + 1
 
+        # Enforce that we either run with 1-min or 10-min blocktime. If something changes, and we activate some
+        # future upgrade that is not 1 or 10 mins, this test needs updating since it makes assumptions.
+        self.log.info(f"Running test with block interval: {self.block_interval}")
+        assert self.block_interval in (60, 600)
+
 
         # Create a PATFO in coinbase pre-activation, should work ok
         bad_token = TokenOutputData(id=random.getrandbits(256), amount=1000, commitment=b'Bad!!',
@@ -107,8 +113,10 @@ class TokenCoinbaseForbiddenTest(BitcoinTestFramework):
         height += 1
         nTime += 1
 
-        # Generate 101 blocks to allow for our coinbase txns to be mature
-        blockhashes += node.generatetoaddress(101, self.addr)
+        # Mine enough ticks to mature the coinbase txns created above: 60,000 ticks, i.e. 100
+        # legacy 10-minute blocks or 1,000 one-minute blocks after the 2027 upgrade.
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS, address=self.addr)
+        blockhashes.append(node.getbestblockhash())
         nTime = FromHex(CBlock(), node.getblock(blockhashes[-1], 0)).nTime + 1
         height = node.getblockchaininfo()["blocks"] + 1
 
@@ -144,8 +152,10 @@ class TokenCoinbaseForbiddenTest(BitcoinTestFramework):
         # 1. Set the activation MTP height a bit forward of the current tip's height
         activation_height = node.getblockchaininfo()["blocks"] + 1
         self.log.info(f"ACTIVATION HEIGHT: {activation_height}")
-        # 2. Restart the node, enabling upgrade9
-        self.restart_node(0, extra_args=[f"-upgrade9activationheight={activation_height}"] + self.base_extra_args)
+        # 2. Restart the node, enabling upgrade9. Preserve the arguments the test harness injected
+        #    (notably -upgrade2027activationtime), since restart_node() replaces self.extra_args[0].
+        restart_args = [a for a in self.extra_args[0] if not a.startswith('-upgrade9activationheight')]
+        self.restart_node(0, extra_args=[f"-upgrade9activationheight={activation_height}"] + restart_args)
         self.reconnect_p2p()
 
         # Mine blocks until it activates
@@ -233,8 +243,10 @@ class TokenCoinbaseForbiddenTest(BitcoinTestFramework):
             prev_block_hash = uint256_from_hex(prev_block_hash)
         block_time = nTime or FromHex(CBlock(), self.nodes[0].getblock(uint256_to_hex(prev_block_hash), 0)).nTime + 1
 
-        # First create the coinbase
-        coinbase = create_coinbase(height, scriptPubKey=script_pub_key or self.spk, tokenData=token_data)
+        # The coinbase value must match the subsidy in force for this block: it scales with the block
+        # interval after the 2027 upgrade, so a hardcoded 50 BCH would be a 10x overpay at 60 ticks.
+        coinbase = create_coinbase(height, scriptPubKey=script_pub_key or self.spk, tokenData=token_data,
+                                   nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True))
         coinbase.rehash()
 
         txns = txns or []
