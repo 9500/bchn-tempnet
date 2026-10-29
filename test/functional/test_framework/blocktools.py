@@ -323,8 +323,19 @@ def get_chaintip_ticks(node) -> int:
     return node.getblockchaininfo()["blocks_ticks"]
 
 
-def get_block_ticks(node, blockhash) -> int:
-    """Cumulative ticks of `blockhash`, inclusive of its own interval."""
+def _resolve_blockhash_or_height(node, blockhash_or_height: Union[int, str]) -> str:
+    """Internal function: resolve blockhash_or_height into a blockhash"""
+    if isinstance(blockhash_or_height, int):
+        blockhash = node.getblockhash(blockhash_or_height)
+    else:
+        blockhash = blockhash_or_height
+    assert isinstance(blockhash, str) and len(blockhash) == 64
+    return blockhash
+
+
+def get_block_ticks(node, blockhash_or_height: Union[int, str]) -> int:
+    """Cumulative ticks of `blockhash_or_height`, inclusive of its own interval."""
+    blockhash = _resolve_blockhash_or_height(node, blockhash_or_height)
     return node.getblockheader(blockhash)["ticks"]
 
 
@@ -334,26 +345,30 @@ def get_next_block_ticks(node) -> int:
     return get_chaintip_ticks(node) + get_next_block_interval(node)
 
 
-def get_block_tick_depth(node, blockhash) -> int:
-    """`T(tip) - T(blockhash)`, i.e. the exclusion of the block's own interval.
+def get_block_tick_depth(node, blockhash_or_height: Union[int, str]) -> int:
+    """`T(tip) - T(blockhash_or_height)`, i.e. the exclusion of the block's own interval.
     This is the quantity the finalization gate and the maturity predicate use."""
+    blockhash = _resolve_blockhash_or_height(node, blockhash_or_height)
     return get_chaintip_ticks(node) - get_block_ticks(node, blockhash)
 
 
-def get_next_block_tick_depth(node, blockhash) -> int:
-    """Tick depth of `blockhash` as evaluated by a tx in the next block."""
+def get_next_block_tick_depth(node, blockhash_or_height: Union[int, str]) -> int:
+    """Tick depth of `blockhash_or_height` as evaluated by a tx in the next block."""
+    blockhash = _resolve_blockhash_or_height(node, blockhash_or_height)
     return get_next_block_ticks(node) - get_block_ticks(node, blockhash)
+
+
+def get_block_interval(node, blockhash_or_height: Union[int, str]) -> int:
+    """Target interval used to mine `blockhash_or_height`."""
+    blockhash = _resolve_blockhash_or_height(node, blockhash_or_height)
+    return node.getblockheader(blockhash)["target_time"]
 
 
 def get_block_confirmations_ticks(node, blockhash_or_height: Union[int, str]) -> int:
     """Get the number of confirmations for a block on the main chain. Returns -1 if the block is not on the main
     chain. The number of confirmations is get_block_tick_depth() with the block's own target_time added, so
     for instance the confirmations for the tip is equivalent to its 'target_time'."""
-    if isinstance(blockhash_or_height, int):
-        blockhash = node.getblockhash(blockhash_or_height)
-    else:
-        assert isinstance(blockhash_or_height, str)
-        blockhash = blockhash_or_height
+    blockhash = _resolve_blockhash_or_height(node, blockhash_or_height)
     return node.getblockheader(blockhash)["confirmations_ticks"]
 
 
