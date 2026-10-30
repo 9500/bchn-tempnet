@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2015-2016 The Bitcoin Core developers
-# Copyright (c) 2017-2022 The Bitcoin developers
+# Copyright (c) 2017-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -23,8 +23,12 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
     create_tx_with_script,
+    get_coinbase_subsidy,
+    get_next_block_interval,
+    get_next_block_tick_depth,
     make_conform_to_ctor,
 )
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.key import ECKey
 from test_framework.messages import (
     COIN,
@@ -73,15 +77,19 @@ def create_fund_and_activation_specific_spending_tx(spend, pre_fork_only):
     private_key.generate()
     public_key = private_key.get_pubkey().get_bytes()
 
+    # The coin being spent may be a 600-tick (50 BCH) or a 60-tick (5 BCH)
+    # coinbase, so take the value from the coin itself.
+    spend_value = spend.tx.vout[spend.n].nValue
+
     # Fund transaction
     script = CScript([public_key, OP_CHECKSIG])
     txfund = create_tx_with_script(
-        spend.tx, spend.n, b'', 50 * COIN, script)
+        spend.tx, spend.n, b'', spend_value, script)
     txfund.rehash()
 
     # Activation specific spending tx
     txspend = CTransaction()
-    txspend.vout.append(CTxOut(50 * COIN - 1000, CScript([OP_TRUE])))
+    txspend.vout.append(CTxOut(spend_value - 1000, CScript([OP_TRUE])))
     txspend.vin.append(CTxIn(COutPoint(txfund.sha256, 0), b''))
 
     # Sign the transaction
@@ -90,7 +98,7 @@ def create_fund_and_activation_specific_spending_tx(spend, pre_fork_only):
     forkvalue = 0 if pre_fork_only else 0xffdead
     sighashtype = (forkvalue << 8) | SIGHASH_ALL | SIGHASH_FORKID
     sighash = SignatureHashForkId(
-        script, txspend, 0, sighashtype, 50 * COIN)
+        script, txspend, 0, sighashtype, spend_value)
     sig = private_key.sign_ecdsa(sighash) + \
         bytes(bytearray([SIGHASH_ALL | SIGHASH_FORKID]))
     txspend.vin[0].scriptSig = CScript([sig])
@@ -139,7 +147,17 @@ class MempoolCoherenceOnActivationsTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
         # First create the coinbase
         height = self.block_heights[base_block_hash] + 1
-        coinbase = create_coinbase(height)
+
+        # The subsidy depends on the block interval in force, which is not
+        # necessarily 600 ticks: ask the node for the next block on its tip
+        # rather than assuming 50 BCH.
+        if height > 1:
+            nValue = get_coinbase_subsidy(self.nodes[0], for_mining=True)
+        else:
+            # 1-min blocks cannot activate on block 1, and we cannot call get_coinbase_subsidy if the tip is genesis;
+            # it is save to assume 50 BCH
+            nValue = 50 * COIN
+        coinbase = create_coinbase(height, nValue=nValue)
         coinbase.rehash()
         block = create_block(base_block_hash, coinbase, block_time)
 
@@ -215,13 +233,30 @@ class MempoolCoherenceOnActivationsTest(BitcoinTestFramework):
         save_spendable_output()
         node.p2p.send_blocks_and_test([self.tip], node)
 
-        # Now we need that block to mature so we can spend the coinbase.
+        # Maturity is COINBASE_MATURITY_TICKS ticks, so the number of blocks
+        # needed depends on the interval in force: 100 blocks at 600 ticks,
+        # 1000 at 60. Compute the count from the interval the next block will
+        # use, plus a margin; the tick-depth assertion below is the real check.
+        maturity_interval = get_next_block_interval(node)
+        assert maturity_interval in (60, 600), \
+            f"unexpected block interval {maturity_interval} at height {node.getblockcount()}"
+        n_maturity_blocks = COINBASE_MATURITY_TICKS // maturity_interval + 5
         maturity_blocks = []
-        for i in range(110):
-            block(5000 + i)
+        for i in range(n_maturity_blocks):
+            # Numbering starts past the ids used further down: at 60 ticks this
+            # loop runs for ~1000 blocks and would otherwise collide with the
+            # 5200/5555/5900 ranges below.
+            block(10_000 + i)
             maturity_blocks.append(self.tip)
             save_spendable_output()
         node.p2p.send_blocks_and_test(maturity_blocks, node)
+
+        # The coins we are about to spend are the coinbases of heights 1 to 5;
+        # height 5 is the youngest, so it governs. It must be spendable by the
+        # block that will spend it, which is the one after the current tip.
+        assert get_next_block_tick_depth(node, 5) >= COINBASE_MATURITY_TICKS, \
+            f"coinbase at height 5 not mature: depth {get_next_block_tick_depth(node, 5)}" \
+            f" < {COINBASE_MATURITY_TICKS} at height {node.getblockcount()}"
 
         # collect spendable outputs now to avoid cluttering the code later on
         out = []
