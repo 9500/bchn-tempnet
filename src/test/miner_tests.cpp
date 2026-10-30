@@ -113,7 +113,6 @@ static void TestPackageSelection(const Config &config,
     TxId parentTxId = tx.GetId();
     g_mempool.addUnchecked(entry.Fee(1000 * SATOSHI)
                                .Time(GetTime())
-                               .SpendsCoinbase(true)
                                .FromTx(tx));
 
     // This tx has a medium fee: 10000 satoshis.
@@ -122,7 +121,6 @@ static void TestPackageSelection(const Config &config,
     TxId mediumFeeTxId = tx.GetId();
     g_mempool.addUnchecked(entry.Fee(10000 * SATOSHI)
                                .Time(GetTime())
-                               .SpendsCoinbase(true)
                                .FromTx(tx));
 
     // This tx has a high fee, but depends on the first transaction.
@@ -132,7 +130,6 @@ static void TestPackageSelection(const Config &config,
     TxId highFeeTxId = tx.GetId();
     g_mempool.addUnchecked(entry.Fee(50000 * SATOSHI)
                                .Time(GetTime())
-                               .SpendsCoinbase(false)
                                .FromTx(tx));
 
     std::unique_ptr<CBlockTemplate> pblocktemplate =
@@ -282,11 +279,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     for (unsigned int i = 0; i < 128; ++i) {
         tx.vout[0].nValue -= LOWFEE;
         const TxId txid = tx.GetId();
-        // Only first tx spends coinbase.
-        bool spendsCoinbase = i == 0;
         g_mempool.addUnchecked(entry.Fee(LOWFEE)
                                    .Time(GetTime())
-                                   .SpendsCoinbase(spendsCoinbase)
                                    .FromTx(tx));
         tx.vin[0].prevout = COutPoint(txid, 0);
     }
@@ -308,7 +302,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     tx.vout[0].nValue = BLOCKSUBSIDY - HIGHFEE;
     TxId txid = tx.GetId();
     g_mempool.addUnchecked(
-        entry.Fee(HIGHFEE).Time(GetTime()).SpendsCoinbase(true).FromTx(tx));
+        entry.Fee(HIGHFEE).Time(GetTime()).FromTx(tx));
     tx.vin[0].prevout = COutPoint(txid, 0);
     tx.vin.resize(2);
     tx.vin[1].scriptSig = CScript() << OP_1;
@@ -317,7 +311,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     tx.vout[0].nValue = tx.vout[0].nValue + BLOCKSUBSIDY - HIGHERFEE;
     txid = tx.GetId();
     g_mempool.addUnchecked(
-        entry.Fee(HIGHERFEE).Time(GetTime()).SpendsCoinbase(true).FromTx(tx));
+        entry.Fee(HIGHERFEE).Time(GetTime()).FromTx(tx));
     BOOST_CHECK(pblocktemplate = AssemblerForTest(config, g_mempool)
                                      .CreateNewBlock(scriptPubKey));
     g_mempool.clear();
@@ -330,7 +324,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     txid = tx.GetId();
     // Give it a fee so it'll get mined.
     g_mempool.addUnchecked(
-        entry.Fee(LOWFEE).Time(GetTime()).SpendsCoinbase(false).FromTx(tx));
+        entry.Fee(LOWFEE).Time(GetTime()).FromTx(tx));
     // Should throw bad-tx-coinbase
     BOOST_CHECK_EXCEPTION(
         AssemblerForTest(config, g_mempool).CreateNewBlock(scriptPubKey),
@@ -344,11 +338,11 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     tx.vout[0].scriptPubKey = CScript() << OP_1;
     txid = tx.GetId();
     g_mempool.addUnchecked(
-        entry.Fee(HIGHFEE).Time(GetTime()).SpendsCoinbase(true).FromTx(tx));
+        entry.Fee(HIGHFEE).Time(GetTime()).FromTx(tx));
     tx.vout[0].scriptPubKey = CScript() << OP_2;
     txid = tx.GetId();
     g_mempool.addUnchecked(
-        entry.Fee(HIGHFEE).Time(GetTime()).SpendsCoinbase(true).FromTx(tx));
+        entry.Fee(HIGHFEE).Time(GetTime()).FromTx(tx));
     BOOST_CHECK_EXCEPTION(
         AssemblerForTest(config, g_mempool).CreateNewBlock(scriptPubKey),
         std::runtime_error, HasReason("bad-txns-inputs-missingorspent"));
@@ -392,14 +386,14 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     tx.vout[0].scriptPubKey = GetScriptForDestination(ScriptID(script, false /* no p2sh_32 */));
     txid = tx.GetId();
     g_mempool.addUnchecked(
-        entry.Fee(LOWFEE).Time(GetTime()).SpendsCoinbase(true).FromTx(tx));
+        entry.Fee(LOWFEE).Time(GetTime()).FromTx(tx));
     tx.vin[0].prevout = COutPoint(txid, 0);
     tx.vin[0].scriptSig = CScript()
                           << std::vector<uint8_t>(script.begin(), script.end());
     tx.vout[0].nValue -= LOWFEE;
     txid = tx.GetId();
     g_mempool.addUnchecked(
-        entry.Fee(LOWFEE).Time(GetTime()).SpendsCoinbase(false).FromTx(tx));
+        entry.Fee(LOWFEE).Time(GetTime()).FromTx(tx));
     // Should throw blk-bad-inputs
     BOOST_CHECK_EXCEPTION(
         AssemblerForTest(config, g_mempool).CreateNewBlock(scriptPubKey),
@@ -437,7 +431,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity) {
     tx.nLockTime = 0;
     txid = tx.GetId();
     g_mempool.addUnchecked(
-        entry.Fee(HIGHFEE).Time(GetTime()).SpendsCoinbase(true).FromTx(tx));
+        entry.Fee(HIGHFEE).Time(GetTime()).FromTx(tx));
 
     const Consensus::Params &params = chainparams.GetConsensus();
 

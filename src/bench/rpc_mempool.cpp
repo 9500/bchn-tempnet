@@ -15,9 +15,7 @@
 
 static void AddTx(const CTransactionRef &tx, const Amount &fee,
                   CTxMemPool &pool) EXCLUSIVE_LOCKS_REQUIRED(cs_main, pool.cs) {
-    pool.addUnchecked(CTxMemPoolEntry(tx, fee, /* time */ 0,
-                                      /* spendsCoinbase */ false,
-                                      /* sigChecks */ 1));
+    pool.addUnchecked(CTxMemPoolEntry(tx, fee, /* time */ 0, /* sigChecks */ 1));
 }
 
 static void RPCMempoolVerbose(benchmark::State &state) {

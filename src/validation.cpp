@@ -627,17 +627,6 @@ AcceptToMemoryPoolWorker(const Config &config, CTxMemPool &pool,
             pinfo->modifiedFee = nModifiedFees;
         }
 
-        // Keep track of transactions that spend a coinbase, which we re-scan
-        // during reorgs to ensure COINBASE_MATURITY is still met.
-        bool fSpendsCoinbase = false;
-        for (const CTxIn &txin : tx.vin) {
-            const Coin &coin = view.AccessCoin(txin.prevout);
-            if (coin.IsCoinBase()) {
-                fSpendsCoinbase = true;
-                break;
-            }
-        }
-
         const size_t nSize = tx.GetTotalSize();
 
         if (pinfo) {
@@ -682,7 +671,7 @@ AcceptToMemoryPoolWorker(const Config &config, CTxMemPool &pool,
             return false;
         }
 
-        CTxMemPoolEntry entry(ptx, nFees, nAcceptTime, fSpendsCoinbase, nSigChecksStandard);
+        CTxMemPoolEntry entry(ptx, nFees, nAcceptTime, nSigChecksStandard);
 
         const size_t nVirtualSize = entry.GetTxVirtualSize();
 

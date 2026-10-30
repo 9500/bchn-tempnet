@@ -40,13 +40,9 @@
 #include <unordered_set>
 #include <utility>
 
-CTxMemPoolEntry::CTxMemPoolEntry(const CTransactionRef &_tx, const Amount _nFee,
-                                 int64_t _nTime,
-                                 bool _spendsCoinbase, int64_t _sigChecks)
-    : tx(_tx), nFee(_nFee), nTxSize(tx->GetTotalSize()),
-      nUsageSize(RecursiveDynamicUsage(tx)), nTime(_nTime),
-      spendsCoinbase(_spendsCoinbase),
-      sigChecks(_sigChecks) {
+CTxMemPoolEntry::CTxMemPoolEntry(const CTransactionRef &tx_, const Amount nFee_, int64_t nTime_, int64_t sigChecks_)
+    : tx(tx_), nFee(nFee_), nTxSize(tx->GetTotalSize()), nUsageSize(RecursiveDynamicUsage(tx)), nTime(nTime_),
+      sigChecks(sigChecks_) {
 
     feeDelta = Amount::zero();
 }
