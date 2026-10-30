@@ -23,7 +23,6 @@ CTxMemPoolEntry ConsumeTxMemPoolEntry(FuzzedDataProvider& fuzzed_data_provider, 
     const Amount fee = ConsumeMoney(fuzzed_data_provider, /*max=*/(std::numeric_limits<int64_t>::max() / int64_t{100'000}) * SATOSHI);
     assert(MoneyRange(fee));
     const int64_t time = fuzzed_data_provider.ConsumeIntegral<int64_t>();
-    const bool spends_coinbase = fuzzed_data_provider.ConsumeBool();
     const int64_t sig_checks = fuzzed_data_provider.ConsumeIntegralInRange<int64_t>(0, MAX_TX_SIGCHECKS);
-    return CTxMemPoolEntry{MakeTransactionRef(CMutableTransaction{tx}), fee, time, spends_coinbase, sig_checks};
+    return CTxMemPoolEntry{MakeTransactionRef(CMutableTransaction{tx}), fee, time, sig_checks};
 }

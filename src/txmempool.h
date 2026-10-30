@@ -71,8 +71,6 @@ class CTxMemPoolEntry {
     const size_t nUsageSize;
     //! Local time when entering the mempool
     const int64_t nTime;
-    //! keep track of transactions that spend a coinbase
-    const bool spendsCoinbase;
     //! Total sigchecks
     const int64_t sigChecks;
     //! Used for determining the priority of the transaction for mining in a
@@ -86,9 +84,7 @@ class CTxMemPoolEntry {
     DspIdPtr dspIdPtr;
 
 public:
-    CTxMemPoolEntry(const CTransactionRef &_tx, const Amount _nFee,
-                    int64_t _nTime,
-                    bool spendsCoinbase, int64_t _sigChecks);
+    CTxMemPoolEntry(const CTransactionRef &tx_, const Amount nFee_, int64_t nTime_, int64_t sigChecks_);
 
     uint64_t GetEntryId() const { return entryId; }
     //! This should only be set exactly once by addUnchecked() before entry insertion into the mempool.
@@ -111,8 +107,6 @@ public:
     // Updates the fee delta used for mining priority score, and the
     // modified fees with descendants.
     void UpdateFeeDelta(Amount feeDelta);
-
-    bool GetSpendsCoinbase() const { return spendsCoinbase; }
 
     bool HasDsp() const { return dspIdPtr && !dspIdPtr->IsNull(); }
     //! @returns the dspId if this entry has a dsp or an IsNull() DspId if it does not

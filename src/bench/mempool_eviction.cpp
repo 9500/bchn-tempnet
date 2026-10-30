@@ -13,9 +13,8 @@
 static void AddTx(const CTransactionRef &tx, const Amount &nFee, CTxMemPool &pool)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main, pool.cs) {
     int64_t nTime = 0;
-    bool spendsCoinbase = false;
     unsigned int nSigChecks = 1;
-    pool.addUnchecked(CTxMemPoolEntry(tx, nFee, nTime, spendsCoinbase, nSigChecks));
+    pool.addUnchecked(CTxMemPoolEntry(tx, nFee, nTime, nSigChecks));
 }
 
 // Right now this is only testing eviction performance in an extremely small
