@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2019-2022 The Bitcoin developers
+# Copyright (c) 2019-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-ilncense.php.
 
@@ -11,6 +11,7 @@ from test_framework.util import assert_equal
 from test_framework.blocktools import (
     create_block,
     create_coinbase,
+    get_coinbase_subsidy,
 )
 
 
@@ -32,7 +33,12 @@ class InvalidChainsTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
 
         height = self.block_heights[base_block_hash] + 1
-        coinbase = create_coinbase(height)
+        if height > 1:
+            coinbase = create_coinbase(height, nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True))
+        else:
+            # Can't call get_coinbase_subsidy() since RPC fails when the tip is genesis, assume nValue=50 BCH
+            # since even if 1-min blocks is about to activate, it won't apply to block 1 itself.
+            coinbase = create_coinbase(height)
         coinbase.rehash()
         block = create_block(base_block_hash, coinbase, block_time)
 
@@ -68,7 +74,13 @@ class InvalidChainsTest(BitcoinTestFramework):
         #                -- 15 - 16 - 17 - 18
 
         # Generate some valid blocks
-        node.p2p.send_blocks_and_test([block(0), block(1), block(2)], node)
+        # Sent individually so each is built after its parent is accepted; see next_block().
+        for i in range(3):
+            node.p2p.send_blocks_and_test([block(i)], node)
+
+        # In case upgrade 2027 has activated (1 min blocks), the activation must land after the first block we mined.
+        assert_equal(node.getblockheader(self.blocks[0].hash)["target_time"], 600)
+        assert_equal(node.getblockheader(self.blocks[1].hash)["target_time"], self.block_interval)
 
         # Explicitly invalidate blocks 1 and 2
         # See below for why we do this
