@@ -17,6 +17,12 @@ signatures. This test ensures that the feature does not regress.
 """
 from decimal import Decimal
 
+from test_framework.blocktools import (
+    get_block_ticks,
+    get_chaintip_ticks,
+    get_next_block_interval,
+)
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 
@@ -33,7 +39,18 @@ class IncludeWatchingFeeTest(BitcoinTestFramework):
 
     def run_test(self):
         node0, node1 = self.nodes
-        self.generate(node0, 101)
+        # Maturity is measured in ticks, not blocks: 101 blocks is 60,600 ticks
+        # at 600 but only 6,600 at 60, so a fixed count leaves the wallet with
+        # nothing spendable once the interval changes. Mine block 1 first so its
+        # own tick can anchor the target (the node is still at genesis on a
+        # clean chain), then poll, because the interval changes at the seam.
+        self.generate(node0, 1)
+        target_ticks = get_block_ticks(node0, 1) + COINBASE_MATURITY_TICKS
+        while get_chaintip_ticks(node0) < target_ticks:
+            remaining = target_ticks - get_chaintip_ticks(node0)
+            interval = get_next_block_interval(node0)
+            assert interval in (60, 600)
+            self.generate(node0, max(1, remaining // interval))
         self.sync_all()
 
         # An ordinary coin node0 can spend itself. No watch-only coin needed:
