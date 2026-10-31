@@ -377,14 +377,17 @@ def get_coinbase_subsidy(node, for_mining=False, include_fees=False) -> int:
     for_mining==True. Pass include_fees=True to return the subsidy + fee (that is, the max coinbase value aka total
     coinbase reward)."""
     if for_mining:
-        tmpl = node.getblocktemplate()
-        fees = 0
-        if not include_fees:
-            fees = sum(txn["fee"] for txn in tmpl["transactions"])
-        return tmpl["coinbasevalue"] - fees
-    else:
-        stats = node.getblockstats(node.getbestblockhash())
-        fees = 0
-        if include_fees:
-            fees = int(COIN * stats["totalfee"])
-        return int(COIN * stats["subsidy"]) + fees
+        height = node.getblockcount()
+        if height > 0:
+            # getblocktemplate will only work if tip is past genesis
+            tmpl = node.getblocktemplate()
+            fees = 0
+            if not include_fees:
+                fees = sum(txn["fee"] for txn in tmpl["transactions"])
+            return tmpl["coinbasevalue"] - fees
+    # for_mining=False and/or tip is genesis, just look at what the block tip says.
+    stats = node.getblockstats(node.getbestblockhash())
+    fees = 0
+    if include_fees:
+        fees = int(COIN * stats["totalfee"])
+    return int(COIN * stats["subsidy"]) + fees

@@ -151,12 +151,7 @@ class MempoolCoherenceOnActivationsTest(BitcoinTestFramework):
         # The subsidy depends on the block interval in force, which is not
         # necessarily 600 ticks: ask the node for the next block on its tip
         # rather than assuming 50 BCH.
-        if height > 1:
-            nValue = get_coinbase_subsidy(self.nodes[0], for_mining=True)
-        else:
-            # 1-min blocks cannot activate on block 1, and we cannot call get_coinbase_subsidy if the tip is genesis;
-            # it is save to assume 50 BCH
-            nValue = 50 * COIN
+        nValue = get_coinbase_subsidy(self.nodes[0], for_mining=True)
         coinbase = create_coinbase(height, nValue=nValue)
         coinbase.rehash()
         block = create_block(base_block_hash, coinbase, block_time)

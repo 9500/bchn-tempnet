@@ -33,12 +33,7 @@ class InvalidChainsTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
 
         height = self.block_heights[base_block_hash] + 1
-        if height > 1:
-            coinbase = create_coinbase(height, nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True))
-        else:
-            # Can't call get_coinbase_subsidy() since RPC fails when the tip is genesis, assume nValue=50 BCH
-            # since even if 1-min blocks is about to activate, it won't apply to block 1 itself.
-            coinbase = create_coinbase(height)
+        coinbase = create_coinbase(height, nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True))
         coinbase.rehash()
         block = create_block(base_block_hash, coinbase, block_time)
 
