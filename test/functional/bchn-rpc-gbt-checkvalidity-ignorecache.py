@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021 The Bitcoin Cash Node developers
+# Copyright (c) 2021-present The Bitcoin Cash Node developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -12,7 +12,15 @@ bchn-rpc-gbt-checkvalidity-ignorecache
 import contextlib
 import threading
 
+from test_framework.blocktools import (
+    get_block_ticks,
+    get_chaintip_ticks,
+    get_coinbase_subsidy,
+    get_next_block_interval,
+)
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.messages import COIN
 from decimal import Decimal
 
 
@@ -45,13 +53,28 @@ class GBTCheckValidityAndIgnoreCacheTest(BitcoinTestFramework):
                              .format(str(excluded_msgs), node_num))
 
     def run_test(self):
-        self.log.info("Generating 101 blocks ...")
-        self.generate(self.nodes[-1], 101 + self.num_nodes)
+        node = self.nodes[-1]
+
+        self.log.info("Generating enough blocks to mature a coinbase ...")
+        # Maturity is 60,000 ticks, not 100 blocks: the count differs by the
+        # interval ratio. Mine block 1 first so its own tick anchors the target
+        # (the node is at genesis on a clean chain), then poll, because the
+        # interval changes should 1-min blocks activate here..
+        self.generate(node, 1)
+        target = get_block_ticks(node, 1) + COINBASE_MATURITY_TICKS
+        while get_chaintip_ticks(node) < target:
+            remaining = target - get_chaintip_ticks(node)
+            interval = get_next_block_interval(node)
+            assert interval in (60, 600)
+            self.generate(node, max(1, remaining // interval))
+        # One extra coinbase per node, so each of the sends below draws on its
+        # own mature input.
+        self.generate(node, self.num_nodes)
         addrs = [node.getnewaddress() for node in self.nodes]
         n_txs = 32
         self.log.info("Filling mempool with {} txns ...".format(n_txs))
         fee = Decimal('0.00001000')
-        amt = Decimal('50.0')
+        amt = Decimal(get_coinbase_subsidy(node)) / COIN
         amts = [None] * self.num_nodes
         for i in range(self.num_nodes):
             addr = addrs[i]
