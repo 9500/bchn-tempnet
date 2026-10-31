@@ -18,6 +18,12 @@ from test_framework.script import (
     OP_PUSHDATA1,
     hash160,
 )
+from test_framework.blocktools import (
+    get_block_ticks,
+    get_chaintip_ticks,
+    get_next_block_interval,
+)
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_raises_rpc_error,
@@ -54,7 +60,19 @@ class WalletStandardnessTest(BitcoinTestFramework):
         address_nonstd = nonstd_node.getnewaddress()
 
         # make and mature some coins for the nonstandard node
-        self.generate(nonstd_node, 120)
+        # Maturity is measured in ticks rather than blocks, and the interval
+        # changes at the seam, so poll the chain instead of assuming a block
+        # count. The target is anchored to the first coinbase's own tick, since
+        # the predicate is T(spend) - T(coin) >= 60,000. Block 1 is mined up
+        # front because on a clean chain the node is still at genesis and has
+        # no height 1 to read.
+        self.generate(nonstd_node, 1)
+        target_ticks = get_block_ticks(nonstd_node, 1) + COINBASE_MATURITY_TICKS
+        while get_chaintip_ticks(nonstd_node) < target_ticks:
+            remaining = target_ticks - get_chaintip_ticks(nonstd_node)
+            interval = get_next_block_interval(nonstd_node)
+            assert interval in (60, 600)
+            self.generate(nonstd_node, max(1, remaining // interval))
         self.sync_blocks()
 
         def fund_and_test_wallet(scriptPubKey, shouldBeStandard, shouldBeInWallet,
