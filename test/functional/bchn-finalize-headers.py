@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2020-2022 The Bitcoin developers
+# Copyright (c) 2020-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test processing of -finalizeheaders and -finalizeheaderspenalty
@@ -25,21 +25,17 @@ import time
 
 from test_framework.blocktools import (
     create_block,
-    create_coinbase
+    create_coinbase,
+    get_next_block_interval,
 )
 from test_framework.messages import (
     CBlockHeader,
     msg_headers,
 )
 from test_framework.p2p import P2PInterface
+from test_framework.cdefs import DEFAULT_MAX_REORG_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
-
-# Just a handy constant that's often needed below.
-# If the actual default value in the C++ code changes, the test would fail
-# and this test constant should be adjusted.
-DEFAULT_MAXREORGDEPTH = 10
-
 
 def mine_header(prevblockhash, coinbase, timestamp):
     # Create a valid block and return its header
@@ -75,17 +71,30 @@ class FinalizedHeadersTest(BitcoinTestFramework):
         assert_equal(self.nodes[0].getblockcount(), 0)
         assert_equal(self.nodes[1].getblockcount(), 0)
 
-        # Have nodes mine enough blocks to get them to finalize
-        for i in range(2 * DEFAULT_MAXREORGDEPTH + 1):
-            [self.generatetoaddress(n, 1, n.get_deterministic_priv_key().address)
-                for n in self.nodes]
-            assert_equal(self.nodes[0].getblockcount(), i + 1)
-            assert_equal(self.nodes[1].getblockcount(), i + 1)
+        # Have nodes mine enough blocks to get them to finalize. The gate is
+        # 6000 ticks, so the number of blocks differs by the interval ratio.
+        # One extra legacy interval of margin keeps the finalized block off
+        # genesis, so there is a parent to build the below-finalized header on.
+        for n in self.nodes:
+            self.mine_for_ticks(n, DEFAULT_MAX_REORG_TICKS + get_next_block_interval(n))
 
-        assert_equal(self.nodes[0].getblockcount(), 2 * DEFAULT_MAXREORGDEPTH + 1)
-        assert_equal(self.nodes[1].getblockcount(), 2 * DEFAULT_MAXREORGDEPTH + 1)
+        def finalized_height(node):
+            fin = node.getfinalizedblockhash()
+            assert fin != "", "expected a finalized block"
+            return node.getblockheader(fin)["height"]
 
-        # Finalized block's height is now 10
+        # Both nodes run the same consensus against the same number of blocks,
+        # so the gate lands at the same height on each even though the chains
+        # themselves (timestamps, hashes) differ.
+        tip_height = self.nodes[0].getblockcount()
+        fin_height = finalized_height(self.nodes[0])
+        assert_equal(self.nodes[1].getblockcount(), tip_height)
+        assert_equal(finalized_height(self.nodes[1]), fin_height)
+
+        # The finalized block must have a parent, and at least one
+        # non-finalized block must sit above it, or the loop below is empty.
+        assert fin_height >= 1
+        assert tip_height > fin_height + 1
 
         def construct_header_for(node, height, time_stamp):
             parent_hash = node.getblockhash(height - 1)
@@ -95,20 +104,21 @@ class FinalizedHeadersTest(BitcoinTestFramework):
         # Replacement headers for block from tip down to last
         # non-finalized block should be accepted.
         block_time = int(time.time())
-        node_0_blockheight = self.nodes[0].getblockcount()
-        node_1_blockheight = self.nodes[1].getblockcount()
-        for i in range(1, DEFAULT_MAXREORGDEPTH):
+        # Derived from the gate rather than a block constant: at 600 ticks this
+        # is 9 iterations, at 60 ticks 99, both ending one above the finalized
+        # block.
+        for height in range(tip_height - 1, fin_height, -1):
             # Create a header for node 0 and submit it
             headers_message = msg_headers()
             headers_message.headers.append(construct_header_for(self.nodes[0],
-                                                                node_0_blockheight - i,
+                                                                height,
                                                                 block_time))
             node_with_finalheaders.send_and_ping(headers_message)
 
             # Create a header for node 1 and submit it
             headers_message = msg_headers()
             headers_message.headers.append(construct_header_for(self.nodes[1],
-                                                                node_1_blockheight - i,
+                                                                height,
                                                                 block_time))
             node_without_finalheaders.send_and_ping(headers_message)
 
@@ -123,7 +133,7 @@ class FinalizedHeadersTest(BitcoinTestFramework):
         # will accept the header.
         headers_message = msg_headers()
         headers_message.headers.append(construct_header_for(self.nodes[0],
-                                                            node_0_blockheight - DEFAULT_MAXREORGDEPTH - 1,
+                                                            fin_height,
                                                             block_time))
         # Node 0 has not yet been disconnected, but it got a rejection logged and penalized
         expected_header_rejection_msg = ["peer=0 (0 -> 50) reason: bad-header-finalization", ]
@@ -137,7 +147,7 @@ class FinalizedHeadersTest(BitcoinTestFramework):
 
         headers_message = msg_headers()
         headers_message.headers.append(construct_header_for(self.nodes[1],
-                                                            node_0_blockheight - DEFAULT_MAXREORGDEPTH - 1,
+                                                            fin_height,
                                                             block_time))
         node_without_finalheaders.send_message(headers_message)
         time.sleep(1)
@@ -148,7 +158,7 @@ class FinalizedHeadersTest(BitcoinTestFramework):
         # non-header-finalizing node will accept the header.
         headers_message = msg_headers()
         headers_message.headers.append(construct_header_for(self.nodes[0],
-                                                            node_0_blockheight - DEFAULT_MAXREORGDEPTH - 1,
+                                                            fin_height,
                                                             block_time))
         # Node 0 should disconnect when we send again
         expected_header_rejection_msg = ["peer=0 (50 -> 100) reason: bad-header-finalization", ]
@@ -160,7 +170,7 @@ class FinalizedHeadersTest(BitcoinTestFramework):
 
         headers_message = msg_headers()
         headers_message.headers.append(construct_header_for(self.nodes[1],
-                                                            node_0_blockheight - DEFAULT_MAXREORGDEPTH - 1,
+                                                            fin_height,
                                                             block_time))
         node_without_finalheaders.send_message(headers_message)
         time.sleep(1)
