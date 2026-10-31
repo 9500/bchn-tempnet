@@ -128,7 +128,7 @@ class AblaState:
             return sat
 
         kG = k * G
-        inc = (1 + config.delta) * eps0 * kG // (D - kG)
+        inc = ((1 + config.delta) * eps0 * kG // (D - kG)) + (k * (1 + config.delta))
         return min(s0 + inc, sat)
 
     def CalcLookaheadBlockSizeLimit(self, count: int, config=DEFAULT_ABLA_CONFIG):
