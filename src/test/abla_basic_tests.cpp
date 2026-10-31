@@ -601,16 +601,22 @@ BOOST_AUTO_TEST_CASE(lookahead_closed_form_chip_vectors) {
     };
     const Row rows[] = {
         {"lookahead_const_1", 32000000ull, 16000000ull, 16000000ull, 600, 1, 600, 32001889ull, 32001889ull},
-        {"lookahead_const_2", 32000000ull, 16000000ull, 16000000ull, 600, 2, 600, 32004208ull, 32003778ull},
-        {"lookahead_const_10_60", 3200000ull, 16000000ull, 16000000ull, 60, 10, 60, 3200227ull, 3200189ull},
+        {"lookahead_const_2", 32000000ull, 16000000ull, 16000000ull, 600, 2, 600, 32004219ull, 32003778ull},
+        {"lookahead_const_10_60", 3200000ull, 16000000ull, 16000000ull, 60, 10, 60, 3200237ull, 3200189ull},
         {"lookahead_download_600_full600", 32000000ull, 16000000ull, 16000000ull, 600, 1, 600, 32001889ull, 32001889ull},
-        {"lookahead_download_1200_full600", 32000000ull, 16000000ull, 16000000ull, 600, 2, 600, 32004208ull, 32003778ull},
-        {"lookahead_download_7200_full600", 32000000ull, 16000000ull, 16000000ull, 600, 12, 600, 32027408ull, 32022662ull},
+        {"lookahead_download_1200_full600", 32000000ull, 16000000ull, 16000000ull, 600, 2, 600, 32004219ull, 32003778ull},
+        {"lookahead_download_7200_full600", 32000000ull, 16000000ull, 16000000ull, 600, 12, 600, 32027529ull, 32022662ull},
         {"lookahead_download_600_floor600", 0ull, 16000000ull, 16000000ull, 600, 1, 600, 32000000ull, 32000000ull},
         {"lookahead_download_600_full60", 3200000ull, 16000000ull, 16000000ull, 60, 1, 600, 32000189ull, 32000189ull},
-        {"lookahead_download_1200_full60", 3200000ull, 16000000ull, 16000000ull, 60, 2, 600, 32002508ull, 32002078ull},
+        {"lookahead_download_1200_full60", 3200000ull, 16000000ull, 16000000ull, 60, 2, 600, 32002519ull, 32002078ull},
         {"lookahead_download_max_window_saturated", 12297829382473034368ull, 2837960626724546304ull, 9459868755748488064ull, 600, 144, 600, 12297829382473034368ull, 12297829382473034368ull},
         {"lookahead_download_guard_saturated", 12297829382473034368ull, 2837960626724546304ull, 9459868755748488064ull, 600, 75877, 600, 12297829382473034368ull, 12297829382473034368ull},
+        {"window10min_2048_small", 123456ull, 16000000ull, 16000000ull, 600, 2048, 600, 36902333ull, 35847033ull},
+        {"window10min_2048_medium", 12345600ull, 16000000ull, 16000000ull, 600, 2048, 600, 36902354ull, 35847060ull},
+        {"window10min_2048_full", 32000000ull, 16000000ull, 16000000ull, 600, 2048, 600, 36904286ull, 35848898ull},
+        {"window1min_2048_small", 12345ull, 16000000ull, 16000000ull, 60, 2048, 600, 36902333ull, 35847033ull},
+        {"window1min_2048_medium", 1234560ull, 16000000ull, 16000000ull, 60, 2048, 600, 36902335ull, 35847034ull},
+        {"window1min_2048_full", 3200000ull, 16000000ull, 16000000ull, 60, 2048, 600, 36902529ull, 35847223ull},
     };
     for (const Row &r : rows) {
         BOOST_TEST_MESSAGE(strprintf("CHIP vector: %s", r.name));

@@ -239,7 +239,6 @@ namespace {
 /// where s = eps + beta. The epsilonMax / betaMax clips only lower a component, so the bound survives them. Summing
 /// the geometric series and applying AM-GM, (1 + g)^k * (1 - k*g) <= 1, gives
 ///     s_k <= s_0 + (1 + delta) * eps_0 * k*G / (D - k*G),    for k*G < D.
-/// Every integer step of the real drive truncates downward, so flooring the right-hand side stays an upper bound.
 uint64_t BoundSumAfterFullBlocks(const Config &config, uint64_t tau, uint64_t s0, uint64_t eps0, uint64_t k) {
     if (k == 0) {
         return s0;
@@ -258,7 +257,9 @@ uint64_t BoundSumAfterFullBlocks(const Config &config, uint64_t tau, uint64_t s0
 
     const uint64_t kG = k * G; // < D after the guard above, so no overflow
     const u128 inc = static_cast<u128>(1 + config.delta) * static_cast<u128>(eps0) * static_cast<u128>(kG)
-                     / static_cast<u128>(D - kG);
+                     / static_cast<u128>(D - kG)
+                     // add per-step rounding to prevent this coming up 1-byte low per k in corner case configs
+                     + static_cast<u128>(k) * static_cast<u128>(1 + config.delta);
     return static_cast<uint64_t>(std::min<u128>(static_cast<u128>(s0) + inc, sat));
 }
 
