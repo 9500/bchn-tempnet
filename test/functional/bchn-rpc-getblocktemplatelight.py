@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (C) 2020 Calin Culianu and mtrycz
-# Copyright (c) 2020-2021 The Bitcoin developers
+# Copyright (c) 2020-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -20,6 +20,7 @@ from decimal import Decimal
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error, assert_blocktemplate_equal
 from test_framework import messages, script, util, blocktools
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 
 
 def to_bytes(x, encoding='utf8'):
@@ -175,21 +176,30 @@ class GBTLightTest(BitcoinTestFramework):
             self.__run_test()
             # We execute the test twice to test that after mining the block, all data structures (pblocktemplate, etc)
             # are properly reset and everything is sane on the C++-side.
-            self.__run_test(nblocks_to_gen=0, ntx_to_gen=12, test_additional_txs=False)
+            self.__run_test(fund_wallet=False, ntx_to_gen=12, test_additional_txs=False)
         finally:
             # Unconditionally remove the custom gbtstoredir since the test framework doesn't know about it.
             shutil.rmtree(self._custom_gbt_dir)
             self.log.info("Cleaned-up custom -gbtstoredir: {}".format(self._custom_gbt_dir))
 
-    def __run_test(self, *, nblocks_to_gen=150, ntx_to_gen=19, test_additional_txs=True):
+    def __run_test(self, *, fund_wallet=True, ntx_to_gen=19, test_additional_txs=True):
         assert ntx_to_gen > 0
         # we will need this value for random_transaction below, and for self.gen_valid_tx
         self.min_relay_fee = self.nodes[0].getnetworkinfo()["relayfee"]
 
-        if nblocks_to_gen > 0:
+        if fund_wallet:
             if self.is_wallet_compiled():
-                # generate some blocks to wallet to have spendable coins
-                self.generate(self.nodes[0], nblocks_to_gen)
+                # generate some blocks to wallet to have spendable coins.
+                # Maturity is 60,000 ticks, so the block count differs by the
+                # interval ratio: the original 150 blocks is 90,000 ticks at
+                # 600 but only 9,000 at 60, which matures nothing. Mine one
+                # full maturity, then 50 intervals' worth so that ~50 coinbases
+                # are spendable -- reproducing the original 150-block shape
+                # (100 + 50 blocks) at 600 ticks.
+                node = self.nodes[0]
+                self.mine_for_ticks(node, COINBASE_MATURITY_TICKS)
+                self.mine_for_ticks(node, 50 * blocktools.get_next_block_interval(node))
+
             else:
                 # generate just 1 block to leave IBD state (no wallet so no spending in this mode)
                 self.generatetoaddress(self.nodes[0], 1, self.nodes[0].get_deterministic_priv_key().address)
@@ -302,7 +312,13 @@ class GBTLightTest(BitcoinTestFramework):
 
         tmpl = submit_tmpl
         job_id = submit_job_id
-        coinbase_tx = blocktools.create_coinbase(height=int(tmpl["height"]) + 1)
+        # The submitted block is the one on top of the current tip, so take its
+        # subsidy from the node: create_coinbase()'s height-based default is
+        # 50 BCH, which exceeds subsidy+fees by the interval ratio and is
+        # rejected as bad-cb-amount before the light-block checks run.
+        coinbase_tx = blocktools.create_coinbase(
+            height=int(tmpl["height"]) + 1,
+            nValue=blocktools.get_coinbase_subsidy(self.nodes[0], for_mining=True))
         coinbase_tx.vin[0].nSequence = 2 ** 32 - 2
         coinbase_tx.rehash()
 

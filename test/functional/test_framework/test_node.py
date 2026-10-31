@@ -148,6 +148,18 @@ class TestNode():
         ]
         return PRIV_KEYS[self.index]
 
+    def get_suitable_mining_address(self):
+        """Return an address to mine to that leaves the coins spendable by
+        `node`. Preference is for a wallet address if the node has a wallet.
+
+        If it doesn't have a wallet, then the deterministic node address is
+        returned instead."""
+        try:
+            return self.getnewaddress()
+        except JSONRPCException:
+            return self.get_deterministic_priv_key().address
+
+
     def _node_msg(self, msg: str) -> str:
         """Return a modified msg that identifies this node by its index as a debugging aid."""
         return "[node {}] {}".format(self.index, msg)

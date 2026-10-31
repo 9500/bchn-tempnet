@@ -454,7 +454,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         chaintip tick is a multiple of 60, so `delta` must be too.
         """
         if address is None:
-            address = node.get_deterministic_priv_key().address
+            address = node.get_suitable_mining_address()
         target = blocktools.get_chaintip_ticks(node) + delta
         hashes = []
         while blocktools.get_chaintip_ticks(node) < target:
@@ -472,7 +472,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         maturity predicate.
         """
         if address is None:
-            address = node.get_deterministic_priv_key().address
+            address = self._get_suitable_mining_address(node)
         while blocktools.get_block_tick_depth(node, blockhash) < depth_ticks:
             interval = blocktools.get_next_block_interval(node)
             self.generatetoaddress(
