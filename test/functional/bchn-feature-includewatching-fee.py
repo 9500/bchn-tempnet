@@ -40,10 +40,11 @@ class IncludeWatchingFeeTest(BitcoinTestFramework):
     def run_test(self):
         node0, node1 = self.nodes
         # Maturity is measured in ticks, not blocks: 101 blocks is 60,600 ticks
-        # at 600 but only 6,600 at 60, so a fixed count leaves the wallet with
+        # at 600 but only 6,060 at 60, so a fixed count leaves the wallet with
         # nothing spendable once the interval changes. Mine block 1 first so its
         # own tick can anchor the target (the node is still at genesis on a
-        # clean chain), then poll, because the interval changes at the seam.
+        # clean chain), then poll, because the interval changes should 1 min
+        # blocks activate.
         self.generate(node0, 1)
         target_ticks = get_block_ticks(node0, 1) + COINBASE_MATURITY_TICKS
         while get_chaintip_ticks(node0) < target_ticks:
