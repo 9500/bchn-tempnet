@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2018-2022 The Bitcoin developers
+# Copyright (c) 2018-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """
@@ -14,6 +14,8 @@ import time
 from test_framework.blocktools import (
     create_block,
     create_coinbase,
+    get_coinbase_subsidy,
+    get_next_block_interval,
     make_conform_to_ctor,
 )
 from test_framework.messages import (
@@ -28,6 +30,7 @@ from test_framework.script import (
     OP_RETURN,
     OP_TRUE,
 )
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 
@@ -53,7 +56,7 @@ class TransactionOrderingTest(BitcoinTestFramework):
         [tx.rehash() for tx in tx_list]
         block.vtx.extend(tx_list)
 
-    def next_block(self, number, spend=None, tx_count=0):
+    def next_block(self, number, spend=None, tx_count=0, nValue=None):
         if self.tip is None:
             base_block_hash = self.genesis_hash
             block_time = int(time.time()) + 1
@@ -62,7 +65,13 @@ class TransactionOrderingTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
         # First create the coinbase
         height = self.block_heights[base_block_hash] + 1
-        coinbase = create_coinbase(height)
+        # Derive the coinbase value from the node: create_coinbase()'s
+        # height-based default is 10x too large once the 60-tick regime is in
+        # force, and the surplus is rejected as bad-cb-amount before any of the
+        # ordering logic below is reached.
+        if nValue is None:
+            nValue = get_coinbase_subsidy(self.nodes[0], for_mining=True)
+        coinbase = create_coinbase(height, nValue=nValue)
         coinbase.rehash()
         if spend is None:
             # We need to have something to spend to fill the block.
@@ -170,9 +179,34 @@ class TransactionOrderingTest(BitcoinTestFramework):
         node.p2p.send_blocks_and_test([self.tip], node)
 
         # Now we need that block to mature so we can spend the coinbase.
+        # Maturity is 60,000 ticks. The interval seam can fall inside the first
+        # median-time-past window, so the blocks right after block 1 may still
+        # be 600-tick and carry the legacy subsidy while later ones carry the
+        # scaled one. Send that window one block at a time so the node values
+        # each block, then batch the rest under a single post-seam value.
+        maturity_number = 10_000
         maturity_blocks = []
-        for i in range(99):
-            block(5000 + i)
+        for _ in range(11):
+            if get_next_block_interval(node) != 600:
+                break
+            block(maturity_number, nValue=get_coinbase_subsidy(node, for_mining=True))
+            maturity_number += 1
+            maturity_blocks.append(self.tip)
+            save_spendable_output()
+        node.p2p.send_blocks_and_test(maturity_blocks, node)
+
+        # The collected coinbases sit up to 99 blocks past height 1, so the
+        # batch must exceed the maturity count by that much for the newest of
+        # them to be spendable. The batch stays inside one interval regime and
+        # one subsidy era (era 0 ends at 90,000 ticks on regtest).
+        interval = get_next_block_interval(node)
+        assert interval in (60, 600)
+        n_mature = COINBASE_MATURITY_TICKS // interval + 100
+        cb_value = get_coinbase_subsidy(node, for_mining=True)
+        maturity_blocks = []
+        for _ in range(n_mature):
+            block(maturity_number, nValue=cb_value)
+            maturity_number += 1
             maturity_blocks.append(self.tip)
             save_spendable_output()
         node.p2p.send_blocks_and_test(maturity_blocks, node)
