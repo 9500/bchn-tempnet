@@ -4,13 +4,19 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test sigop and size limits for getblocktemplate."""
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.blocktools import (
+    get_block_ticks,
+    get_chaintip_ticks,
+    get_next_block_interval,
+)
+from test_framework.test_framework import BitcoinTestFramework, TIMESTAMP_IN_THE_PAST
 from test_framework.util import (
     assert_equal,
     connect_nodes_bi
 )
 from test_framework.cdefs import (
     BLOCK_MAXBYTES_MAXSIGCHECKS_RATIO,
+    COINBASE_MATURITY_TICKS,
     DEFAULT_CONSENSUS_BLOCK_SIZE,
     MAX_CONSENSUS_BLOCK_SIZE,
     ONE_MEGABYTE
@@ -32,7 +38,14 @@ class GetBlockTemplateSigopsTest(BitcoinTestFramework):
         # This test is still valid, even after ABLA activates, since we want to check that
         # the getblocktemplate calls properly enforce & report the sigcheck limit, whatever
         # the max block size is set to.
-        self.start_node(node_id, new_extra_args + ['-upgrade10activationheight=2147483647'])
+        args = new_extra_args + ['-upgrade10activationheight=2147483647']
+        # start_node() replaces the node's argument list outright, so the
+        # activation override the harness injects after extra_args is dropped.
+        # Re-add it, otherwise the restarted node reloads the chain under the
+        # legacy interval and rejects it.
+        if self.options.upgrade2027activation:
+            args += ['-upgrade2027activationtime={}'.format(TIMESTAMP_IN_THE_PAST), '-expire=0']
+        self.start_node(node_id, args)
         connect_nodes_bi(self.nodes[0], self.nodes[1])
         self.sync_all()
 
@@ -52,46 +65,61 @@ class GetBlockTemplateSigopsTest(BitcoinTestFramework):
         assert_equal(tpl['sizelimit'], forced_size)
 
     def run_test(self):
-        # Generate 101 blocks, setup tx and sync nodes
-        self.generate(self.nodes[0], 101)
+        # Maturity is 60,000 ticks, not 100 blocks: the count differs by the
+        # interval ratio. Mine block 1 first so its own tick anchors the target
+        # (the node is at genesis on a clean chain), then poll, because the
+        # interval changes should 1-min blocks activate below.
+        miner = self.nodes[0]
+        self.generate(miner, 1)
+        target = get_block_ticks(miner, 1) + COINBASE_MATURITY_TICKS
+        while get_chaintip_ticks(miner) < target:
+            remaining = target - get_chaintip_ticks(miner)
+            interval = get_next_block_interval(miner)
+            assert interval in (60, 600)
+            self.generate(miner, max(1, remaining // interval))
+
+        # Read the ratio only after the chain is in its steady-state regime
+        ratio = self.interval_ratio
+        assert ratio in (1, 10)
+
         self.nodes[0].sendtoaddress(self.nodes[1].getnewaddress(), "1")
         self.sync_all()
 
         # Check against the first node, which runs with default params
-        self.assert_case("when using DEFAULT_CONSENSUS_BLOCK_SIZE", 0, DEFAULT_CONSENSUS_BLOCK_SIZE)
+        self.assert_case("when using DEFAULT_CONSENSUS_BLOCK_SIZE", 0, DEFAULT_CONSENSUS_BLOCK_SIZE // ratio)
 
         # From now on, we will test on second node with various values for forceblocksize
 
         # When below default size
         target_size = int(DEFAULT_CONSENSUS_BLOCK_SIZE * 0.67)
         self.reinit_node(1, ["-blockmaxsize=2000000", "-forceblocksize=" + str(target_size)])
-        self.assert_case("when below DEFAULT_CONSENSUS_BLOCK_SIZE", 1, target_size)
+        self.assert_case("when below DEFAULT_CONSENSUS_BLOCK_SIZE", 1, target_size // ratio)
 
         # When at lower boundary (1MB+1), but that requires blockmaxsize to be set to 1 MB as we're going below
         # the default for max generated block size (2 MB)
         target_size = ONE_MEGABYTE + 1
         self.reinit_node(1, ["-forceblocksize=" + str(target_size), "-blockmaxsize=" + str(ONE_MEGABYTE)])
-        self.assert_case("when at lower boundary (1MB+1)", 1, target_size)
+        self.assert_case("when at lower boundary (1MB+1)", 1, target_size // ratio)
 
         # When slightly above lower boundary (1MB+114) but still below the default for max generated block size
         target_size = ONE_MEGABYTE + 114
         self.reinit_node(1, ["-forceblocksize=" + str(target_size), "-blockmaxsize=" + str(ONE_MEGABYTE)])
-        self.assert_case("when slightly above the lower boundary (1MB+114)", 1, target_size)
+        self.assert_case("when slightly above the lower boundary (1MB+114)", 1, target_size // ratio)
 
         # When above the default max block size
         target_size = int(DEFAULT_CONSENSUS_BLOCK_SIZE * 3.14)
         self.reinit_node(1, ["-forceblocksize=" + str(target_size)])
-        self.assert_case("when above the DEFAULT_CONSENSUS_BLOCK_SIZE", 1, target_size)
+        self.assert_case("when above the DEFAULT_CONSENSUS_BLOCK_SIZE", 1, target_size // ratio)
 
         # When at the upper boundary
         upper_boundary = MAX_CONSENSUS_BLOCK_SIZE
         self.reinit_node(1, ["-forceblocksize=" + str(upper_boundary)])
-        self.assert_case("when at the upper boundary", 1, upper_boundary)
+        self.assert_case("when at the upper boundary", 1, upper_boundary // ratio)
 
         # When somewhere below upper boundary
         target_size = int(upper_boundary * 0.67)
         self.reinit_node(1, ["-forceblocksize=" + str(target_size)])
-        self.assert_case("when somewhere below the upper boundary", 1, target_size)
+        self.assert_case("when somewhere below the upper boundary", 1, target_size // ratio)
 
 
 if __name__ == '__main__':
