@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2019-2022 The Bitcoin developers
+# Copyright (c) 2019-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """
@@ -13,16 +13,17 @@ import time
 from test_framework.blocktools import (
     create_block,
     create_coinbase,
+    get_coinbase_subsidy,
     make_conform_to_ctor,
 )
 from test_framework.messages import (
-    COIN,
     COutPoint,
     CTransaction,
     CTxIn,
     CTxOut,
     ToHex,
 )
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.p2p import (
     P2PDataStore,
 )
@@ -79,7 +80,7 @@ class SegwitRecoveryTest(BitcoinTestFramework):
                             "-acceptnonstdtxn"],
                            ["-acceptnonstdtxn=0"]]
 
-    def next_block(self, number):
+    def next_block(self, number, nValue=None):
         if self.tip is None:
             base_block_hash = self.genesis_hash
             block_time = TEST_TIME
@@ -88,7 +89,12 @@ class SegwitRecoveryTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
         # First create the coinbase
         height = self.block_heights[base_block_hash] + 1
-        coinbase = create_coinbase(height)
+        # Derive the coinbase value from the node; create_coinbase()'s
+        # height-based default disagrees with the node by the interval ratio
+        # once the 60-tick regime is in force.
+        if nValue is None:
+            nValue = get_coinbase_subsidy(self.nodes[0], for_mining=True)
+        coinbase = create_coinbase(height, nValue=nValue)
         coinbase.rehash()
         block = create_block(base_block_hash, coinbase, block_time)
 
@@ -186,7 +192,11 @@ class SegwitRecoveryTest(BitcoinTestFramework):
             # Fund transaction to segwit addresses
             txfund = CTransaction()
             txfund.vin = [CTxIn(COutPoint(spend.tx.sha256, spend.n))]
-            amount = (50 * COIN - 1000) // len(redeem_scripts)
+            # Take the amount from the coin itself: a coinbase mined at 60
+            # ticks is worth 1/10th of its 600-tick counterpart, so a fixed
+            # value would over-spend the second funding input.
+            value = spend.tx.vout[spend.n].nValue
+            amount = (value - 1000) // len(redeem_scripts)
             for redeem_script in redeem_scripts:
                 txfund.vout.append(
                     CTxOut(amount, CScript([OP_HASH160, hash160(redeem_script), OP_EQUAL])))
@@ -202,7 +212,7 @@ class SegwitRecoveryTest(BitcoinTestFramework):
             for i in range(len(redeem_scripts)):
                 txspend.vin.append(
                     CTxIn(COutPoint(txfund.sha256, i), CScript([redeem_scripts[i]])))
-            txspend.vout = [CTxOut(50 * COIN - 2000,
+            txspend.vout = [CTxOut(value - 2000,
                                    CScript([OP_HASH160, hash160(CScript([OP_TRUE])), OP_EQUAL]))]
             txspend.rehash()
 
@@ -219,9 +229,22 @@ class SegwitRecoveryTest(BitcoinTestFramework):
         accepted(node_nonstd)
 
         # Now we need that block to mature so we can spend the coinbase.
+        # Maturity is 60,000 ticks. The batch below stays inside one interval
+        # regime, so its per-block advance is constant: one interval read
+        # (taken after block 1 is connected, i.e. for the regime the batch
+        # runs in) gives an exact count, and one subsidy lookup serves every
+        # block in it. The batch ends at 60,660 (60-tick) or 61,200 (600-tick)
+        # ticks, short of the 90,000-tick first era, so the subsidy is constant.
+        assert self.block_interval in (60, 600)
+        n_mature = COINBASE_MATURITY_TICKS // self.block_interval + 1
+        cb_value = get_coinbase_subsidy(node_nonstd, for_mining=True)
+        # Batch numbering starts clear of the blocks named by the rest of the
+        # test (5555 for the funding block, 5 for the segwit-spend block) since
+        # the batch is now up to 1,001 blocks long and would otherwise collide.
+        first_number = 10_000
         matureblocks = []
-        for i in range(199):
-            block(5000 + i)
+        for i in range(n_mature):
+            block(first_number + i, nValue=cb_value)
             matureblocks.append(self.tip)
             save_spendable_output()
         node_nonstd.p2p.send_blocks_and_test(matureblocks, node_nonstd)
