@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022-2023 The Bitcoin developers
+# Copyright (c) 2022-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Test enforcement of minimum tx size of 100 before Upgrade9 and of 65 after Upgrade9.."""
+"""Test enforcement of minimum tx size of 100 before Upgrade9 and of 65 after Upgrade9."""
 import time
 from typing import Optional
 
@@ -10,8 +10,10 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
     create_tx_with_script,
+    get_coinbase_subsidy,
 )
 from test_framework.cdefs import (
+    COINBASE_MATURITY_TICKS,
     MIN_TX_SIZE_MAGNETIC_ANOMALY,
     MIN_TX_SIZE_UPGRADE9,
 )
@@ -59,17 +61,27 @@ class MinTxSizeTest(BitcoinTestFramework):
         b1 = self.create_block(genesis, min_tx_size_coinbase=MIN_TX_SIZE_MAGNETIC_ANOMALY, nTime=int(time.time()))
         self.send_blocks([b1])
 
-        # Allow the block to mature, and then some
+        # A few padded blocks whose OP_TRUE coinbases the size tests below spend
         blocks = [b1]
-        for i in range(120):
+        for _ in range(4):
             blocks.append(self.create_block(blocks[-1], min_tx_size_coinbase=MIN_TX_SIZE_MAGNETIC_ANOMALY,
                                             min_tx_size=MIN_TX_SIZE_MAGNETIC_ANOMALY))
-        self.send_blocks(blocks[1:])
+            self.send_blocks(blocks[-1:])
 
         for block in blocks:
             for txn in block.vtx:
                 # Ensure all the txns are == 100 bytes
                 assert_equal(len(txn.serialize()), MIN_TX_SIZE_MAGNETIC_ANOMALY)
+
+        # Mature the coins to be spent
+        self.mine_until_tick_depth(node, blocks[-1].sha256.to_bytes(length=32, byteorder="big").hex(),
+                                   COINBASE_MATURITY_TICKS)
+
+        # Continue on the node's tip, which the bulk mine moved.
+        tip = FromHex(CBlock(), node.getblock(node.getbestblockhash(), 0))
+        tip.rehash()
+        self.block_heights[tip.sha256] = node.getblockcount()
+        blocks.append(tip)
 
         spend_index = 0
 
@@ -111,9 +123,9 @@ class MinTxSizeTest(BitcoinTestFramework):
                                             min_tx_size=MIN_TX_SIZE_MAGNETIC_ANOMALY))
             assert_equal(len(blocks[-1].vtx[0].serialize()), MIN_TX_SIZE_MAGNETIC_ANOMALY)
             assert_equal(len(blocks[-1].vtx[1].serialize()), MIN_TX_SIZE_MAGNETIC_ANOMALY)
+            self.send_blocks([blocks[-1]])
             spend_index += 1
         assert iters > 0
-        self.send_blocks(blocks[-iters:])
         # Paranoia: Ensure node accepted above chain
         assert_equal(node.getbestblockhash(), blocks[-1].sha256.to_bytes(length=32, byteorder="big").hex())
         # Ensure upgrade9 activated
@@ -213,7 +225,9 @@ class MinTxSizeTest(BitcoinTestFramework):
         block_time = prev_block.nTime + 1 if nTime is None else nTime
         # First create the coinbase
         height = self.block_heights.get(prev_block_hash, 0) + 1
-        coinbase = create_coinbase(height, pad_to_size=0)  # pad_to_size is buggy, we do it manually
+        coinbase = create_coinbase(height, pad_to_size=0,  # pad_to_size is buggy, we do it manually
+                                   nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True),
+                                   noAutoHalving=True)
         size = len(coinbase.serialize())
         needed = max(0, min_tx_size_coinbase - size)
         self.log.info(f"Appending {needed} bytes to coinbase of size {size} to get it to {min_tx_size_coinbase} "
