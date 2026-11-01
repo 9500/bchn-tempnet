@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022-2026 The Bitcoin developers
+# Copyright (c) 2022-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test support for p2sh32 which activates with Upgrade9."""
@@ -7,7 +7,8 @@ import random
 from typing import List, NamedTuple, Optional
 
 from test_framework import address, cashaddr
-from test_framework.blocktools import create_block, create_coinbase
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
+from test_framework.blocktools import create_block, create_coinbase, get_coinbase_subsidy
 from test_framework.key import ECKey
 from test_framework.messages import (
     CBlock,
@@ -107,7 +108,12 @@ class P2SH32Test(BitcoinTestFramework):
         for sw in segwits:
             blockhashes += node.generatetoaddress(2, sw.addr)
         # Generate to our p2sh32 -- we can't spend these until after activation.
-        blockhashes += node.generatetoaddress(103, self.addr_cashaddr)
+        blockhashes += node.generatetoaddress(3, self.addr_cashaddr)
+        # Mature the coinbases above: 60,000 ticks, i.e. 100 blocks of 10 min or 1,000 of 1 min.
+        blockhashes += self.mine_for_ticks(node, COINBASE_MATURITY_TICKS, address=self.addr_cashaddr)
+
+        # Coinbase value for every block this test builds by hand.
+        cb_subsidy = get_coinbase_subsidy(node, for_mining=True)
 
         def sum_values(utxos: List[UTXO]) -> int:
             return sum(txout.nValue for _, txout in utxos)
@@ -215,7 +221,7 @@ class P2SH32Test(BitcoinTestFramework):
         # Next, try to mine the p2sh-spending tx and confirm that the block is rejected (blk-bad-inputs)
         block = self.create_block(prev_block=FromHex(CBlock(), node.getblock(blockhashes[-1], False)),
                                   height=node.getblockchaininfo()["blocks"] + 1,
-                                  txns=[tx])
+                                  txns=[tx], nValue=cb_subsidy)
 
         self.send_blocks([block], success=False, reject_reason='blk-bad-inputs')
         assert_equal(blockhashes[-1], node.getbestblockhash())
@@ -223,7 +229,7 @@ class P2SH32Test(BitcoinTestFramework):
         # Next, try to mine one of the p2sh-puzzle-solving txns and confirm that the block is accepted
         block = self.create_block(prev_block=FromHex(CBlock(), node.getblock(blockhashes[-1], False)),
                                   height=node.getblockchaininfo()["blocks"] + 1,
-                                  txns=[txns_hash_puzzle_only[0]])
+                                  txns=[txns_hash_puzzle_only[0]], nValue=cb_subsidy)
         block.rehash()
         self.send_blocks([block], success=True)
         blockhashes += [block.hash]
@@ -233,7 +239,7 @@ class P2SH32Test(BitcoinTestFramework):
         # accepted (both work pre-activation since it's just a puzzle-solve and the scripts aren't evaluated)
         block = self.create_block(prev_block=FromHex(CBlock(), node.getblock(blockhashes[-1], False)),
                                   height=node.getblockchaininfo()["blocks"] + 1,
-                                  txns=[txns_op_true[0], txns_op_false[0]])
+                                  txns=[txns_op_true[0], txns_op_false[0]], nValue=cb_subsidy)
         block.rehash()
         self.send_blocks([block], success=True)
         blockhashes += [block.hash]
@@ -243,7 +249,7 @@ class P2SH32Test(BitcoinTestFramework):
         # hash-puzzle-solve and the scripts aren't evaluated)
         block = self.create_block(prev_block=FromHex(CBlock(), node.getblock(blockhashes[-1], False)),
                                   height=node.getblockchaininfo()["blocks"] + 1,
-                                  txns=txns_spend_segwit[0])
+                                  txns=txns_spend_segwit[0], nValue=cb_subsidy)
         block.rehash()
         self.send_blocks([block], success=True)
         blockhashes += [block.hash]
@@ -286,14 +292,14 @@ class P2SH32Test(BitcoinTestFramework):
         # after activation (blk-bad-inputs)
         block = self.create_block(prev_block=FromHex(CBlock(), node.getblock(blockhashes[-1], False)),
                                   height=node.getblockchaininfo()["blocks"] + 1,
-                                  txns=[txns_hash_puzzle_only[1]])
+                                  txns=[txns_hash_puzzle_only[1]], nValue=cb_subsidy)
         self.send_blocks([block], success=False, reject_reason='blk-bad-inputs')
         assert_equal(blockhashes[-1], node.getbestblockhash())
 
         # Do the same for the OP_FALSE txn (worked pre-activation, fails post-activation)
         block = self.create_block(prev_block=FromHex(CBlock(), node.getblock(blockhashes[-1], False)),
                                   height=node.getblockchaininfo()["blocks"] + 1,
-                                  txns=[txns_op_false[1]])
+                                  txns=[txns_op_false[1]], nValue=cb_subsidy)
         self.send_blocks([block], success=False, reject_reason='blk-bad-inputs')
         assert_equal(blockhashes[-1], node.getbestblockhash())
 
@@ -303,7 +309,7 @@ class P2SH32Test(BitcoinTestFramework):
         for txn_segwit in txns_spend_segwit[1]:
             block = self.create_block(prev_block=FromHex(CBlock(), node.getblock(blockhashes[-1], False)),
                                       height=node.getblockchaininfo()["blocks"] + 1,
-                                      txns=[txn_segwit])
+                                      txns=[txn_segwit], nValue=cb_subsidy)
             self.send_blocks([block], success=False, reject_reason='blk-bad-inputs')
             assert_equal(blockhashes[-1], node.getbestblockhash())
 
@@ -414,14 +420,15 @@ class P2SH32Test(BitcoinTestFramework):
         return tx
 
     @staticmethod
-    def create_block(prev_block: CBlock, height: int, *, nTime: Optional[int] = None, txns=None) -> CBlock:
+    def create_block(prev_block: CBlock, height: int, *, nValue: int, nTime: Optional[int] = None,
+                     txns=None) -> CBlock:
         if prev_block.sha256 is None:
             prev_block.rehash()
         assert prev_block.sha256 is not None  # Satisfy linter with this assertion
         prev_block_hash = prev_block.sha256
         block_time = prev_block.nTime + 1 if nTime is None else nTime
         # First create the coinbase (pays out to OP_TRUE)
-        coinbase = create_coinbase(height)
+        coinbase = create_coinbase(height, nValue=nValue, noAutoHalving=True)
 
         txns = txns or []
         block = create_block(prev_block_hash, coinbase, block_time, txns=txns)
