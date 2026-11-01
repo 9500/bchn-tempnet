@@ -9,10 +9,12 @@ Test block sigchecks limits
 from test_framework.blocktools import (
     create_block,
     create_coinbase,
+    get_coinbase_subsidy,
     make_conform_to_ctor,
 )
 from test_framework.cdefs import (
-    BLOCK_MAXBYTES_MAXSIGCHECKS_RATIO
+    BLOCK_MAXBYTES_MAXSIGCHECKS_RATIO,
+    COINBASE_MATURITY_TICKS,
 )
 from test_framework.messages import (
     CBlock,
@@ -108,10 +110,17 @@ class BlockSigChecksTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.block_heights = {}
         self.base_extra_args = ['-acceptnonstdtxn=1']
-        # Note that -forceblocksize also disables ABLA
-        self.extra_args = [self.base_extra_args +
-                           ["-forceblocksize={}".format(FORCEBLOCKSIZE),
-                            "-blockmaxsize={}".format(MAXGENERATEDBLOCKSIZE)]]
+        self.extra_args = [self.base_extra_args]
+
+    def force_node_args_and_restart(self, forced_block_size):
+        assert self.nodes
+        ratio = self.interval_ratio
+        for node in self.nodes:
+            self.stop_node(node.index)
+            # Note: -forceblocksize also disables ABLA
+            extra_args = self.base_extra_args + ["-forceblocksize={}".format(forced_block_size * ratio),
+                                                 "-blockmaxsize={}".format(MAXGENERATEDBLOCKSIZE * ratio),]
+            self.start_node(node.index, extra_args=extra_args)
 
     def getbestblock(self, node):
         """Get the best block. Register its height so we can use build_block."""
@@ -122,8 +131,7 @@ class BlockSigChecksTest(BitcoinTestFramework):
         self.block_heights[block.sha256] = block_height
         return block
 
-    def build_block(self, parent, transactions=(),
-                    nTime=None):
+    def build_block(self, parent, transactions=(), nTime=None):
         """Make a new block with an OP_1 coinbase output.
 
         Requires parent to have its height registered."""
@@ -132,7 +140,9 @@ class BlockSigChecksTest(BitcoinTestFramework):
         block_time = (parent.nTime + 1) if nTime is None else nTime
 
         block = create_block(
-            parent.sha256, create_coinbase(block_height), block_time)
+            parent.sha256,
+            create_coinbase(block_height, nValue=self.coinbase_subsidy),
+            block_time)
         block.vtx.extend(transactions)
         make_conform_to_ctor(block)
         block.hashMerkleRoot = block.calc_merkle_root()
@@ -141,10 +151,18 @@ class BlockSigChecksTest(BitcoinTestFramework):
         return block
 
     def run_test(self):
-        [node] = self.nodes
-        node.add_p2p_connection(P2PDataStore())
+        node = self.nodes[0]
         # Get out of IBD
         self.generatetoaddress(node, 1, node.get_deterministic_priv_key().address)
+        saved_block_interval = self.block_interval
+        assert saved_block_interval in (60, 600)
+        # Now, restart node with the proper -forceblocksize set depending on whether we are using 1-min or 10-min blocks
+        self.force_node_args_and_restart(FORCEBLOCKSIZE)
+        node.add_p2p_connection(P2PDataStore())
+
+        # One subsidy covers every hand-built block below: the chain stays under
+        # the regtest halving boundary (150 * 600 = 90,000 ticks).
+        self.coinbase_subsidy = get_coinbase_subsidy(node, for_mining=True)
 
         tip = self.getbestblock(node)
 
@@ -157,7 +175,7 @@ class BlockSigChecksTest(BitcoinTestFramework):
         self.spendable_outputs = deque(block.vtx[0] for block in blocks)
 
         self.log.info("Mature the blocks.")
-        self.generatetoaddress(node, 100, node.get_deterministic_priv_key().address)
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS)
 
         tip = self.getbestblock(node)
 
@@ -282,11 +300,9 @@ class BlockSigChecksTest(BitcoinTestFramework):
 
         self.log.info("Bump the forceblocksize limit by 1 byte, and send another block with same txes (new sigchecks limit: {})".format(
             (FORCEBLOCKSIZE + 1) // BLOCK_MAXBYTES_MAXSIGCHECKS_RATIO))
-        self.stop_node(0)
-        self.extra_args = [self.base_extra_args +
-                           ["-forceblocksize={}".format(FORCEBLOCKSIZE + 1),
-                            "-blockmaxsize={}".format(MAXGENERATEDBLOCKSIZE)]]
-        self.start_node(0)
+        self.force_node_args_and_restart(FORCEBLOCKSIZE + 1)
+        # A stale -forceblocksize shows up as a pong timeout, so check first.
+        assert_equal(self.block_interval, saved_block_interval)
         node.add_p2p_connection(P2PDataStore())
         self.sync_all()
         tip = self.build_block(
