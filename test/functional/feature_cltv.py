@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2015-2019 The Bitcoin Core developers
-# Copyright (c) 2019-2026 The Bitcoin developers
+# Copyright (c) 2019-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test BIP65 (CHECKLOCKTIMEVERIFY).
@@ -9,7 +9,14 @@ Test that the CHECKLOCKTIMEVERIFY soft-fork activates at (regtest) block height
 1351.
 """
 
-from test_framework.blocktools import create_block, create_coinbase, create_transaction, make_conform_to_ctor
+from decimal import Decimal
+from test_framework.blocktools import (
+    create_block,
+    create_coinbase,
+    create_transaction,
+    get_chaintip_ticks,
+    make_conform_to_ctor,
+)
 from test_framework.messages import (
     CTransaction,
     FromHex,
@@ -100,17 +107,26 @@ class BIP65Test(BitcoinTestFramework):
         self.nodes[0].add_p2p_connection(P2PInterface())
 
         self.log.info("Mining {} blocks".format(CLTV_HEIGHT - 2))
-        self.coinbase_txids = [self.nodes[0].getblock(
-            b)['tx'][0] for b in self.generate(self.nodes[0], CLTV_HEIGHT - 2)]
+        coinbase_blocks = self.generate(self.nodes[0], CLTV_HEIGHT - 2)
+        self.coinbase_txids = [self.nodes[0].getblock(b)['tx'][0] for b in coinbase_blocks]
         self.nodeaddress = self.nodes[0].getnewaddress()
+        # Past genesis the harness is on either the legacy 600-tick schedule or
+        # the 60-tick one; the lock derivation at the end covers both.
+        assert self.block_interval in (60, 600)
+        # Values of the three coinbases the test spends (heights 1, 2, 3). Only
+        # height 1 is a 600-tick block in both regimes. If 1-min blocks
+        # activates, then under the shorter interval the activation block is
+        # height 1, so heights 2 and 3 are worth 5 BCH not 50 BCH. The below
+        # loop handles both regimes (10-min and 1-min activating at height 2).
+        cb_values = [self.nodes[0].getblock(b, 2)['tx'][0]['vout'][0]['value']
+                     for b in coinbase_blocks[:3]]
 
         self.log.info(
             "Test that an invalid-according-to-CLTV transaction can still appear in a block")
 
         fundtx = create_transaction(self.nodes[0], self.coinbase_txids[0],
-                                    self.nodeaddress, 49.99)
-        fundtx, spendtx = cltv_lock_to_height(
-            self.nodes[0], fundtx, self.nodeaddress, 49.98)
+                                    self.nodeaddress, cb_values[0] - Decimal('0.01'))
+        fundtx, spendtx = cltv_lock_to_height(self.nodes[0], fundtx, self.nodeaddress, cb_values[0] - Decimal('0.02'))
 
         tip = self.nodes[0].getbestblockhash()
         block_time = self.nodes[0].getblockheader(tip)['mediantime'] + 1
@@ -145,9 +161,8 @@ class BIP65Test(BitcoinTestFramework):
         block.nVersion = 4
 
         fundtx = create_transaction(self.nodes[0], self.coinbase_txids[1],
-                                    self.nodeaddress, 49.99)
-        fundtx, spendtx = cltv_lock_to_height(
-            self.nodes[0], fundtx, self.nodeaddress, 49.98)
+                                    self.nodeaddress, cb_values[1] - Decimal('0.01'))
+        fundtx, spendtx = cltv_lock_to_height(self.nodes[0], fundtx, self.nodeaddress, cb_values[1] - Decimal('0.02'))
 
         # The funding tx only has unexecuted bad CLTV, in scriptpubkey; this is
         # valid.
@@ -196,13 +211,21 @@ class BIP65Test(BitcoinTestFramework):
         self.log.info(
             "Test that a version 4 block with a valid-according-to-CLTV transaction is accepted")
         fundtx = create_transaction(self.nodes[0], self.coinbase_txids[2],
-                                    self.nodeaddress, 49.99)
+                                    self.nodeaddress, cb_values[2] - Decimal('0.01'))
+
+        # nLockTime and the CLTV operand must name the same value, and the spend
+        # must also be final in its block. On legacy 10-min blocks, the tip's
+        # normalized height is its raw height (1351 here); if 1-min blocks is
+        # active, a height-mode lock names 600*L ticks, so derive L from the tick
+        # count.
+        lock_height = get_chaintip_ticks(self.nodes[0]) // 600
         fundtx, spendtx = cltv_lock_to_height(
-            self.nodes[0], fundtx, self.nodeaddress, 49.98, CLTV_HEIGHT)
+            self.nodes[0], fundtx, self.nodeaddress,
+            cb_values[2] - Decimal('0.02'), lock_height)
 
         # make sure sequence is nonfinal and locktime is good
         spendtx.vin[0].nSequence = 0xfffffffe
-        spendtx.nLockTime = CLTV_HEIGHT
+        spendtx.nLockTime = lock_height
 
         # both transactions are fully valid
         self.nodes[0].sendrawtransaction(ToHex(fundtx))
