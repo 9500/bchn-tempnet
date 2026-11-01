@@ -152,10 +152,8 @@ class TokenCoinbaseForbiddenTest(BitcoinTestFramework):
         # 1. Set the activation MTP height a bit forward of the current tip's height
         activation_height = node.getblockchaininfo()["blocks"] + 1
         self.log.info(f"ACTIVATION HEIGHT: {activation_height}")
-        # 2. Restart the node, enabling upgrade9. Preserve the arguments the test harness injected
-        #    (notably -upgrade2027activationtime), since restart_node() replaces self.extra_args[0].
-        restart_args = [a for a in self.extra_args[0] if not a.startswith('-upgrade9activationheight')]
-        self.restart_node(0, extra_args=[f"-upgrade9activationheight={activation_height}"] + restart_args)
+        # 2. Restart the node, enabling upgrade9
+        self.restart_node(0, extra_args=self.base_extra_args + [f"-upgrade9activationheight={activation_height}"])
         self.reconnect_p2p()
 
         # Mine blocks until it activates

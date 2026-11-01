@@ -247,11 +247,8 @@ class ParkedChainTest(BitcoinTestFramework):
         self.mine_for_ticks(parking_node, 2400 - self.block_interval)
         self.mine_for_ticks(node, 3000)
         wait_for_parked_block(node.getbestblockhash())
-        # Restart the parking node without parkdeepreorg, preserving the arguments the harness
-        # injected (restart_node replaces self.extra_args[1], and dropping
-        # -upgrade2027activationtime would reload this chain at 600 ticks and reject it).
-        restart_args = [a for a in self.extra_args[1] if not a.startswith('-parkdeepreorg')]
-        self.restart_node(1, ["-parkdeepreorg=0"] + restart_args)
+        # Restart the parking node without parkdeepreorg.
+        self.restart_node(1, extra_args=["-parkdeepreorg=0"])
         parking_node = self.nodes[1]
         connect_nodes_bi(node, parking_node)
         # The other chain should still be marked 'parked'.

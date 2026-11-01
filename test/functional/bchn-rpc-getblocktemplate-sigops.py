@@ -27,25 +27,18 @@ class GetBlockTemplateSigopsTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 2
-        self.extra_args = [[], []]
+        # Note that this test was designed for pre-ABLA, so we must enforce no upgrade10.
+        # This test is still valid, even after ABLA activates, since we want to check that
+        # the getblocktemplate calls properly enforce & report the sigcheck limit, whatever
+        # the max block size is set to.
+        self.base_extra_args = ['-upgrade10activationheight=2147483647']
+        self.extra_args = [self.base_extra_args, self.base_extra_args]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
     def reinit_node(self, node_id, new_extra_args):
-        self.stop_node(node_id)
-        # Note that this test was designed for pre-ABLA, so we must enforce no upgrade10.
-        # This test is still valid, even after ABLA activates, since we want to check that
-        # the getblocktemplate calls properly enforce & report the sigcheck limit, whatever
-        # the max block size is set to.
-        args = new_extra_args + ['-upgrade10activationheight=2147483647']
-        # start_node() replaces the node's argument list outright, so the
-        # activation override the harness injects after extra_args is dropped.
-        # Re-add it, otherwise the restarted node reloads the chain under the
-        # legacy interval and rejects it.
-        if self.options.upgrade2027activation:
-            args += ['-upgrade2027activationtime={}'.format(TIMESTAMP_IN_THE_PAST), '-expire=0']
-        self.start_node(node_id, args)
+        self.restart_node(node_id, self.base_extra_args + new_extra_args)
         connect_nodes_bi(self.nodes[0], self.nodes[1])
         self.sync_all()
 
