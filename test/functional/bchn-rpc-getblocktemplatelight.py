@@ -312,13 +312,10 @@ class GBTLightTest(BitcoinTestFramework):
 
         tmpl = submit_tmpl
         job_id = submit_job_id
-        # The submitted block is the one on top of the current tip, so take its
-        # subsidy from the node: create_coinbase()'s height-based default is
-        # 50 BCH, which exceeds subsidy+fees by the interval ratio and is
-        # rejected as bad-cb-amount before the light-block checks run.
         coinbase_tx = blocktools.create_coinbase(
             height=int(tmpl["height"]) + 1,
-            nValue=blocktools.get_coinbase_subsidy(self.nodes[0], for_mining=True))
+            nValue=blocktools.get_coinbase_subsidy(self.nodes[0], for_mining=True),
+            noAutoHalving=True)
         coinbase_tx.vin[0].nSequence = 2 ** 32 - 2
         coinbase_tx.rehash()
 

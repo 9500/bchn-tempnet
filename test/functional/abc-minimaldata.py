@@ -16,7 +16,6 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
     create_tx_with_script,
-    get_chaintip_ticks,
     get_coinbase_subsidy,
     make_conform_to_ctor,
 )
@@ -93,7 +92,9 @@ class MinimaldataTest(BitcoinTestFramework):
             nValue = get_coinbase_subsidy(self.nodes[0], for_mining=True)
 
         block = create_block(
-            parent.sha256, create_coinbase(block_height, nValue=nValue), block_time)
+            parent.sha256,
+            create_coinbase(block_height, nValue=nValue, noAutoHalving=True),
+            block_time)
         block.vtx.extend(transactions)
         make_conform_to_ctor(block)
         block.hashMerkleRoot = block.calc_merkle_root()
@@ -130,22 +131,18 @@ class MinimaldataTest(BitcoinTestFramework):
         self.log.info("Create some blocks with OP_1 coinbase for spending.")
         blocks = []
         for _ in range(10):
-            # Send one at a time: if upgrade2027 is acticated, the activation
-            # block is crossed within these ten blocks (H_a = 206 on the cached
-            # chain), so the coinbase value changes mid-batch and a prebuilt
-            # batch would underpay the post-seam blocks.
+            # Build and sent one at a time: build_block() asks the node for the
+            # next block's subsidy, and getblocktemplate() only answers for the
+            # block on the current tip, so a prebuilt batch would stamp every
+            # block with the first one's coinbase subsidy.
             tip = self.build_block(tip)
             node.p2p.send_blocks_and_test([tip], node, success=True)
             blocks.append(tip)
         spendable_outputs = [block.vtx[0] for block in blocks]
 
         self.log.info("Mature the blocks.")
-        # Maturity is 60,000 ticks: 100 blocks at 600 ticks, 1,000 at 60.
-        target_ticks = get_chaintip_ticks(node) + COINBASE_MATURITY_TICKS
-        while get_chaintip_ticks(node) < target_ticks:
-            nblocks = (target_ticks - get_chaintip_ticks(node)) // self.block_interval
-            assert nblocks > 0
-            self.generatetoaddress(node, nblocks, node.get_deterministic_priv_key().address)
+        # 100 blocks for 10-min blocks, 1,000 for 1-min blocks.
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS)
 
         tip = self.getbestblock(node)
 

@@ -14,7 +14,6 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
     create_tx_with_script,
-    get_chaintip_ticks,
     get_coinbase_subsidy,
     make_conform_to_ctor,
 )
@@ -105,15 +104,11 @@ class SchnorrTest(BitcoinTestFramework):
         parent.calc_sha256()
         block_height = self.block_heights[parent.sha256] + 1
         block_time = (parent.nTime + 1) if nTime is None else nTime
-        # Derive the coinbase value from the node rather than relying on
-        # create_coinbase()'s height-based halving: once the 60-tick regime is
-        # in force the two disagree by the interval ratio. Every call site
-        # builds on the current chain tip, so `for_mining=True` names this block.
         if nValue is None:
             nValue = get_coinbase_subsidy(self.nodes[0], for_mining=True)
 
         block = create_block(
-            parent.sha256, create_coinbase(block_height, nValue=nValue), block_time)
+            parent.sha256, create_coinbase(block_height, nValue=nValue, noAutoHalving=True), block_time)
         block.vtx.extend(transactions)
         make_conform_to_ctor(block)
         block.hashMerkleRoot = block.calc_merkle_root()
@@ -157,11 +152,7 @@ class SchnorrTest(BitcoinTestFramework):
 
         self.log.info("Mature the blocks.")
         # Maturity is 60,000 ticks: 100 blocks at 600 ticks, 1,000 at 60.
-        target_ticks = get_chaintip_ticks(node) + COINBASE_MATURITY_TICKS
-        while get_chaintip_ticks(node) < target_ticks:
-            nblocks = (target_ticks - get_chaintip_ticks(node)) // self.block_interval
-            assert nblocks > 0
-            self.generatetoaddress(node, nblocks, node.get_deterministic_priv_key().address)
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS)
 
         tip = self.getbestblock(node)
 

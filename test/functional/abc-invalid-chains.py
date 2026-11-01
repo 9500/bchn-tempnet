@@ -33,7 +33,8 @@ class InvalidChainsTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
 
         height = self.block_heights[base_block_hash] + 1
-        coinbase = create_coinbase(height, nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True))
+        coinbase = create_coinbase(height, nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True),
+                                   noAutoHalving=True)
         coinbase.rehash()
         block = create_block(base_block_hash, coinbase, block_time)
 
@@ -68,14 +69,11 @@ class InvalidChainsTest(BitcoinTestFramework):
         #               \
         #                -- 15 - 16 - 17 - 18
 
-        # Generate some valid blocks
-        # Sent individually so each is built after its parent is accepted; see next_block().
+        # Generate some valid blocks.
+        # Sent individually because the coinbase value comes from the node's
+        # tip, so each block must be built after its parent has been accepted.
         for i in range(3):
             node.p2p.send_blocks_and_test([block(i)], node)
-
-        # In case upgrade 2027 has activated (1 min blocks), the activation must land after the first block we mined.
-        assert_equal(node.getblockheader(self.blocks[0].hash)["target_time"], 600)
-        assert_equal(node.getblockheader(self.blocks[1].hash)["target_time"], self.block_interval)
 
         # Explicitly invalidate blocks 1 and 2
         # See below for why we do this

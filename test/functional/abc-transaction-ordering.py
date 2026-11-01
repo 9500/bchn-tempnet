@@ -65,13 +65,9 @@ class TransactionOrderingTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
         # First create the coinbase
         height = self.block_heights[base_block_hash] + 1
-        # Derive the coinbase value from the node: create_coinbase()'s
-        # height-based default is 10x too large once the 60-tick regime is in
-        # force, and the surplus is rejected as bad-cb-amount before any of the
-        # ordering logic below is reached.
         if nValue is None:
             nValue = get_coinbase_subsidy(self.nodes[0], for_mining=True)
-        coinbase = create_coinbase(height, nValue=nValue)
+        coinbase = create_coinbase(height, nValue=nValue, noAutoHalving=True)
         coinbase.rehash()
         if spend is None:
             # We need to have something to spend to fill the block.
@@ -179,30 +175,11 @@ class TransactionOrderingTest(BitcoinTestFramework):
         node.p2p.send_blocks_and_test([self.tip], node)
 
         # Now we need that block to mature so we can spend the coinbase.
-        # Maturity is 60,000 ticks. The interval seam can fall inside the first
-        # median-time-past window, so the blocks right after block 1 may still
-        # be 600-tick and carry the legacy subsidy while later ones carry the
-        # scaled one. Send that window one block at a time so the node values
-        # each block, then batch the rest under a single post-seam value.
-        maturity_number = 10_000
-        maturity_blocks = []
-        for _ in range(11):
-            if get_next_block_interval(node) != 600:
-                break
-            block(maturity_number, nValue=get_coinbase_subsidy(node, for_mining=True))
-            maturity_number += 1
-            maturity_blocks.append(self.tip)
-            save_spendable_output()
-        node.p2p.send_blocks_and_test(maturity_blocks, node)
-
-        # The collected coinbases sit up to 99 blocks past height 1, so the
-        # batch must exceed the maturity count by that much for the newest of
-        # them to be spendable. The batch stays inside one interval regime and
-        # one subsidy era (era 0 ends at 90,000 ticks on regtest).
         interval = get_next_block_interval(node)
         assert interval in (60, 600)
-        n_mature = COINBASE_MATURITY_TICKS // interval + 100
+        n_mature = COINBASE_MATURITY_TICKS // interval
         cb_value = get_coinbase_subsidy(node, for_mining=True)
+        maturity_number = 10_000
         maturity_blocks = []
         for _ in range(n_mature):
             block(maturity_number, nValue=cb_value)

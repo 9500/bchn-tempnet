@@ -138,7 +138,7 @@ class MempoolCoherenceOnActivationsTest(BitcoinTestFramework):
         self.extra_args = [['-whitelist=127.0.0.1',
                             '-acceptnonstdtxn=1']]
 
-    def next_block(self, number):
+    def next_block(self, number, nValue=None):
         if self.tip is None:
             base_block_hash = self.genesis_hash
             block_time = FIRST_BLOCK_TIME
@@ -148,11 +148,9 @@ class MempoolCoherenceOnActivationsTest(BitcoinTestFramework):
         # First create the coinbase
         height = self.block_heights[base_block_hash] + 1
 
-        # The subsidy depends on the block interval in force, which is not
-        # necessarily 600 ticks: ask the node for the next block on its tip
-        # rather than assuming 50 BCH.
-        nValue = get_coinbase_subsidy(self.nodes[0], for_mining=True)
-        coinbase = create_coinbase(height, nValue=nValue)
+        if nValue is None:
+            nValue = get_coinbase_subsidy(self.nodes[0], for_mining=True)
+        coinbase = create_coinbase(height, nValue=nValue, noAutoHalving=True)
         coinbase.rehash()
         block = create_block(base_block_hash, coinbase, block_time)
 
@@ -229,19 +227,21 @@ class MempoolCoherenceOnActivationsTest(BitcoinTestFramework):
         node.p2p.send_blocks_and_test([self.tip], node)
 
         # Maturity is COINBASE_MATURITY_TICKS ticks, so the number of blocks
-        # needed depends on the interval in force: 100 blocks at 600 ticks,
-        # 1000 at 60. Compute the count from the interval the next block will
-        # use, plus a margin; the tick-depth assertion below is the real check.
+        # needed depends on the interval in force: 100 blocks for 10-min blocks,
+        # 1000 at for 1-min. Compute the count from the interval the next block will
+        # use, plus a margin.
         maturity_interval = get_next_block_interval(node)
-        assert maturity_interval in (60, 600), \
-            f"unexpected block interval {maturity_interval} at height {node.getblockcount()}"
+        assert maturity_interval in (60, 600), (
+            f"unexpected block interval {maturity_interval} at height {node.getblockcount()}")
         n_maturity_blocks = COINBASE_MATURITY_TICKS // maturity_interval + 5
+        # The batch below is all under the same block time interval, so it's safe to grab nValue once.
+        nValue = get_coinbase_subsidy(node, for_mining=True)
         maturity_blocks = []
         for i in range(n_maturity_blocks):
             # Numbering starts past the ids used further down: at 60 ticks this
             # loop runs for ~1000 blocks and would otherwise collide with the
             # 5200/5555/5900 ranges below.
-            block(10_000 + i)
+            block(10_000 + i, nValue=nValue)
             maturity_blocks.append(self.tip)
             save_spendable_output()
         node.p2p.send_blocks_and_test(maturity_blocks, node)

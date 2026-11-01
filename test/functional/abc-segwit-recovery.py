@@ -89,12 +89,9 @@ class SegwitRecoveryTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
         # First create the coinbase
         height = self.block_heights[base_block_hash] + 1
-        # Derive the coinbase value from the node; create_coinbase()'s
-        # height-based default disagrees with the node by the interval ratio
-        # once the 60-tick regime is in force.
         if nValue is None:
             nValue = get_coinbase_subsidy(self.nodes[0], for_mining=True)
-        coinbase = create_coinbase(height, nValue=nValue)
+        coinbase = create_coinbase(height, nValue=nValue, noAutoHalving=True)
         coinbase.rehash()
         block = create_block(base_block_hash, coinbase, block_time)
 
@@ -229,12 +226,9 @@ class SegwitRecoveryTest(BitcoinTestFramework):
         accepted(node_nonstd)
 
         # Now we need that block to mature so we can spend the coinbase.
-        # Maturity is 60,000 ticks. The batch below stays inside one interval
-        # regime, so its per-block advance is constant: one interval read
-        # (taken after block 1 is connected, i.e. for the regime the batch
-        # runs in) gives an exact count, and one subsidy lookup serves every
-        # block in it. The batch ends at 60,660 (60-tick) or 61,200 (600-tick)
-        # ticks, short of the 90,000-tick first era, so the subsidy is constant.
+        # It this test is run with the 1-min upgrade activated, block 1 is the
+        # upgrade2027 activation block, so every block from 2 on is mined
+        # at one interval.
         assert self.block_interval in (60, 600)
         n_mature = COINBASE_MATURITY_TICKS // self.block_interval + 1
         cb_value = get_coinbase_subsidy(node_nonstd, for_mining=True)
