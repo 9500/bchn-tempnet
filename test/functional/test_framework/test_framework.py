@@ -472,7 +472,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         maturity predicate.
         """
         if address is None:
-            address = self._get_suitable_mining_address(node)
+            address = node.get_suitable_mining_address()
         while blocktools.get_block_tick_depth(node, blockhash) < depth_ticks:
             interval = blocktools.get_next_block_interval(node)
             self.generatetoaddress(
