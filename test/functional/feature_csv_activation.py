@@ -42,7 +42,6 @@ bip112tx_special - test negative argument to OP_CSV
 
 from decimal import Decimal
 from itertools import product
-import time
 
 from test_framework.blocktools import (
     create_block,
@@ -57,7 +56,7 @@ from test_framework.script import (
     OP_DROP,
     OP_TRUE,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, TIMESTAMP_IN_THE_PAST
 from test_framework.txtools import pad_tx
 from test_framework.util import assert_equal
 
@@ -233,9 +232,11 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.nodes[0].add_p2p_connection(P2PDataStore())
 
         self.log.info("Generate blocks in the past for coinbase outputs.")
-        # Enough to build up to 1000 blocks 10 minutes apart without worrying
-        # about getting into the future
-        long_past_time = int(time.time()) - 600 * 1000
+        # Anchor before the upgrade2027 activation time so the whole chain
+        # stays on 10-min blocks. Activating 1-min blocks make coinbases need
+        # ~1000 blocks to mature, which pushes the funding block past regtest's
+        # CSV activation height of 576.
+        long_past_time = TIMESTAMP_IN_THE_PAST - 600 * 1000
         # Enough so that the generated blocks will still all be before
         # long_past_time
         self.nodes[0].setmocktime(long_past_time - 100)
@@ -670,6 +671,9 @@ class BIP68_112_113Test(BitcoinTestFramework):
         # Test #126
         self.send_blocks([self.create_test_block(spend_txs)])
         self.nodes[0].invalidateblock(self.nodes[0].getbestblockhash())
+
+        # Ensure we are not on 1-min blocks (test was only designed for 10-min blocks)
+        assert self.block_interval == 600
 
         # TODO: Test empty stack fails
 
