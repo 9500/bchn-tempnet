@@ -95,12 +95,12 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         # Mine until the height-1 coinbase is spendable in the next block, plus
         # one more so the three spends below get a block of their own. At a
         # genesis tip the interval is 600 either way, so this is 101 blocks
-        # under the 10-mins block regime and 1001 under the 1-min block regime.
+        # under the 10-min block regime and 1001 under the 1-min block regime.
         self.mine_for_ticks(node, COINBASE_MATURITY_TICKS + self.block_interval)
         assert get_next_block_interval(node) in (60, 600)
 
         # Height of the block that will carry the three spends below, captured
-        # so no later query has to assume 10-minute block regime.
+        # so no later query has to assume the 10-minute block regime.
         self.spend_height = node.getblockcount() + 1
 
         # get_coinbase_subsidy() reports satoshis. The subsidy is 50 BCH or 5
@@ -269,11 +269,10 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         claimed_sats = cb_sats * 7 // 10
         locked_sats = cb_sats // 10
         unclaimed = Decimal(cb_sats - claimed_sats - locked_sats) / COIN
-        # Set vout[0] directly: create_coinbase(nValue=) takes a pre-halving
-        # base and shifts it by height // 150 -- a no-op at the legacy height
-        # 109, but 6 halvings at the ~1009 this block lands on with upgrade2027.
-        cb = create_coinbase(self.opreturn_height + 1)
-        cb.vout[0].nValue = claimed_sats
+        # noAutoHalving: nValue is already the era-adjusted subsidy, and the
+        # helper would otherwise shift it again by height // 150.
+        cb = create_coinbase(self.opreturn_height + 1, nValue=claimed_sats,
+                             noAutoHalving=True)
         cb.vout.append(CTxOut(locked_sats, CScript([OP_FALSE])))
         cb.rehash()
 

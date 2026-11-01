@@ -88,7 +88,6 @@ class TokenCoinbaseForbiddenTest(BitcoinTestFramework):
         self.log.info(f"Running test with block interval: {self.block_interval}")
         assert self.block_interval in (60, 600)
 
-
         # Create a PATFO in coinbase pre-activation, should work ok
         bad_token = TokenOutputData(id=random.getrandbits(256), amount=1000, commitment=b'Bad!!',
                                     bitfield=token.Structure.HasAmount | token.Structure.HasNFT
@@ -113,8 +112,8 @@ class TokenCoinbaseForbiddenTest(BitcoinTestFramework):
         height += 1
         nTime += 1
 
-        # Mine enough ticks to mature the coinbase txns created above: 60,000 ticks, i.e. 100
-        # legacy 10-minute blocks or 1,000 one-minute blocks after the 2027 upgrade.
+        # Mature the coinbases created above: 60,000 ticks, i.e. 100 blocks at 600 ticks or 1,000
+        # once upgrade2027's 60-tick schedule is in force.
         self.mine_for_ticks(node, COINBASE_MATURITY_TICKS, address=self.addr)
         blockhashes.append(node.getbestblockhash())
         nTime = FromHex(CBlock(), node.getblock(blockhashes[-1], 0)).nTime + 1
@@ -241,10 +240,13 @@ class TokenCoinbaseForbiddenTest(BitcoinTestFramework):
             prev_block_hash = uint256_from_hex(prev_block_hash)
         block_time = nTime or FromHex(CBlock(), self.nodes[0].getblock(uint256_to_hex(prev_block_hash), 0)).nTime + 1
 
-        # The coinbase value must match the subsidy in force for this block: it scales with the block
-        # interval after the 2027 upgrade, so a hardcoded 50 BCH would be a 10x overpay at 60 ticks.
+        # Take the subsidy from the node: it scales with the block interval once upgrade2027 is
+        # active, so a hardcoded 50 BCH would overpay by the interval ratio. noAutoHalving
+        # suppresses create_coinbase()'s own height/150 shift, which would otherwise compound with
+        # the era the node has already accounted for (~6 extra halvings at height ~1004).
         coinbase = create_coinbase(height, scriptPubKey=script_pub_key or self.spk, tokenData=token_data,
-                                   nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True))
+                                   nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True),
+                                   noAutoHalving=True)
         coinbase.rehash()
 
         txns = txns or []

@@ -170,10 +170,11 @@ class ParkedChainTest(BitcoinTestFramework):
             wait_until(check_block)
 
         def parking_penalty_blocks(depth_blocks, depth_ticks):
-            """P, in units of one block's work, per the tick-based unpark ramp.
+            """Penalty P of the tick-based unpark ramp, in units of one block's work.
 
-            P/D = (clamp(d,600,2400)/2400)^2, D being the defender's work since the fork.
-            A chain at depth D + k stays parked for k <= P and is unparked by the next block.
+            P/D = (clamp(d, 600, 2400) / 2400)^2, D being the defending chain's work
+            since the fork and d the divergence depth in ticks. The competing chain is
+            accepted only when its work since the fork exceeds D + P.
             """
             clamped = min(max(depth_ticks, 600), 2400)
             return depth_blocks * clamped * clamped // (2400 * 2400)
@@ -213,6 +214,9 @@ class ParkedChainTest(BitcoinTestFramework):
         # block-count keyed, so the boundary case must scale with the interval while the anchors
         # must not. At 600 ticks this is the legacy 1/1/2/3/4/5/6/100 blocks; at 60 ticks it is
         # 1/10/20/30/40/50/60/1000 blocks.
+        # The anchors below are mapped to block depths by dividing by the interval, which
+        # only lines up for the two schedules this test knows about.
+        assert self.block_interval in (60, 600)
         for depth_ticks in sorted({self.block_interval, 600, 1200, 1800, 2400, 3000, 3600, 60000}):
             check_reorg_protection(depth_ticks)
 
@@ -242,7 +246,7 @@ class ParkedChainTest(BitcoinTestFramework):
         # Set the defender at the 2x lock-in depth (2400 ticks since the fork) and the
         # competitor at 3000 ticks, then walk the competitor up to exactly D + P (== 2D once
         # d >= 2400) and one interval past it. At 600 ticks this is the legacy 4/5 blocks,
-        # +3, +1; at 60 ticks it is 40/50 blocks, +30, +1.
+        # +3, +1; at 60 ticks it is 40/50 blocks, +30, +10.
         node.invalidateblock(node.getbestblockhash())
         self.mine_for_ticks(parking_node, 2400 - self.block_interval)
         self.mine_for_ticks(node, 3000)

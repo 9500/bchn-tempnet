@@ -109,8 +109,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         # if we are on 10-min blocks. nTime advances one second per block, so these
         # blocks keep the cached chain's 2014 timestamps and stay below the
         # upgrade2027 activation MTP.
-        block = create_block(
-            parent.sha256, create_coinbase(block_height), block_time)
+        block = create_block(parent.sha256, create_coinbase(block_height), block_time)
         block.vtx.extend(transactions)
         make_conform_to_ctor(block)
         block.hashMerkleRoot = block.calc_merkle_root()
@@ -200,7 +199,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx([OP_6, OP_3], [OP_DIV, OP_2, OP_EQUALVERIFY])
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Divide 2^63-1 by 1 -- This should be 100% ok
@@ -209,7 +208,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Divide -2^63-1 / -2^63-1 -- This should be 100% ok
@@ -218,7 +217,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Divide -2^63-1 / 2^63-1 -- This should be 100% ok
@@ -227,7 +226,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Divide 2^63-1 / -2^63-1 -- This should be 100% ok
@@ -236,7 +235,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Divide 2^63-1 / 2^63-1 -- This should be 100% ok
@@ -245,7 +244,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Multiply past 2^32 -- should work
@@ -254,7 +253,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Add past (2^31 - 1) -- should work
@@ -263,7 +262,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Sub below -(2^31 - 1) -- should work
@@ -272,7 +271,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Divide/multiply mixed: -2^60 * 3 / 6 == -2^59
@@ -281,7 +280,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Divide: -2^31 * 3 / -6 == 2^30 (intermediate value outside of 32-bit range)
@@ -290,7 +289,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Divide: -2^32 * 3 / -6 == 2^31 (1 operand & intermediate value > 2^31 - 1)
@@ -299,7 +298,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Multiply past 2^63 - 1 -- funding tx is ok, spending should not be accepted due to out-of-range operand
@@ -341,7 +340,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Modulo: -(2^63 - 1) % -(2^63 - 1). Should not overflow, but yield 0
@@ -350,7 +349,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Attempt to create the forbidden: -(2^63), but don't use it as a number
@@ -359,7 +358,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # Attempt to create the forbidden: -(2^63), use it as a number
@@ -381,7 +380,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # OP_NUM2BIN - {2^63 - 1} -> 16-byte BIN should succeed
@@ -390,7 +389,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # OP_NUM2BIN - {-2^63 + 1} -> 8-byte BIN should succeed
@@ -399,7 +398,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # OP_NUM2BIN - {2^63 - 1} -> 7-byte BIN should fail because it won't fit within requested size
@@ -419,7 +418,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # OP_NUM2BIN - {2^31 - 1} -> 4-byte BIN should succeed (check that old functionality still works)
@@ -428,7 +427,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # OP_BIN2NUM - {BIN 2^63 - 1} should succeed
@@ -437,7 +436,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # OP_BIN2NUM - {BIN 2^63-1 padded with 8 extra bytes of zeroes} should succeed
@@ -446,7 +445,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # OP_BIN2NUM - {BIN -2^63+1} should succeed
@@ -455,7 +454,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # OP_BIN2NUM - {BIN 2^63} when crammed into 8 bytes will be treated as '-0'.. which, oddly, ends up as
@@ -486,7 +485,7 @@ class Int64CScriptNum(BitcoinTestFramework):
         tx0, tx = create_fund_and_spend_tx(ssextra, rsextra)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
-        spendable_txns.insert(0, tx)  # Recycle te output from this tx
+        spendable_txns.insert(0, tx)  # Recycle the output from this tx
         assert_equal(node.getrawmempool(), mempool)
 
         # OP_PICK - {4294967297 OP_PICK} should FAIL on both 64-bit and 32-bit systems
