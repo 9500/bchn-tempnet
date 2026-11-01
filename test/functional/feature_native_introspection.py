@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021-2022 The Bitcoin developers
+# Copyright (c) 2021-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """
@@ -18,8 +18,11 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
     create_tx_with_script,
+    get_chaintip_ticks,
+    get_coinbase_subsidy,
     make_conform_to_ctor,
 )
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.key import ECKey
 from test_framework.messages import (
     CBlock,
@@ -113,7 +116,9 @@ class NativeIntrospectionTest(BitcoinTestFramework):
         block_height = self.block_heights[parent.sha256] + 1
         block_time = (parent.nTime + 1) if nTime is None else nTime
 
-        coinbase = create_coinbase(block_height)
+        coinbase = create_coinbase(block_height,
+                                   nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True),
+                                   noAutoHalving=True)
         # prepend some code to coinbase scriptPubKey to drop up to 2 items from the stack
         coinbase.vout[0].scriptPubKey = self.scriptPubKey_stack_dropper
         # Modify coinbase to make the reward be below 2.1 billion satoshis so that OP_OUTPUTVALUE
@@ -175,6 +180,9 @@ class NativeIntrospectionTest(BitcoinTestFramework):
     def run_test(self):
         node = self.nodes[0]
 
+        while node.getblockchaininfo()["initialblockdownload"]:
+            self.generatetoaddress(node, 1, node.get_deterministic_priv_key().address)
+
         self.bootstrap_p2p()
 
         self.log.info("Create some blocks with OP_1 coinbase for spending.")
@@ -182,12 +190,13 @@ class NativeIntrospectionTest(BitcoinTestFramework):
         blocks = []
         for _ in range(200):  # We'll need about 200 coins for this test
             tip = self.build_block(tip)
+            node.p2p.send_blocks_and_test([tip], node, success=True)
             blocks.append(tip)
-        node.p2p.send_blocks_and_test(blocks, node, success=True)
         spendable_txns = [block.vtx[0] for block in blocks]
 
-        self.log.info("Mature the blocks and get out of IBD.")
-        self.generatetoaddress(node, 100, node.get_deterministic_priv_key().address)
+        self.log.info("Mature the blocks.")
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS,
+                            address=node.get_deterministic_priv_key().address)
 
         self.log.info("Setting up spends to test and mining the funding txns")
 
@@ -483,13 +492,15 @@ class NativeIntrospectionTest(BitcoinTestFramework):
         spendable_txns.insert(0, tx)  # recycle the txn's output
         assert_equal(node.getrawmempool(), mempool)
 
-        # OP_TXLOCKTIME (current_height - 10)
-        current_height = node.getblockchaininfo()["blocks"]
-        assert current_height > 10
-        ssextra = [CScriptNum(current_height - 10)]
+        # OP_TXLOCKTIME (current normalized height - 10)
+        # A height-mode nLockTime names a 600*L tick boundary, so L is derived
+        # from the tick count rather than from the raw block height.
+        current_locktime = get_chaintip_ticks(node) // 600 - 10
+        assert current_locktime > 10
+        ssextra = [CScriptNum(current_locktime)]
         rsextra = [OP_TXLOCKTIME, OP_EQUALVERIFY]
-        tx0, tx = create_fund_and_spend_tx(ssextra, rsextra, nLockTime=current_height - 10)
-        assert_equal(tx.nLockTime, current_height - 10)
+        tx0, tx = create_fund_and_spend_tx(ssextra, rsextra, nLockTime=current_locktime)
+        assert_equal(tx.nLockTime, current_locktime)
         node.p2p.send_txs_and_test([tx0, tx], node)
         mempool += [tx0.hash, tx.hash]
         spendable_txns.insert(0, tx)  # recycle the txn's output
