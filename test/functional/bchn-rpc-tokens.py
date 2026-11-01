@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022-2025 The Bitcoin developers
+# Copyright (c) 2022-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test RPC functions that support CashTokens."""
 from decimal import Decimal
 
+from test_framework.blocktools import get_chaintip_ticks
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.messages import COIN, COutPoint, CTransaction, CTxIn, CTxOut, FromHex
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.txtools import calc_dust_limit
@@ -33,6 +35,18 @@ class CashTokenRPCTest(BitcoinTestFramework):
         else:
             it = utxos
         return sum(utxo['amount'] for utxo in it)
+
+    @staticmethod
+    def sum_subsidies(node, first_height, nblocks):
+        """Sum of the coinbase subsidies of `nblocks` blocks starting at
+        `first_height`, read from RPC.
+
+        Read per height rather than assuming a single uniform value: the
+        activation seam can fall inside the range, splitting it across two
+        block intervals and therefore two different per-block subsidies.
+        """
+        return sum(Decimal(node.getblockstats(node.getblockhash(h))["subsidy"])
+                   for h in range(first_height, first_height + nblocks))
 
     def create_token_genesis_tx(self, node, to_addr, bch_amount, token_amount, nft=None, fee=Decimal('0.00001'),
                                 capability='minting'):
@@ -95,6 +109,11 @@ class CashTokenRPCTest(BitcoinTestFramework):
 
     def make_coins_for_each_node(self, ncoins):
         addrs = list()
+        # Expected matured balance per node, in BCH. If 1-min blocks is
+        # activated, the two nodes do not necessarily mine the same
+        # subsidies: the 1-min block activation seam can fall inside one
+        # node's block range and not the other's.
+        expected = list()
 
         # Check that there's no UTXO on any of the nodes
         for node in self.nodes:
@@ -107,24 +126,32 @@ class CashTokenRPCTest(BitcoinTestFramework):
             # Make some wallet addresses we will be transacting to
             addrs.append(node.getnewaddress())
             # Generate ncoins blocks for each node
+            first_height = node.getblockcount() + 1
             node.generate(ncoins)
             self.sync_all()
+            amount = self.sum_subsidies(node, first_height, ncoins)
+            expected.append(amount)
             # Check that balances are what we expect
             walletinfo = node.getwalletinfo()
-            assert_equal(walletinfo['immature_balance'], 50 * ncoins)
+            assert_equal(walletinfo['immature_balance'], amount)
             assert_equal(walletinfo['balance'], 0)
 
-        # Mature the above blocks
-        self.mine_to_non_wallet_addess(101)
+        # Note on 1-min blocks: If 1-min blocks is activated, then everything from here on is past the activation seam,
+        # so the interval is uniform and this single batch cannot straddle it. If it's not activated, then we are on
+        # 600 ticks (10 min blocks) uniformly as well -- so everything below is uniform in terms of block_interval.
+        nblocks = COINBASE_MATURITY_TICKS // self.block_interval  # 100 at 600 ticks, 1000 at 60
+        tip_ticks_before = get_chaintip_ticks(self.nodes[0])
+        self.mine_to_non_wallet_addess(nblocks)
+        assert get_chaintip_ticks(self.nodes[0]) == tip_ticks_before + COINBASE_MATURITY_TICKS
 
-        for i, node in enumerate(self.nodes):
+        for node, amount in zip(self.nodes, expected):
             # Ensure each node has ncoins UTXOs
             unspent = node.listunspent()
-            self.log.info(f'Node {i} unspent: {unspent}')
-            assert_equal(len(unspent), 5)
+            self.log.info(f'{node.index} unspent: {unspent}')
+            assert_equal(len(unspent), ncoins)
             walletinfo = node.getwalletinfo()
             assert_equal(walletinfo['immature_balance'], 0)
-            assert_equal(walletinfo['balance'], 50 * ncoins)
+            assert_equal(walletinfo['balance'], amount)
 
         self.log.info(f"Wallet addresses we will use for each node: {addrs}")
         return addrs
