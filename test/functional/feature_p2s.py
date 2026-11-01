@@ -190,6 +190,9 @@ class P2STest(BitcoinTestFramework):
 
         txns_nonstandard = txns_spend_from_p2s_nonstandard_spendable + txns_send_to_nonstandard_spendable_p2s
 
+        # Re-read at point of use so the value tracks the era the chain is actually in
+        cb_subsidy = get_coinbase_subsidy(node, for_mining=True)
+
         # Now, create a block containing the spendable non-standard txns (All are p2s > 201 byte scriptPubKey)
         block = self.create_block(
             prev_block=FromHex(CBlock(), node.getblock(blockhashes[-1], 0)),

@@ -63,7 +63,7 @@ class MinTxSizeTest(BitcoinTestFramework):
 
         # A few padded blocks whose OP_TRUE coinbases the size tests below spend
         blocks = [b1]
-        for _ in range(4):
+        for _ in range(20):
             blocks.append(self.create_block(blocks[-1], min_tx_size_coinbase=MIN_TX_SIZE_MAGNETIC_ANOMALY,
                                             min_tx_size=MIN_TX_SIZE_MAGNETIC_ANOMALY))
             self.send_blocks(blocks[-1:])
