@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-# Copyright (c) 2025-2026 The Bitcoin developers
+# Copyright (c) 2025-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test support for new opcodes that activate with Upgrade 12 (May 2026): loops, functions, and bitwise ops."""
 import random
 
 from test_framework import address
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.messages import (
     CBlock,
     COutPoint,
@@ -84,7 +85,8 @@ class LoopsFunctionsBitwiseTest(BitcoinTestFramework):
         # Mature the above coinbase txns
         my_addr = node.get_deterministic_priv_key().address
         my_spk = CScript([OP_DUP, OP_HASH160,  hash160(address.base58_to_byte(my_addr)[0]), OP_EQUALVERIFY, OP_CHECKSIG])
-        node.generatetoaddress(100, my_addr)
+        # 100 blocks at 600 ticks, ~1000 with upgrade2027's 60-tick schedule.
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS, my_addr)
 
         def make_tx(spend_from: CTransaction, send_to_spk: bytes, redeem_script: bytes) -> CTransaction:
             """Assumption: all spend_from outputs owned by redeem_script"""
