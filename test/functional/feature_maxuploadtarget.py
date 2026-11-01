@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2015-2016 The Bitcoin Core developers
+# Copyright (c) 2026-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test behavior of -maxuploadtarget.
@@ -14,7 +15,7 @@ if uploadtarget has been reached.
 from collections import defaultdict
 import time
 
-from test_framework.cdefs import LEGACY_MAX_BLOCK_SIZE
+from test_framework.cdefs import COINBASE_MATURITY_TICKS, LEGACY_MAX_BLOCK_SIZE
 from test_framework.blocktools import mine_big_block
 from test_framework.messages import CInv, MSG_BLOCK, msg_getdata
 from test_framework.p2p import P2PInterface
@@ -57,7 +58,7 @@ class MaxUploadTest(BitcoinTestFramework):
         self.nodes[0].setmocktime(old_time)
 
         # Generate some old blocks
-        self.generate(self.nodes[0], 130)
+        self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS + 30 * self.block_interval)
 
         # p2p_conns[0] will only request old blocks
         # p2p_conns[1] will only request new blocks
@@ -146,9 +147,10 @@ class MaxUploadTest(BitcoinTestFramework):
 
         # stop and start node 0 with 1MB maxuploadtarget, whitelist 127.0.0.1
         self.log.info("Restarting nodes with -whitelist=127.0.0.1")
+        ratio = self.interval_ratio
         self.stop_node(0)
         self.start_node(0, ["-whitelist=127.0.0.1",
-                            "-maxuploadtarget=1", "-blockmaxsize=999000"])
+                            "-maxuploadtarget=1", f"-blockmaxsize={999000 * ratio}"])
 
         # Reconnect to self.nodes[0]
         self.nodes[0].add_p2p_connection(TestP2PConn())
