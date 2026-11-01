@@ -306,11 +306,6 @@ class CoinStatsIndexTest(BitcoinTestFramework):
             self.log.info(f"Test that the index is robust across restarts for hash_type: {hash_type}")
 
             res8 = index_node.gettxoutsetinfo(hash_type)
-            # A bare restart_node() reads node.extra_args and re-applies the
-            # harness's -upgrade2027activationtime injection. The explicit
-            # extra_args= form drops it (which would leave this node mining
-            # 50 BCH coinbases that node 0 rejects as bad-cb-amount).
-            index_node.extra_args = self.extra_args[1]
             self.restart_node(1)
             assert_equal(get_next_block_interval(index_node), self.block_interval)
             res9 = index_node.gettxoutsetinfo(hash_type)
@@ -322,8 +317,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
 
             self.log.info("Test that the index works with -reindex")
 
-            index_node.extra_args = self.extra_args[1] + ["-reindex"]
-            self.restart_node(1)
+            self.restart_node(1, extra_args=self.extra_args[1] + ["-reindex"])
             self.sync_index_node()
             # Checked after the reindex, not right after the restart, because the
             # tip is still genesis while the block index is being rebuilt.
@@ -333,8 +327,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
 
             self.log.info("Test that the index works with -reindex-chainstate")
 
-            index_node.extra_args = self.extra_args[1] + ["-reindex-chainstate"]
-            self.restart_node(1)
+            self.restart_node(1, extra_args=self.extra_args[1] + ["-reindex-chainstate"])
             self.sync_index_node()
             assert_equal(get_next_block_interval(index_node), self.block_interval)
             res12 = index_node.gettxoutsetinfo(hash_type)
@@ -427,11 +420,8 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.generate(index_node, 2)
         self.sync_index_node()
 
-        # Restart without index: drop -coinstatsindex only. The upgrade2027
-        # activation flag (if present) must still be injected, or this node
-        # rejects node 0's 60-tick blocks.
-        index_node.extra_args = []
-        self.restart_node(1)
+        # Restart without index: drop -coinstatsindex only.
+        self.restart_node(1, extra_args=[])
         assert_equal(get_next_block_interval(index_node), self.block_interval)
         assert_equal(index_node.getindexinfo("coinstatsindex"), {})
         connect_nodes(self.nodes[0], self.nodes[1])
@@ -442,8 +432,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         res_ec = index_node.gettxoutsetinfo(hash_type='ecmh', hash_or_height=None, use_index=False)
 
         # Restart with index that still has its best block on the old chain
-        index_node.extra_args = self.extra_args[1]
-        self.restart_node(1)
+        self.restart_node(1, extra_args=self.extra_args[1])
         assert_equal(get_next_block_interval(index_node), self.block_interval)
         self.sync_index_node()
         res1 = index_node.gettxoutsetinfo(hash_type='muhash_testing', hash_or_height=None, use_index=True)
