@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021-2022 The Bitcoin developers
+# Copyright (c) 2021-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """
@@ -18,6 +18,7 @@ from test_framework.blocktools import (
     create_tx_with_script,
     make_conform_to_ctor,
 )
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.key import ECKey
 from test_framework.messages import (
     CBlock,
@@ -104,6 +105,10 @@ class Int64CScriptNum(BitcoinTestFramework):
         block_height = self.block_heights[parent.sha256] + 1
         block_time = (parent.nTime + 1) if nTime is None else nTime
 
+        # create_coinbase()'s default is height-keyed and only matches the node
+        # if we are on 10-min blocks. nTime advances one second per block, so these
+        # blocks keep the cached chain's 2014 timestamps and stay below the
+        # upgrade2027 activation MTP.
         block = create_block(
             parent.sha256, create_coinbase(block_height), block_time)
         block.vtx.extend(transactions)
@@ -128,7 +133,12 @@ class Int64CScriptNum(BitcoinTestFramework):
         spendable_txns = [block.vtx[0] for block in blocks]
 
         self.log.info("Mature the blocks and get out of IBD.")
-        self.generatetoaddress(node, 100, node.get_deterministic_priv_key().address)
+        # COINBASE_MATURITY_TICKS is 100 blocks at 600 ticks, ~1000 at 60. The
+        # next interval is still 600 at height 210, so 60,600 ticks is requested
+        # either way; with 1-min blocks active the node needs ~950 more blocks to
+        # reach it, as only the first six are still 600-tick.
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS + self.block_interval)
+        assert self.block_interval in (60, 600)
 
         self.log.info("Setting up spends to test and mining the fundings")
 
@@ -503,7 +513,9 @@ class Int64CScriptNum(BitcoinTestFramework):
         # --------------------------------------------------------------------
 
         # 1. Restart the node with -reindex-chainstate (to be paranoid)
+        interval_before = self.block_interval
         self.restart_node(0, self.extra_args[0] + ["-reindex-chainstate=1"])
+        assert_equal(self.block_interval, interval_before)  # Paranoia
         assert_equal(node.getbestblockhash(), tiphash)
 
         # The below tests have been disabled since BCHN no longer has the -upgrade8activationtime argument
