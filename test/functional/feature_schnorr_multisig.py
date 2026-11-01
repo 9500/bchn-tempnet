@@ -19,6 +19,7 @@ Covers:
 """
 from decimal import Decimal
 
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal, assert_greater_than_or_equal, assert_raises_rpc_error, find_output
@@ -118,7 +119,9 @@ class SchnorrMultisigTest(BitcoinTestFramework):
 
     def run_test(self):
         node0, node1, node2 = self.nodes
-        self.generate(node0, 101)
+        self.generate(node0, 1)
+        # Mature the above height==1 coinbase.
+        self.mine_for_ticks(node0, COINBASE_MATURITY_TICKS)
         self.sync_all()
 
         self.test_wallet_honors_signschnorr()
