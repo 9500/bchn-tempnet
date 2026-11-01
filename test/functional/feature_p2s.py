@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2025-2026 The Bitcoin developers
+# Copyright (c) 2025-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test support for p2s which activates with Upgrade12."""
@@ -7,8 +7,8 @@ import random
 from typing import List, NamedTuple, Optional
 
 from test_framework import cashaddr
-from test_framework.cdefs import MAX_P2S_SCRIPT_SIZE
-from test_framework.blocktools import create_block, create_coinbase
+from test_framework.cdefs import COINBASE_MATURITY_TICKS, MAX_P2S_SCRIPT_SIZE
+from test_framework.blocktools import create_block, create_coinbase, get_coinbase_subsidy
 from test_framework.key import ECKey
 from test_framework.messages import (
     CBlock,
@@ -78,6 +78,9 @@ class P2STest(BitcoinTestFramework):
         # Generate blocks to our p2pkh for spending: p2pkh -> p2s
         blockhashes = node.generatetoaddress(len(p2s_spks), self.p2pkh_addr)
 
+        # Coinbase value for every block this test builds by hand
+        cb_subsidy = get_coinbase_subsidy(node, for_mining=True)
+
         # Generate blocks to our p2s spk's for spending: p2s -> p2kh
         p2s_blocks = []
         for spk in p2s_spks:
@@ -85,13 +88,14 @@ class P2STest(BitcoinTestFramework):
                 prev_block = FromHex(CBlock(), node.getblock(blockhashes[-1], 0))
             else:
                 prev_block = p2s_blocks[-1]
-            p2s_blocks.append(self.create_block(prev_block, len(blockhashes) + len(p2s_blocks), scriptPubKey=spk))
+            p2s_blocks.append(self.create_block(prev_block, len(blockhashes) + len(p2s_blocks),
+                                                scriptPubKey=spk, nValue=cb_subsidy))
         self.send_blocks(p2s_blocks)
         p2s_blockhashes = [b.hash for b in p2s_blocks]
         blockhashes += p2s_blockhashes
 
-        # Generate 100 blocks to ensure maturity of above
-        blockhashes += node.generatetoaddress(100, self.p2pkh_addr)
+        # Mature the coinbases above: 60,000 ticks, i.e. 100 blocks of 10 min or 1,000 of 1 min
+        blockhashes += self.mine_for_ticks(node, COINBASE_MATURITY_TICKS, address=self.p2pkh_addr)
 
         def create_a_txn_spending_from_block(blockhash, from_spk, to_spk, *, sign=True) -> CTransaction:
             block = FromHex(CBlock(), node.getblock(blockhash, 0))
@@ -190,7 +194,8 @@ class P2STest(BitcoinTestFramework):
         block = self.create_block(
             prev_block=FromHex(CBlock(), node.getblock(blockhashes[-1], 0)),
             height=node.getblockchaininfo()['blocks'],
-            txns=txns_nonstandard)
+            txns=txns_nonstandard,
+            nValue=cb_subsidy)
 
         self.send_blocks([block], success=True, timeout=5)
         blockhashes.append(block.hash)
@@ -199,7 +204,8 @@ class P2STest(BitcoinTestFramework):
         block = self.create_block(
             prev_block=FromHex(CBlock(), node.getblock(blockhashes[-1], 0)),
             height=node.getblockchaininfo()['blocks'],
-            txns=txns_spend_from_p2s_unspendable)
+            txns=txns_spend_from_p2s_unspendable,
+            nValue=cb_subsidy)
 
         self.send_blocks([block], success=False, timeout=5)
         assert_not_equal(block.hash, node.getbestblockhash())
@@ -237,14 +243,15 @@ class P2STest(BitcoinTestFramework):
         return tx
 
     @staticmethod
-    def create_block(prev_block: CBlock, height: int, *, nTime: Optional[int] = None, txns=None, scriptPubKey=None) -> CBlock:
+    def create_block(prev_block: CBlock, height: int, *, nValue: int, nTime: Optional[int] = None,
+                     txns=None, scriptPubKey=None) -> CBlock:
         if prev_block.sha256 is None:
             prev_block.rehash()
         assert prev_block.sha256 is not None  # Satisfy linter with this assertion
         prev_block_hash = prev_block.sha256
         block_time = prev_block.nTime + 1 if nTime is None else nTime
         # Create the coinbase (pays out to OP_TRUE or scriptPubKey)
-        coinbase = create_coinbase(height, scriptPubKey=scriptPubKey)
+        coinbase = create_coinbase(height, scriptPubKey=scriptPubKey, nValue=nValue, noAutoHalving=True)
 
         txns = txns or []
         block = create_block(prev_block_hash, coinbase, block_time, txns=txns)
