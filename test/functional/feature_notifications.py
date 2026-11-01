@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2019 The Bitcoin Core developers
-# Copyright (c) 2018-2023 The Bitcoin developers
+# Copyright (c) 2018-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the -alertnotify, -blocknotify and -walletnotify options."""
 import os
 
+from test_framework.blocktools import (
+    get_block_ticks,
+    get_chaintip_ticks,
+)
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -19,6 +23,11 @@ FORK_WARNING_MESSAGE = "Warning: Large-work fork detected, forking after block {
 FILE_CHAR_START = 32 if os.name == 'nt' else 1
 FILE_CHAR_END = 128
 FILE_CHAR_BLACKLIST = '/\\?%*:|"<>' if os.name == 'nt' else '/'
+
+# 7 10-min blocks or 70 1-min blocks
+FORK_WARNING_BLOCKS_10MIN = 7
+# 72 10-min blocks or 720 1-min blocks
+FORK_WARNING_WINDOW_TICKS = 72 * 600
 
 
 def notify_outputname(walletname, txid):
@@ -115,7 +124,11 @@ class NotificationsTest(BitcoinTestFramework):
         fork_block = self.nodes[0].getbestblockhash()
         self.generate(self.nodes[0], 1)
         invalid_block = self.nodes[0].getbestblockhash()
-        self.generate(self.nodes[0], 7)
+        self.generate(self.nodes[0], FORK_WARNING_BLOCKS_10MIN * self.interval_ratio)
+
+        # The warning also requires the fork to sit within 72 ten-minute blocks of the tip;
+        # Pin it, so a larger branch cannot silently fall out of range.
+        assert get_chaintip_ticks(self.nodes[0]) - get_block_ticks(self.nodes[0], fork_block) < FORK_WARNING_WINDOW_TICKS
 
         # Invalidate a large branch, which should trigger an alert.
         self.nodes[0].invalidateblock(invalid_block)
