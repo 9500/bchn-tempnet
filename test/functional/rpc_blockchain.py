@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2019 The Bitcoin Core developers
-# Copyright (c) 2021-2026 The Bitcoin developers
+# Copyright (c) 2021-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -81,14 +81,18 @@ class BlockchainTest(BitcoinTestFramework):
         keys = [
             'bestblockhash',
             'blocks',
+            'blocks_ticks',
             'chain',
             'chainwork',
             'difficulty',
             'headers',
+            'headers_ticks',
             'initialblockdownload',
             'mediantime',
+            'next_target_time',
             'pruned',
             'size_on_disk',
+            'target_time',
             'upgrade_status',
             'verificationprogress',
             'warnings',
@@ -110,12 +114,14 @@ class BlockchainTest(BitcoinTestFramework):
         assert res['pruned']
         assert not res['automatic_pruning']
         self._assert_upgrade_status(res['upgrade_status'])
+        self._assert_tick_fields(res)
 
         self.restart_node(0, ['-stopatheight=207'])
         res = self.nodes[0].getblockchaininfo()
         # should have exact keys
         assert_equal(sorted(res.keys()), keys)
         self._assert_upgrade_status(res['upgrade_status'])
+        self._assert_tick_fields(res)
 
         self.restart_node(0, ['-stopatheight=207', '-prune=550'])
         res = self.nodes[0].getblockchaininfo()
@@ -130,6 +136,7 @@ class BlockchainTest(BitcoinTestFramework):
         assert_equal(res['prune_target_size'], 576716800)
         assert_greater_than(res['size_on_disk'], 0)
         self._assert_upgrade_status(res['upgrade_status'])
+        self._assert_tick_fields(res)
 
     def _assert_upgrade_status(self, status):
         expect_fields = {
@@ -157,6 +164,14 @@ class BlockchainTest(BitcoinTestFramework):
 
         _check_block('block_preactivation_height', 'block_preactivation_hash')
         _check_block('block_postactivation_height', 'block_postactivation_hash')
+
+    def _assert_tick_fields(self, res):
+        """Check the getblockchaininfo tick fields, which upgrade2027 added
+        alongside the height fields they mirror."""
+        assert_greater_than(res['blocks_ticks'], 0)
+        assert_equal(res['blocks_ticks'], res['headers_ticks'])
+        for key in ('target_time', 'next_target_time'):
+            assert res[key] in (60, 600), f"{key} is not a supported interval"
 
     def _test_getchaintxstats(self):
         self.log.info("Test getchaintxstats")
@@ -338,6 +353,12 @@ class BlockchainTest(BitcoinTestFramework):
         assert_equal(header['hash'], besthash)
         assert_equal(header['height'], 200)
         assert_equal(header['confirmations'], 1)
+        # only equal at 1 conf
+        assert_equal(header['confirmations_ticks'], header['target_time'])
+        # besthash is the tip, so its tick count is also the chain tip's.
+        chaininfo = node.getblockchaininfo()
+        assert_equal(header['ticks'], chaininfo['blocks_ticks'])
+        assert_equal(header['next_target_time'], chaininfo['next_target_time'])
         assert_equal(header['previousblockhash'], secondbesthash)
         assert_is_hex_string(header['chainwork'])
         assert_equal(header['nTx'], 1)
@@ -482,7 +503,16 @@ class BlockchainTest(BitcoinTestFramework):
         assert_equal(
             blockinfo['confirmations'],
             transactioninfo['confirmations'])
+        assert_equal(
+            blockinfo['confirmations_ticks'],
+            transactioninfo['confirmations_ticks'])
         assert_equal(blockinfo['height'], blockheaderinfo['height'])
+        assert_equal(blockinfo['ticks'], blockheaderinfo['ticks'])
+        assert_equal(blockinfo['confirmations_ticks'],
+                     blockheaderinfo['confirmations_ticks'])
+        assert_equal(blockinfo['target_time'], blockheaderinfo['target_time'])
+        assert_equal(blockinfo['next_target_time'],
+                     blockheaderinfo['next_target_time'])
         assert_equal(blockinfo['versionHex'], blockheaderinfo['versionHex'])
         assert_equal(blockinfo['version'], blockheaderinfo['version'])
         assert_equal(blockinfo['size'], 176)
