@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2016-2019 The Bitcoin Core developers
+# Copyright (c) 2019-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test Hierarchical Deterministic wallet function."""
@@ -8,6 +9,7 @@ import os
 import shutil
 
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.util import (
     assert_equal,
     connect_nodes_bi,
@@ -48,7 +50,8 @@ class WalletHDTest(BitcoinTestFramework):
 
         # Derive some HD addresses and remember the last
         # Also send funds to each add
-        self.generate(self.nodes[0], 101)
+        self.generate(self.nodes[0], 1)
+        self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS)
         hd_add = None
         NUM_HD_ADDS = 10
         for i in range(NUM_HD_ADDS):
