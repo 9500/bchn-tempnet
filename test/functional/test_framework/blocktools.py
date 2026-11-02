@@ -399,11 +399,14 @@ def get_block_confirmations_ticks(node, blockhash_or_height: Union[int, str]) ->
     return node.getblockheader(blockhash)["confirmations_ticks"]
 
 
-def get_coinbase_subsidy(node, for_mining=False, include_fees=False) -> int:
+def get_coinbase_subsidy(node, for_mining=False, include_fees=False,
+                         blockhash_or_height: Optional[Union[int, str]] = None) -> int:
     """Returns the coinbase subsidy for the block at the tip (in satoshis), or the next block after the tip if
     for_mining==True. Pass include_fees=True to return the subsidy + fee (that is, the max coinbase value aka total
-    coinbase reward)."""
+    coinbase reward). Pass for_blockhash_or_height to look at the subsidy of a specific block (in that case for_mining
+    must be False). """
     if for_mining:
+        assert blockhash_or_height is None, "Cannot specify both for_mining=True and blockhash_or_height"
         height = node.getblockcount()
         if height > 0:
             # getblocktemplate will only work if tip is past genesis
@@ -412,8 +415,13 @@ def get_coinbase_subsidy(node, for_mining=False, include_fees=False) -> int:
             if not include_fees:
                 fees = sum(txn["fee"] for txn in tmpl["transactions"])
             return tmpl["coinbasevalue"] - fees
-    # for_mining=False and/or tip is genesis, just look at what the block tip says.
-    stats = node.getblockstats(node.getbestblockhash())
+    # for_mining=False (or tip is genesis)
+    if blockhash_or_height is not None:
+        blockhash = _resolve_blockhash_or_height(node, blockhash_or_height)
+    else:
+        # just look at what the block tip says
+        blockhash = node.getbestblockhash()
+    stats = node.getblockstats(blockhash)
     fees = 0
     if include_fees:
         fees = int(COIN * stats["totalfee"])

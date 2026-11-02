@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 # Copyright (c) 2015-2019 The Bitcoin Core developers
+# Copyright (c) 2019-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test multisig RPCs"""
 
+from test_framework.blocktools import get_block_tick_depth, get_coinbase_subsidy
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
+from test_framework.messages import COIN
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_raises_rpc_error,
@@ -32,7 +36,9 @@ class RpcCreateMultiSigTest(BitcoinTestFramework):
         self.check_addmultisigaddress_errors()
 
         self.log.info('Generating blocks ...')
-        self.generate(node0, 149)
+        # produces 49 mature coinbases, no matter the block time
+        self.generate(node0, 49)
+        self.mine_for_ticks(node0, COINBASE_MATURITY_TICKS)
         self.sync_all()
 
         self.moved = 0
@@ -62,16 +68,20 @@ class RpcCreateMultiSigTest(BitcoinTestFramework):
 
     def checkbalances(self):
         node0, node1, node2 = self.nodes
-        self.generate(node0, 100)
+        self.mine_for_ticks(node0, COINBASE_MATURITY_TICKS)
         self.sync_all()
 
         bal0 = node0.getbalance()
         bal1 = node1.getbalance()
         bal2 = node2.getbalance()
 
-        height = node0.getblockchaininfo()["blocks"]
-        assert 150 < height < 350
-        total = 149 * 50 + (height - 149 - 100) * 25
+        tip = node0.getblockcount()
+        mature = tip
+        while mature > 0 and get_block_tick_depth(node0, mature) < COINBASE_MATURITY_TICKS:
+            mature -= 1
+        total = sum(get_coinbase_subsidy(node0, blockhash_or_height=h)
+                    for h in range(1, mature + 1))
+        total = decimal.Decimal(total) / COIN  # transform satoshis -> BCH
         assert bal1 == 0
         assert bal2 == self.moved
         assert bal0 + bal1 + bal2 == total
