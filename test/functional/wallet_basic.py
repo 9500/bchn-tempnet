@@ -6,6 +6,7 @@
 """Test the wallet."""
 from decimal import Decimal
 
+from test_framework.blocktools import get_coinbase_subsidy
 from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.messages import COIN, FromHex, CTransaction
 from test_framework.test_framework import BitcoinTestFramework
@@ -50,15 +51,9 @@ class WalletTest(BitcoinTestFramework):
         return curr_balance
 
     @staticmethod
-    def subsidy(node, height):
-        """Subsidy of the block at `height`, read per height.
-
-        A single value does not describe a set of coinbases: the upgrade2027
-        activation seam splits a range across two block intervals, so the
-        block-1 coinbase pays 50 BCH while every later one pays 1/10th that
-        once 1-min blocks is active.
-        """
-        return Decimal(node.getblockstats(node.getblockhash(height))["subsidy"])
+    def subsidy(node, height) -> Decimal:
+        """Subsidy of the block at `height`, as a Decimal."""
+        return Decimal(get_coinbase_subsidy(node, blockhash_or_height=height)) / COIN
 
     def run_test(self):
         # Check that there's no UTXO on none of the nodes
