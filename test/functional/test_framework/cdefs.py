@@ -118,6 +118,9 @@ MAX_CONSENSUS_BLOCK_SIZE = 2000 * ONE_MEGABYTE
 # Finalization threshold, in block ticks (10 legacy 10-minute blocks).
 DEFAULT_MAX_REORG_TICKS = 6000
 
+# NODE_NETWORK_LIMITED serving window, in block ticks (288 legacy 10-minute blocks).
+NODE_NETWORK_LIMITED_MIN_BLOCK_TICKS = 288 * 600
+
 # The following are some node policy values, but also useful in tests.
 
 # Default setting for maximum generated size of block (soft limit)

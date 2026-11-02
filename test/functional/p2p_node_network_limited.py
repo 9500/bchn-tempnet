@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 # Copyright (c) 2017 The Bitcoin Core developers
+# Copyright (c) 2017-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Tests NODE_NETWORK_LIMITED.
 
 Tests that a node configured with -prune=550 signals NODE_NETWORK_LIMITED correctly
 and that it responds to getdata requests for blocks correctly:
-    - send a block within 288 + 2 of the tip
+    - send a block within the serving window (MIN_BLOCK_TICKS_TO_KEEP, i.e.
+      288 ten-minute blocks, measured in ticks) plus the race buffer
     - disconnect peers who request blocks older than that."""
+from test_framework.blocktools import (
+    get_block_interval,
+)
+from test_framework.cdefs import NODE_NETWORK_LIMITED_MIN_BLOCK_TICKS
 from test_framework.messages import (
     CInv,
     MSG_BLOCK,
@@ -83,19 +89,22 @@ class NodeNetworkLimitedTest(BitcoinTestFramework):
         self.log.info(
             "Mine enough blocks to reach the NODE_NETWORK_LIMITED range.")
         connect_nodes_bi(self.nodes[0], self.nodes[1])
-        blocks = self.generatetoaddress(self.nodes[1],
-                                        292, self.nodes[1].get_deterministic_priv_key().address)
+        # The gate is depth(h) > MIN_BLOCK_TICKS + 2*tau(h), so we over-cover a little to test both accept / refuse.
+        blocks = self.mine_for_ticks(self.nodes[1],
+                                     NODE_NETWORK_LIMITED_MIN_BLOCK_TICKS + 2400,
+                                     address=self.nodes[1].get_deterministic_priv_key().address)
         self.sync_blocks([self.nodes[0], self.nodes[1]])
 
-        self.log.info("Make sure we can max retrieve block at tip-288.")
-        # last block in valid range
-        node.send_getdata_for_block(blocks[1])
-        node.wait_for_block(int(blocks[1], 16), timeout=3)
+        self.log.info("Make sure we can retrieve the lowest block in range.")
+        tip_height = self.nodes[1].getblockcount()
+        lowest_served = tip_height - NODE_NETWORK_LIMITED_MIN_BLOCK_TICKS // get_block_interval(self.nodes[1], tip_height) - 2
+        node.send_getdata_for_block(blocks[lowest_served - 1])
+        node.wait_for_block(int(blocks[lowest_served - 1], 16), timeout=3)
 
         self.log.info(
-            "Requesting block at height 2 (tip-289) must fail (ignored).")
-        # first block outside of the 288+2 limit
-        node.send_getdata_for_block(blocks[0])
+            "Requesting the block one below it must fail (ignored).")
+        # first block outside of the window plus race buffer
+        node.send_getdata_for_block(blocks[lowest_served - 2])
         node.wait_for_disconnect(5)
 
         self.log.info("Check local address relay, do a fresh connection.")
