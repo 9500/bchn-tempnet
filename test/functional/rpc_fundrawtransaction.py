@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2019 The Bitcoin Core developers
-# Copyright (c) 2021 The Bitcoin developers
+# Copyright (c) 2021-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 from decimal import Decimal
 
-from test_framework.messages import CTransaction, FromHex
+from test_framework.blocktools import get_coinbase_subsidy
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
+from test_framework.messages import COIN, CTransaction, FromHex
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -95,8 +97,12 @@ class RawTransactionsTest(BitcoinTestFramework):
 
         self.generate(self.nodes[2], 1)
         self.sync_all()
-        self.generate(self.nodes[0], 121)
+        self.generate(self.nodes[0], 21)
         self.sync_all()
+        self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS)
+        self.sync_all()
+
+        subsidy = Decimal(get_coinbase_subsidy(self.nodes[0])) / COIN
 
         # ensure that setting changePosition in fundraw with an exact match is
         # handled properly
@@ -109,7 +115,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         watchonly_address = self.nodes[0].getnewaddress()
         watchonly_pubkey = self.nodes[
             0].getaddressinfo(watchonly_address)["pubkey"]
-        watchonly_amount = Decimal(200)
+        watchonly_amount = Decimal(50)
         self.nodes[3].importpubkey(watchonly_pubkey, "", True)
         watchonly_txid = self.nodes[0].sendtoaddress(
             watchonly_address, watchonly_amount)
@@ -577,7 +583,7 @@ class RawTransactionsTest(BitcoinTestFramework):
 
         # make sure funds are received at node1
         assert_equal(
-            oldBalance + Decimal('51.10000000'), self.nodes[0].getbalance())
+            oldBalance + Decimal('1.10000000') + subsidy, self.nodes[0].getbalance())
 
         #
         # multiple (~19) inputs tx test | Compare fee #
@@ -641,7 +647,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         self.sync_all()
         self.generate(self.nodes[0], 1)
         self.sync_all()
-        assert_equal(oldBalance + Decimal('50.19000000'),
+        assert_equal(oldBalance + Decimal('0.19000000') + subsidy,
                      self.nodes[0].getbalance())  # 0.19+block reward
 
         #
