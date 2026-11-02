@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2015-2019 The Bitcoin Core developers
+# Copyright (c) 2026-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the prioritisetransaction mining RPC."""
@@ -7,30 +8,50 @@
 import time
 
 from test_framework.blocktools import (
-    create_confirmed_utxos,
+    create_tick_confirmed_utxos,
     send_big_transactions,
 )
-# FIXME: review how this test needs to be adapted w.r.t _LEGACY_MAX_BLOCK_SIZE
-from test_framework.cdefs import LEGACY_MAX_BLOCK_SIZE
+
+from test_framework.cdefs import LEGACY_MAX_BLOCK_SIZE, ONE_MEGABYTE
 from test_framework.messages import COIN
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal, assert_not_equal, assert_raises_rpc_error
+from test_framework.util import assert_equal, assert_not_equal, assert_raises_rpc_error, connect_nodes
 
 
 class PrioritiseTransactionTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 2
-        self.extra_args = [[
-            "-blockmaxsize=2000000",
-            "-printpriority=1",
-            "-acceptnonstdtxn=1",
-        ]] * self.num_nodes
+        self.base_extra_args = ["-printpriority=1", "-acceptnonstdtxn=1",]
+        self.extra_args = [self.base_extra_args] * self.num_nodes
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
+    def _do_pre_test_setup(self):
+        # Kick chain out of IBD, and determine interval_ratio
+        self.generate(self.nodes[0], 1)
+        self.sync_all()
+        for i, _ in enumerate(self.nodes):
+            # -blockmaxsize is a 10-minute-unit value: at the 1-min block time
+            # the node divides it by the block interval ratio, so blocks are
+            # 200kB rather than 2MB if left unscaled. We scale it to
+            # self.interval_ratio to compensate for this fact, after kicking
+            # the node out of IBD so that the block interval ratio is known.
+            # This is done so that the tests below always operate on 2MB blocks
+            # (even if 1 min blocks is activated).
+            self.restart_node(i, self.base_extra_args + [f"-blockmaxsize={2 * ONE_MEGABYTE * self.interval_ratio}"])
+        # Due to the restart above, nodes may not be connected, reconnect them to be safe
+        connect_nodes(self.nodes[0], self.nodes[1])
+        for node in self.nodes:
+            # Ensure the above worked and we got 2MB blocks regardless of block interval
+            assert_equal(node.getmininginfo()['miningblocksizelimit'], 2 * ONE_MEGABYTE)
+            # Ensure the nodes really did connect (getblocktemplate refuses to work if only 1 node)
+            node.getblocktemplate()
+
     def run_test(self):
+        self._do_pre_test_setup()
+
         # Test `prioritisetransaction` required parameters
         assert_raises_rpc_error(-1,
                                 "prioritisetransaction",
@@ -93,7 +114,7 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
         self.relayfee = self.nodes[0].getnetworkinfo()['relayfee']
 
         utxo_count = 90
-        utxos = create_confirmed_utxos(self, self.nodes[0], utxo_count)
+        utxos = create_tick_confirmed_utxos(self, self.nodes[0], utxo_count)
         txids = []
 
         # Create 3 batches of transactions at 3 different fee rate levels
@@ -140,11 +161,11 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
         assert txids[0][0] not in mempool
         assert txids[0][1] in mempool
 
-        confirmed_transactions = self.nodes[0].getblock(
-            self.nodes[0].getbestblockhash())['tx']
+        confirmed_transactions = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['tx']
 
-        # Pull the highest fee-rate transaction from a block
-        high_fee_tx = confirmed_transactions[1]
+        # Pull the highest fee-rate transaction from a block (we must do it this way due to CTOR)
+        # Note: 'fee' result from gettransaction is *NEGATIVE*, hence the 'min()' here.
+        high_fee_tx = min((self.nodes[0].gettransaction(txid)['fee'], txid) for txid in confirmed_transactions[1:])[1]
 
         # Something high-fee should have been mined!
         assert high_fee_tx is not None
@@ -171,17 +192,16 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
         # Now verify the modified-high feerate transaction isn't mined before
         # the other high fee transactions. Keep mining until our mempool has
         # decreased by all the high fee size that we calculated above.
-        while (self.nodes[0].getmempoolinfo()['bytes'] > sizes[0] + sizes[1]):
+        while self.nodes[0].getmempoolinfo()['bytes'] > sizes[0] + sizes[1]:
             self.generate(self.nodes[0], 1)
 
         # High fee transaction should not have been mined, but other high fee rate
         # transactions should have been.
         mempool = self.nodes[0].getrawmempool()
-        self.log.info(
-            "Assert that de-prioritised transaction is still in mempool")
+        self.log.info("Assert that de-prioritised transaction is still in mempool")
         assert high_fee_tx in mempool
         for x in txids[2]:
-            if (x != high_fee_tx):
+            if x != high_fee_tx:
                 assert x not in mempool
 
         # Create a free transaction.  Should be rejected.
@@ -198,18 +218,15 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
         tx_id = self.nodes[0].decoderawtransaction(tx_hex)["txid"]
 
         # This will raise an exception due to min relay fee not being met
-        assert_raises_rpc_error(-26, "min relay fee not met (code 66)",
-                                self.nodes[0].sendrawtransaction, tx_hex)
+        assert_raises_rpc_error(-26, "min relay fee not met (code 66)", self.nodes[0].sendrawtransaction, tx_hex)
         assert tx_id not in self.nodes[0].getrawmempool()
 
         # This is a less than 1000-byte transaction, so just set the fee
         # to be the minimum for a 1000-byte transaction and check that it is
         # accepted.
-        self.nodes[0].prioritisetransaction(
-            txid=tx_id, fee_delta=int(self.relayfee * COIN))
+        self.nodes[0].prioritisetransaction(txid=tx_id, fee_delta=int(self.relayfee * COIN))
 
-        self.log.info(
-            "Assert that prioritised free transaction is accepted to mempool")
+        self.log.info("Assert that prioritised free transaction is accepted to mempool")
         assert_equal(self.nodes[0].sendrawtransaction(tx_hex), tx_id)
         assert tx_id in self.nodes[0].getrawmempool()
 
@@ -218,8 +235,7 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
         mock_time = int(time.time())
         self.nodes[0].setmocktime(mock_time)
         template = self.nodes[0].getblocktemplate()
-        self.nodes[0].prioritisetransaction(
-            txid=tx_id, fee_delta=-int(self.relayfee * COIN))
+        self.nodes[0].prioritisetransaction(txid=tx_id, fee_delta=-int(self.relayfee * COIN))
         self.nodes[0].setmocktime(mock_time + 10)
         new_template = self.nodes[0].getblocktemplate()
 
