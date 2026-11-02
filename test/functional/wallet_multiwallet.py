@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2017-2019 The Bitcoin Core developers
+# Copyright (c) 2026-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test multiwallet.
@@ -10,6 +11,11 @@ import os
 import shutil
 import time
 
+from decimal import Decimal
+
+from test_framework.blocktools import get_coinbase_subsidy
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
+from test_framework.messages import COIN
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.test_node import ErrorMatch
 from test_framework.util import (
@@ -185,7 +191,7 @@ class MultiWalletTest(BitcoinTestFramework):
         assert_equal(set(node.listwallets()), {"w4", "w5"})
         w5 = wallet("w5")
         w5_info = w5.getwalletinfo()
-        assert_equal(w5_info['immature_balance'], 50)
+        assert_equal(w5_info['immature_balance'], Decimal(get_coinbase_subsidy(node)) / COIN)
 
         competing_wallet_dir = os.path.join(
             self.options.tmpdir, 'competing_walletdir')
@@ -205,10 +211,11 @@ class MultiWalletTest(BitcoinTestFramework):
 
         # check wallet names and balances
         self.generatetoaddress(node, nblocks=1, address=wallets[0].getnewaddress())
+        coinbase_value = Decimal(get_coinbase_subsidy(node)) / COIN
         for wallet_name, wallet in zip(wallet_names, wallets):
             info = wallet.getwalletinfo()
             assert_equal(info['immature_balance'],
-                         50 if wallet is wallets[0] else 0)
+                         coinbase_value if wallet is wallets[0] else 0)
             assert_equal(info['walletname'], wallet_name)
 
         # accessing invalid wallet fails
@@ -220,8 +227,10 @@ class MultiWalletTest(BitcoinTestFramework):
                                 node.getwalletinfo)
 
         w1, w2, w3, w4, *_ = wallets
-        self.generatetoaddress(node, nblocks=101, address=w1.getnewaddress())
-        assert_equal(w1.getbalance(), 100)
+        self.generatetoaddress(node, nblocks=1, address=w1.getnewaddress())
+        coinbase_value += Decimal(get_coinbase_subsidy(node)) / COIN
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS)
+        assert_equal(w1.getbalance(), coinbase_value)
         assert_equal(w2.getbalance(), 0)
         assert_equal(w3.getbalance(), 0)
         assert_equal(w4.getbalance(), 0)
