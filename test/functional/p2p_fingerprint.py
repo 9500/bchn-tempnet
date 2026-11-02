@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2017 The Bitcoin Core developers
+# Copyright (c) 2017-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test various fingerprinting protections.
@@ -10,7 +11,12 @@ the node should pretend that it does not have it to avoid fingerprinting.
 
 import time
 
-from test_framework.blocktools import (create_block, create_coinbase)
+from test_framework.blocktools import (
+    create_block,
+    create_coinbase,
+    get_coinbase_subsidy,
+    get_next_block_interval,
+)
 from test_framework.messages import (
     CInv,
     MSG_BLOCK,
@@ -31,9 +37,11 @@ class P2PFingerprintTest(BitcoinTestFramework):
 
     # Build a chain of blocks on top of given one
     def build_chain(self, nblocks, prev_hash, prev_height, prev_median_time):
+        node = self.nodes[0]
+        cb_value = get_coinbase_subsidy(node, for_mining=True)
         blocks = []
         for _ in range(nblocks):
-            coinbase = create_coinbase(prev_height + 1)
+            coinbase = create_coinbase(prev_height + 1, nValue=cb_value, noAutoHalving=True)
             block_time = prev_median_time + 1
             block = create_block(int(prev_hash, 16), coinbase, block_time)
             block.solve()
