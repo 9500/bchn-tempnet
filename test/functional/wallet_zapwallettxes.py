@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2016 The Bitcoin Core developers
+# Copyright (c) 2016-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the zapwallettxes functionality.
@@ -14,6 +15,7 @@
   transactions are still available, but that the unconfirmed transaction has
   been zapped.
 """
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -34,17 +36,17 @@ class ZapWalletTXesTest (BitcoinTestFramework):
         self.log.info("Mining blocks...")
         self.generate(self.nodes[0], 1)
         self.sync_all()
-        self.generate(self.nodes[1], 100)
+        self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS)
         self.sync_all()
 
         # This transaction will be confirmed
-        txid1 = self.nodes[0].sendtoaddress(self.nodes[1].getnewaddress(), 10)
+        txid1 = self.nodes[0].sendtoaddress(self.nodes[1].getnewaddress(), 1)
 
         self.generate(self.nodes[0], 1)
         self.sync_all()
 
         # This transaction will not be confirmed
-        txid2 = self.nodes[0].sendtoaddress(self.nodes[1].getnewaddress(), 20)
+        txid2 = self.nodes[0].sendtoaddress(self.nodes[1].getnewaddress(), 2)
 
         # Confirmed and unconfirmed transactions are now in the wallet.
         assert_equal(self.nodes[0].gettransaction(txid1)['txid'], txid1)
