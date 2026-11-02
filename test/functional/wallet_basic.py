@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2016 The Bitcoin Core developers
-# Copyright (c) 2017-2026 The Bitcoin developers
+# Copyright (c) 2017-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the wallet."""
 from decimal import Decimal
 
-from test_framework.messages import FromHex, CTransaction
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
+from test_framework.messages import COIN, FromHex, CTransaction
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_array_result,
@@ -48,6 +49,17 @@ class WalletTest(BitcoinTestFramework):
         assert_fee_amount(fee, tx_size, fee_per_byte * 1000)
         return curr_balance
 
+    @staticmethod
+    def subsidy(node, height):
+        """Subsidy of the block at `height`, read per height.
+
+        A single value does not describe a set of coinbases: the upgrade2027
+        activation seam splits a range across two block intervals, so the
+        block-1 coinbase pays 50 BCH while every later one pays 1/10th that
+        once 1-min blocks is active.
+        """
+        return Decimal(node.getblockstats(node.getblockhash(height))["subsidy"])
+
     def run_test(self):
         # Check that there's no UTXO on none of the nodes
         assert_equal(len(self.nodes[0].listunspent()), 0)
@@ -57,17 +69,20 @@ class WalletTest(BitcoinTestFramework):
         self.log.info("Mining blocks...")
 
         self.generate(self.nodes[0], 1)
+        cb_n0_first = self.subsidy(self.nodes[0], 1)
 
         walletinfo = self.nodes[0].getwalletinfo()
-        assert_equal(walletinfo['immature_balance'], 50)
+        assert_equal(walletinfo['immature_balance'], cb_n0_first)
         assert_equal(walletinfo['balance'], 0)
 
         self.sync_all(self.nodes[0:3])
-        self.generate(self.nodes[1], 101)
+        self.generate(self.nodes[1], 1)
+        cb_n1_first = self.subsidy(self.nodes[1], 2)
+        self.mine_for_ticks(self.nodes[1], COINBASE_MATURITY_TICKS)
         self.sync_all(self.nodes[0:3])
 
-        assert_equal(self.nodes[0].getbalance(), 50)
-        assert_equal(self.nodes[1].getbalance(), 50)
+        assert_equal(self.nodes[0].getbalance(), cb_n0_first)
+        assert_equal(self.nodes[1].getbalance(), cb_n1_first)
         assert_equal(self.nodes[2].getbalance(), 0)
 
         # Check that only first and second nodes have UTXOs
@@ -79,22 +94,22 @@ class WalletTest(BitcoinTestFramework):
         self.log.info("test sendtoaddress balance checks")
         # Check that sendtoaddress fails with insufficient funds when you
         # try to send more money than the wallet has
-        assert_equal(self.nodes[1].getbalance(), 50)
+        assert_equal(self.nodes[1].getbalance(), cb_n1_first)
         assert_raises_rpc_error(-6, "Insufficient funds",
                                 self.nodes[1].sendtoaddress,
                                 self.nodes[0].getnewaddress(),
-                                50.00000001)
+                                cb_n1_first + Decimal('0.00000001'))
         # Check that sendtoaddress fails with transaction fee error when
         # you can't cover fees
-        assert_equal(self.nodes[1].getbalance(), 50)
+        assert_equal(self.nodes[1].getbalance(), cb_n1_first)
         assert_raises_rpc_error(-4, "This transaction requires a transaction fee"
                                 " of at least",
                                 self.nodes[1].sendtoaddress,
                                 self.nodes[0].getnewaddress(),
-                                50.00000000)
-        assert_equal(self.nodes[1].getbalance(), 50)
-        self.nodes[1].sendtoaddress(self.nodes[1].getnewaddress(), 49.99999800)
-        assert self.nodes[1].getbalance() < 50
+                                cb_n1_first)
+        assert_equal(self.nodes[1].getbalance(), cb_n1_first)
+        self.nodes[1].sendtoaddress(self.nodes[1].getnewaddress(), cb_n1_first - Decimal('0.00000200'))
+        assert self.nodes[1].getbalance() < cb_n1_first
 
         # Have node1 mine a block, thus it will collect its own fee.
         self.generate(self.nodes[1], 1)
@@ -106,17 +121,17 @@ class WalletTest(BitcoinTestFramework):
         # mempool should appear with or without include_mempool
         txout = self.nodes[0].gettxout(txid=confirmed_txid, n=confirmed_index, include_mempool=False, patterns=True)
         payload = txout['scriptPubKey']['asm'].split()[-2]  # Grab pubkey payload
-        assert_equal(txout['value'], 50)
+        assert_equal(txout['value'], cb_n0_first)
         # Ensure pattern info is there
         assert_equal(txout['scriptPubKey']['byteCodePattern']['pattern'], '51ac')
         assert_equal(txout['scriptPubKey']['byteCodePattern']['data'][0], payload)
         txout = self.nodes[0].gettxout(txid=confirmed_txid, n=confirmed_index, include_mempool=True, patterns=True)
-        assert_equal(txout['value'], 50)
+        assert_equal(txout['value'], cb_n0_first)
         # Ensure pattern info is there
         assert_equal(txout['scriptPubKey']['byteCodePattern']['pattern'], '51ac')
         assert_equal(txout['scriptPubKey']['byteCodePattern']['data'][0], payload)
         txout_no_patterns = self.nodes[0].gettxout(txid=confirmed_txid, n=confirmed_index, patterns=False)
-        assert_equal(txout_no_patterns['value'], 50)
+        assert_equal(txout_no_patterns['value'], cb_n0_first)
         assert 'byteCodePattern' not in txout_no_patterns['scriptPubKey']  # Ensure pattern info is not there
 
         # Send 21 BCH from 0 to 2 using sendtoaddress call.
@@ -128,7 +143,7 @@ class WalletTest(BitcoinTestFramework):
         # utxo spent in mempool should be visible if you exclude mempool
         # but invisible if you include mempool
         txout = self.nodes[0].gettxout(confirmed_txid, confirmed_index, False)
-        assert_equal(txout['value'], 50)
+        assert_equal(txout['value'], cb_n0_first)
         txout = self.nodes[0].gettxout(confirmed_txid, confirmed_index, True)
         assert txout is None
         # new utxo from mempool should be invisible if you exclude mempool
@@ -146,6 +161,7 @@ class WalletTest(BitcoinTestFramework):
         assert_equal(walletinfo['immature_balance'], 0)
 
         # Have node0 mine a block, thus it will collect its own fee.
+        node0_second_coin_height = self.nodes[0].getblockcount() + 1
         self.generate(self.nodes[0], 1)
         self.sync_all(self.nodes[0:3])
 
@@ -184,13 +200,14 @@ class WalletTest(BitcoinTestFramework):
         self.nodes[1].sendrawtransaction(tx)
         assert_equal(len(self.nodes[1].listlockunspent()), 0)
 
-        # Have node1 generate 100 blocks (so node0 can recover the fee)
-        self.generate(self.nodes[1], 100)
+        # Mature node0's second coinbase so it can recover the fee.
+        self.mine_for_ticks(self.nodes[1], COINBASE_MATURITY_TICKS)
         self.sync_all(self.nodes[0:3])
 
-        # node0 should end up with 100 btc in block rewards plus fees, but
-        # minus the 21 plus fees sent to node2
-        assert_equal(self.nodes[0].getbalance(), 100 - 21)
+        # node0 should end up with both its matured coinbases plus fees, but
+        # minus the 21 plus fees sent to node2.
+        cb_n0_second = self.subsidy(self.nodes[0], node0_second_coin_height)
+        assert_equal(self.nodes[0].getbalance(), cb_n0_first + cb_n0_second - 21)
         assert_equal(self.nodes[2].getbalance(), 21)
 
         # Node0 should have two unspent outputs.
@@ -219,7 +236,8 @@ class WalletTest(BitcoinTestFramework):
         self.sync_all(self.nodes[0:3])
 
         assert_equal(self.nodes[0].getbalance(), 0)
-        assert_equal(self.nodes[2].getbalance(), 94)
+        assert_equal(self.nodes[2].getbalance(),
+                     cb_n0_first + cb_n0_second - 6)
 
         # Verify that a spent output cannot be locked anymore
         spent_0 = {"txid": node0utxos[0]["txid"],
@@ -293,13 +311,17 @@ class WalletTest(BitcoinTestFramework):
         # 3. sign and send
         # 4. check if recipient (node0) can list the zero value tx
         usp = self.nodes[1].listunspent(
-            query_options={'minimumAmount': '49.998'})[0]
+            query_options={'minimumAmount': cb_n1_first - Decimal('0.002')})[0]
+        keep = cb_n1_first - Decimal('0.002')
+        zero_out = cb_n1_first / 10
         inputs = [{"txid": usp['txid'], "vout": usp['vout']}]
-        outputs = {self.nodes[1].getnewaddress(): 49.998,
-                   self.nodes[0].getnewaddress(): 11.11}
+        outputs = {self.nodes[1].getnewaddress(): keep,
+                   self.nodes[0].getnewaddress(): zero_out}
 
+        # Zero the 2nd output by replacing amount bytes with 0s (value goes to fee)
+        zero_out_le = int(zero_out * COIN).to_bytes(4, "little").hex()
         rawTx = self.nodes[1].createrawtransaction(inputs, outputs).replace(
-            "c0833842", "00000000")  # replace 11.11 with 0.0 (int32)
+            zero_out_le, "00000000")
         decRawTx = self.nodes[1].decoderawtransaction(rawTx)
         signedRawTx = self.nodes[1].signrawtransactionwithwallet(rawTx)
         decRawTx = self.nodes[1].decoderawtransaction(signedRawTx['hex'])
