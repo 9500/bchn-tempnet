@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2016-2019 The Bitcoin Core developers
-# Copyright (c) 2017-2022 The Bitcoin developers
+# Copyright (c) 2017-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test compact blocks (BIP 152).
@@ -11,6 +11,7 @@ Only testing Version 1 compact blocks (txids)
 import random
 
 from test_framework.blocktools import create_block, create_coinbase
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.messages import (
     BlockTransactions,
     BlockTransactionsRequest,
@@ -162,7 +163,7 @@ class CompactBlocksTest(BitcoinTestFramework):
         block = self.build_block_on_tip(self.nodes[0])
         self.test_node.send_and_ping(msg_block(block))
         assert int(self.nodes[0].getbestblockhash(), 16) == block.sha256
-        self.generate(self.nodes[0], 100)
+        self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS)
 
         total_value = block.vtx[0].vout[0].nValue
         out_value = total_value // 10
@@ -312,8 +313,8 @@ class CompactBlocksTest(BitcoinTestFramework):
     # Compare the generated shortids to what we expect based on BIP 152, given
     # bitcoind's choice of nonce.
     def test_compactblock_construction(self, node, test_node):
-        # Generate a bunch of transactions.
-        self.generate(node, 101)
+        # Mine and mature a coinbase to fund the transactions below.
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS + self.block_interval)
         num_transactions = 25
         address = node.getnewaddress()
 
