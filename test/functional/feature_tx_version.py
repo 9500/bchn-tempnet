@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022-2023 The Bitcoin developers
+# Copyright (c) 2022-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test enforcement of strict tx version. Before upgrade9 it is a relay-only rule
@@ -12,6 +12,10 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
     create_tx_with_script,
+    get_coinbase_subsidy,
+)
+from test_framework.cdefs import (
+    COINBASE_MATURITY_TICKS,
 )
 from test_framework.messages import (
     CBlock,
@@ -67,16 +71,25 @@ class TxVersionTest(BitcoinTestFramework):
 
         # Allow the block to mature, and then some
         blocks = [b1]
-        for i in range(130):
+        for _ in range(30):
             blocks.append(self.create_block(blocks[-1],
                                             script_pub_key=anyonecanspend, redeem_script=redeem_script,
                                             nVersion_cb=1))
-        self.send_blocks(blocks[1:])
+            self.send_blocks(blocks[-1:])
 
         for block in blocks:
             for txn in block.vtx:
                 # Ensure all the txns are nVersion==1
                 assert_equal(txn.nVersion, 1)
+
+        # Mature the coins to be spent.
+        self.mine_until_tick_depth(node, blocks[-1].sha256.to_bytes(length=32, byteorder="big").hex(), COINBASE_MATURITY_TICKS)
+
+        # Continue on the node's tip, which the bulk mine moved.
+        tip = FromHex(CBlock(), node.getblock(node.getbestblockhash(), 0))
+        tip.rehash()
+        self.block_heights[tip.sha256] = node.getblockcount()
+        blocks.append(tip)
 
         spend_index = 0
 
@@ -158,8 +171,8 @@ class TxVersionTest(BitcoinTestFramework):
             blocks.append(self.create_block(blocks[-1], spend=blocks[spend_index].vtx[0],
                                             script_pub_key=anyonecanspend, redeem_script=redeem_script))
             spend_index += 1
+            self.send_blocks([blocks[-1]])
         assert iters > 0
-        self.send_blocks(blocks[-iters:])
         # Paranoia: Ensure node accepted above chain
         assert_equal(node.getbestblockhash(), blocks[-1].sha256.to_bytes(length=32, byteorder="big").hex())
         # Ensure upgrade9 activated
@@ -223,7 +236,9 @@ class TxVersionTest(BitcoinTestFramework):
         block_time = prev_block.nTime + 1 if nTime is None else nTime
         # First create the coinbase
         height = self.block_heights.get(prev_block_hash, 0) + 1
-        coinbase = create_coinbase(height, scriptPubKey=script_pub_key)
+        coinbase = create_coinbase(height, scriptPubKey=script_pub_key,
+                                   nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True),
+                                   noAutoHalving=True)
         if nVersion_cb is not None:
             coinbase.nVersion = nVersion_cb
         coinbase.rehash()

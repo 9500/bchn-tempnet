@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2019 The Bitcoin Core developers
-# Copyright (c) 2019-2026 The Bitcoin developers
+# Copyright (c) 2019-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the REST API."""
@@ -19,6 +19,7 @@ from test_framework.messages import (
     COIN,
     deser_block_spent_outputs
 )
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.util import (
     assert_equal,
     assert_greater_than,
@@ -90,8 +91,10 @@ class RESTTest (BitcoinTestFramework):
 
         self.generate(self.nodes[0], 1)
         self.sync_all()
-        self.generatetoaddress(self.nodes[1], 100, not_related_address)
+        self.mine_for_ticks(self.nodes[1], COINBASE_MATURITY_TICKS,
+                            address=not_related_address)
         self.sync_all()
+        reached_height = self.nodes[0].getblockcount() + 1
 
         assert_equal(self.nodes[0].getbalance(), 50)
 
@@ -161,8 +164,8 @@ class RESTTest (BitcoinTestFramework):
 
         # Check if getutxo's chaintip during calculation was fine
         assert_equal(bb_hash, response_hash)
-        # Chain height must be 102
-        assert_equal(chain_height, 102)
+        # The response's height must match the node's tip
+        assert_equal(chain_height, reached_height)
 
         self.log.info("Test the /getutxos URI with and without /checkmempool")
         # Create a transaction, check that it's found with /checkmempool, but

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022-2023 The Bitcoin developers
+# Copyright (c) 2022-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test SIGHASH_UTXOS signing scheme which activates with Upgrade9."""
@@ -7,6 +7,7 @@ from collections import defaultdict, namedtuple
 from typing import DefaultDict, List
 
 from test_framework import address
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.key import ECKey
 from test_framework.messages import (
     CBlock,
@@ -70,7 +71,7 @@ class SighashUtxosTest(BitcoinTestFramework):
                             hash160(self.priv_key.get_pubkey().get_bytes()),
                             OP_EQUALVERIFY, OP_CHECKSIG])
 
-        blockhashes = node.generatetoaddress(101, self.addr)
+        blockhashes = self.mine_for_ticks(node, COINBASE_MATURITY_TICKS + self.block_interval, self.addr)
 
         self.utxos = []
         block = FromHex(CBlock(), node.getblock(blockhashes[0], 0))

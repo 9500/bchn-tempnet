@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022-2023 The Bitcoin developers
+# Copyright (c) 2022-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test that ensures Pre-Activation Token Forgery Outputs (PATFOs)
@@ -8,7 +8,12 @@ from collections import defaultdict
 from typing import DefaultDict, List, NamedTuple, Tuple, Union
 
 from test_framework import address
-from test_framework.blocktools import create_block, create_coinbase
+from test_framework.blocktools import (
+    create_block,
+    create_coinbase,
+    get_coinbase_subsidy,
+)
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.key import ECKey
 from test_framework.messages import (
     CBlock,
@@ -166,7 +171,10 @@ class TokenPATFOUnspendableTest(BitcoinTestFramework):
                             hash160(self.priv_key.get_pubkey().get_bytes()),
                             OP_EQUALVERIFY, OP_CHECKSIG])
 
-        blockhashes = node.generatetoaddress(103, self.addr)
+        blockhashes = node.generatetoaddress(3, self.addr)
+        blockhashes += self.mine_for_ticks(node,
+                                           COINBASE_MATURITY_TICKS + self.block_interval,
+                                           address=self.addr)
 
         self.utxos = []
         block = FromHex(CBlock(), node.getblock(blockhashes[0], 0))
@@ -400,8 +408,10 @@ class TokenPATFOUnspendableTest(BitcoinTestFramework):
             prev_block_hash = uint256_from_hex(prev_block_hash)
         block_time = nTime or FromHex(CBlock(), self.nodes[0].getblock(uint256_to_hex(prev_block_hash), 0)).nTime + 1
 
-        # First create the coinbase
-        coinbase = create_coinbase(height, scriptPubKey=script_pub_key or self.spk)
+        # First create the coinbase; value comes from node so disable regtest auto-halving.
+        coinbase = create_coinbase(height, scriptPubKey=script_pub_key or self.spk,
+                                   nValue=get_coinbase_subsidy(self.nodes[0], for_mining=True),
+                                   noAutoHalving=True)
         coinbase.rehash()
 
         txns = txns or []
