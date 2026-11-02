@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2018 The Bitcoin Core developers
-# Copyright (c) 2018-2026 The Bitcoin developers
+# Copyright (c) 2018-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the scantxoutset rpc call."""
@@ -8,6 +8,7 @@ import os
 import shutil
 from decimal import Decimal
 
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 
@@ -22,7 +23,8 @@ class ScantxoutsetTest(BitcoinTestFramework):
 
     def run_test(self):
         self.log.info("Mining blocks...")
-        self.generate(self.nodes[0], 110)
+        self.generate(self.nodes[0], 10)
+        self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS)
 
         addr = self.nodes[0].getnewaddress("")
         pubkey = self.nodes[0].getaddressinfo(addr)['pubkey']
@@ -79,7 +81,8 @@ class ScantxoutsetTest(BitcoinTestFramework):
         self.stop_node(0)
         shutil.rmtree(os.path.join(self.nodes[0].datadir, self.chain, 'wallets'))
         self.start_node(0)
-        self.generate(self.nodes[0], 110)
+        self.generate(self.nodes[0], 10)
+        n_second_batch = 1 + 10 + len(self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS))
         # Grab the coinbase script for the blocks we have just generated
         my_coinbase_script = sorted(
             self.nodes[0].listunspent(0, 999999, None, True),  key=lambda x: x['amount']
@@ -102,7 +105,7 @@ class ScantxoutsetTest(BitcoinTestFramework):
         assert_equal(sum(u["coinbase"]==False for u in res["unspents"]), 1)
         # Coinbase flag should be true for a mined coinbase tx
         res2 = self.nodes[0].scantxoutset("start", [f"raw({my_coinbase_script})"])
-        assert_equal(sum(u["coinbase"]==True for u in res2["unspents"]), 110)
+        assert_equal(sum(u["coinbase"]==True for u in res2["unspents"]), 10)
 
         self.log.info("Test extended key derivation.")
         # Run various scans, and verify that the sum of the amounts of the matches corresponds to the expected subset.
@@ -164,7 +167,7 @@ class ScantxoutsetTest(BitcoinTestFramework):
         blockhash = self.nodes[0].getblockhash(info["height"])
         assert_equal(unspent["height"], info["height"])
         assert_equal(unspent["blockhash"], blockhash)
-        assert_equal(unspent["confirmations"], 111)
+        assert_equal(unspent["confirmations"], n_second_batch)
 
 
 if __name__ == '__main__':
