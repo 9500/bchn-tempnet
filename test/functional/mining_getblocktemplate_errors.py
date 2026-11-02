@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-# Copyright (c) 2020 The Bitcoin Cash Node developers
+# Copyright (c) 2020-present The Bitcoin Cash Node developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test error modes for getblocktemplate."""
 
 import time
 
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     connect_nodes_bi,
@@ -37,7 +38,7 @@ class GetBlockTemplateTest(BitcoinTestFramework):
         assert_raises_rpc_error(-10, "Bitcoin is downloading blocks...", self.nodes[0].getblocktemplate)
 
         # Mature some coins for easy spending, have a tx in the mempool
-        self.generate(self.nodes[0], 101)
+        self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS + self.block_interval)
         txid = self.nodes[0].sendtoaddress(self.nodes[1].getnewaddress(), "1")
         self.sync_all()
 
