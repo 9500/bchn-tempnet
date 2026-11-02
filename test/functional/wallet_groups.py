@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # Copyright (c) 2018 The Bitcoin Core developers
+# Copyright (c) 2018-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test wallet group functionality."""
 
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.messages import CTransaction, FromHex, ToHex
 from test_framework.util import (
@@ -31,8 +33,9 @@ class WalletGroupTest(BitcoinTestFramework):
         self.skip_if_no_wallet()
 
     def run_test(self):
-        # Mine some coins
-        self.generate(self.nodes[0], 110)
+        # Mine some coins and mature them
+        self.generate(self.nodes[0], 10)
+        self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS)
 
         # Get some addresses from the two nodes
         addr1 = [self.nodes[1].getnewaddress() for i in range(3)]
@@ -76,11 +79,11 @@ class WalletGroupTest(BitcoinTestFramework):
         self.sync_all()
         self.generate(self.nodes[0], 1)
 
-        # Fill node2's wallet with 10000 outputs corresponding to the same
-        # scriptPubKey
+        # Fill node2's wallet with 10,000 outputs corresponding to the same scriptPubKey.
+        # 0.005 BCH ensures we have enough to fund it even under 1-min regime.
         for i in range(5):
             raw_tx = self.nodes[0].createrawtransaction(
-                [{"txid": "0" * 64, "vout": 0}], [{addr2[0]: 0.05}])
+                [{"txid": "0" * 64, "vout": 0}], [{addr2[0]: 0.005}])
             tx = FromHex(CTransaction(), raw_tx)
             tx.vin = []
             tx.vout = [tx.vout[0]] * 2000
@@ -95,7 +98,7 @@ class WalletGroupTest(BitcoinTestFramework):
         # Check that we can create a transaction that only requires ~100 of our
         # utxos, without pulling in all outputs and creating a transaction that
         # is way too big.
-        assert self.nodes[2].sendtoaddress(address=addr2[0], amount=5)
+        assert self.nodes[2].sendtoaddress(address=addr2[0], amount=0.5)
 
 
 if __name__ == '__main__':
