@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2015-2017 The Bitcoin Core developers
-# Copyright (c) 2017-2026 The Bitcoin developers
+# Copyright (c) 2017-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test node responses to invalid transactions.
@@ -13,6 +13,7 @@ from test_framework.blocktools import (
     create_coinbase,
     create_tx_with_script,
 )
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.txtools import pad_tx
 from test_framework.messages import (
     COIN,
@@ -83,8 +84,8 @@ class InvalidTxRequestTest(BitcoinTestFramework):
         node.p2p.send_blocks_and_test([block], node, success=True)
 
         self.log.info("Mature the block.")
-        self.generatetoaddress(self.nodes[0],
-                               100, self.nodes[0].get_deterministic_priv_key().address)
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS,
+                            address=node.get_deterministic_priv_key().address)
 
         # b'\x64' is OP_NOTIF
         # Transaction will be rejected with code 16 (REJECT_INVALID)
