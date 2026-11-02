@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2019 The Bitcoin Core developers
-# Copyright (c) 2026 The Bitcoin developers
+# Copyright (c) 2026-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test mempool limiting together/eviction with the wallet."""
@@ -8,7 +8,7 @@
 from decimal import Decimal
 
 from test_framework.blocktools import (
-    create_confirmed_utxos,
+    create_tick_confirmed_utxos,
     send_big_transactions,
 )
 from test_framework.test_framework import BitcoinTestFramework
@@ -43,7 +43,7 @@ class MempoolLimitTest(BitcoinTestFramework):
 
         txids = []
         utxo_groups = 4
-        utxos = create_confirmed_utxos(self, self.nodes[0], 1 + 30 * utxo_groups)
+        utxos = create_tick_confirmed_utxos(self, self.nodes[0], 1 + 30 * utxo_groups)
 
         self.log.info('Create a mempool tx that will be evicted')
         us0 = utxos.pop()

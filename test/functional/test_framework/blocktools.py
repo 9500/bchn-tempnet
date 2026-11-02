@@ -236,14 +236,8 @@ def get_legacy_sigopcount_tx(tx, fAccurate=True):
     return count
 
 
-def create_confirmed_utxos(test_framework, node, count, age=101):
-    """
-    Helper to create at least "count" utxos
-    """
-    to_generate = int(0.5 * count) + age
-    while to_generate > 0:
-        test_framework.generate(node, min(25, to_generate))
-        to_generate -= 25
+def _ensure_utxo_count(test_framework, node, count):
+    """Split mature utxos until there are at least `count`, then confirm them."""
     utxos = node.listunspent()
     iterations = count - len(utxos)
     addr1 = node.getnewaddress()
@@ -267,12 +261,45 @@ def create_confirmed_utxos(test_framework, node, count, age=101):
         signed_tx = node.signrawtransactionwithwallet(ToHex(ctx))["hex"]
         node.sendrawtransaction(signed_tx)
 
-    while (node.getmempoolinfo()['size'] > 0):
+    while node.getmempoolinfo()['size'] > 0:
         test_framework.generate(node, 1)
 
     utxos = node.listunspent()
     assert len(utxos) >= count
     return utxos
+
+
+def create_confirmed_utxos(test_framework, node, count, age=101):
+    """
+    Helper to create at least "count" utxos
+    """
+    to_generate = int(0.5 * count) + age
+    while to_generate > 0:
+        test_framework.generate(node, min(25, to_generate))
+        to_generate -= 25
+    return _ensure_utxo_count(test_framework, node, count)
+
+
+def create_tick_confirmed_utxos(test_framework, node, count, tick_age=60600):
+    """
+    Helper to create at least "count" utxos whose coinbase age, in ticks, is at
+    least `tick_age`.
+
+    Age here is confirmations_ticks: Ticks(tip) - Ticks(block) + that block's
+    own interval. At one confirmation it is just the block's own interval, so
+    the top-up is tick_age minus that interval, and the number of blocks it
+    takes follows whichever interval is in force.
+    """
+    hashes = test_framework.generate(node, int(0.5 * count) + 1)
+
+    # Anchor on the youngest: it is the binding constraint, since every older
+    # coinbase has strictly more age, and listunspent() hides immature coins so
+    # a shortfall here surfaces as too few utxos rather than as an error.
+    remaining = tick_age - get_block_interval(node, hashes[-1])
+    if remaining > 0:
+        test_framework.mine_for_ticks(node, remaining)
+
+    return _ensure_utxo_count(test_framework, node, count)
 
 
 def mine_big_block(test_framework, node, utxos=None):
