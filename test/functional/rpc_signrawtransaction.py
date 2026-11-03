@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # Copyright (c) 2015-2019 The Bitcoin Core developers
+# Copyright (c) 2019-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test transaction signing using the signrawtransaction* RPCs."""
 
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 
@@ -228,7 +230,8 @@ class SignRawTransactionsTest(BitcoinTestFramework):
 
         # The multiwallet node can sign the transaction using w1
         w1 = multiwallet_node.get_wallet_rpc('w1')
-        self.generate(w1, 101)
+        self.generate(w1, 1)
+        self.mine_for_ticks(multiwallet_node, COINBASE_MATURITY_TICKS)
 
         utxo = w1.listunspent()[0]
         inputs = [{
