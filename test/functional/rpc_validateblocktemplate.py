@@ -12,6 +12,7 @@ in some cases, not all functionality supported, like setminingmaxblocksize"""
 import random
 import time
 
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.authproxy import JSONRPCException
 from test_framework.blocktools import (
     create_block,
@@ -188,7 +189,8 @@ class ValidateblocktemplateTest(BitcoinTestFramework):
         self.sync_all()
 
         prev_block = block
-        # out_value is less than 50BTC because regtest halvings happen every 150 blocks, and is in Satoshis
+        # out_value is in satoshis and is below 50 BCH: regtest halves every 90,000 ticks (150 blocks for
+        # 10-min blocks, 1,500 for 1-min), and the subsidy is divided by the interval ratio after that.
         out_value = block.vtx[0].vout[0].nValue
         tx1 = create_transaction(prev_block.vtx[0], 0, b'\x61' * 50 + b'\x51', [int(out_value / 2), int(out_value / 2)])
         height = self.nodes[0].getblockcount()
@@ -226,7 +228,8 @@ class ValidateblocktemplateTest(BitcoinTestFramework):
         assert_raises_rpc_error(-25, "Invalid block: bad-txns-premature-spend-of-coinbase",
                                 self.nodes[0].validateblocktemplate, hexblk)
 
-        self.generate(self.nodes[0], 100)
+        # Mature prev_block's coinbase (100 blocks for 10-min blocks, about 1,000 for 1-min)
+        self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS)
         self.sync_all()
         height = self.nodes[0].getblockcount()
         tip = self.nodes[0].getblockhash(height)
