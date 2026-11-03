@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2017 The Bitcoin Core developers
+# Copyright (c) 2017-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test that the wallet can send and receive using all combinations of address types.
@@ -35,6 +36,7 @@ this also verifies that spending coins sent to all these address types works.
 from decimal import Decimal
 import itertools
 
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -116,9 +118,10 @@ class AddressTypeTest(BitcoinTestFramework):
             typ=expected_type)
 
     def run_test(self):
-        # Mine 101 blocks on node4 to bring nodes out of IBD and make sure that
+        # Mine blocks on node4 to bring nodes out of IBD and make sure that
         # no coinbases are maturing for the nodes-under-test during the test
-        self.generate(self.nodes[4], 101)
+        self.generate(self.nodes[4], 1)
+        self.mine_for_ticks(self.nodes[4], COINBASE_MATURITY_TICKS)
         self.sync_blocks()
 
         uncompressed_1 = "0496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858ee"
