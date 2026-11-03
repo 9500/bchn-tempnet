@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2019 The Bitcoin Core developers
+# Copyright (c) 2019-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the importmulti RPC."""
 
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.script import (
     CScript,
     OP_NOP,
@@ -263,7 +265,7 @@ class ImportMultiTest (BitcoinTestFramework):
             self.nodes[0].getnewaddress())
         multi_sig_script = self.nodes[0].createmultisig(
             2, [sig_address_1['pubkey'], sig_address_2['pubkey'], sig_address_3['pubkey']])
-        self.generate(self.nodes[1], 100)
+        self.mine_for_ticks(self.nodes[1], COINBASE_MATURITY_TICKS)
         self.nodes[1].sendtoaddress(multi_sig_script['address'], 10.00)
         self.generate(self.nodes[1], 1)
         timestamp = self.nodes[1].getblock(
@@ -296,7 +298,7 @@ class ImportMultiTest (BitcoinTestFramework):
             self.nodes[0].getnewaddress())
         multi_sig_script = self.nodes[0].createmultisig(
             2, [sig_address_1['pubkey'], sig_address_2['pubkey'], sig_address_3['pubkey']])
-        self.generate(self.nodes[1], 100)
+        self.mine_for_ticks(self.nodes[1], COINBASE_MATURITY_TICKS)
         self.nodes[1].sendtoaddress(multi_sig_script['address'], 10.00)
         self.generate(self.nodes[1], 1)
         timestamp = self.nodes[1].getblock(
@@ -329,7 +331,7 @@ class ImportMultiTest (BitcoinTestFramework):
             self.nodes[0].getnewaddress())
         multi_sig_script = self.nodes[0].createmultisig(
             2, [sig_address_1['pubkey'], sig_address_2['pubkey'], sig_address_3['pubkey']])
-        self.generate(self.nodes[1], 100)
+        self.mine_for_ticks(self.nodes[1], COINBASE_MATURITY_TICKS)
         self.nodes[1].sendtoaddress(multi_sig_script['address'], 10.00)
         self.generate(self.nodes[1], 1)
         timestamp = self.nodes[1].getblock(
@@ -364,7 +366,7 @@ class ImportMultiTest (BitcoinTestFramework):
             self.nodes[0].getnewaddress())
         multi_sig_script = self.nodes[0].createmultisig(
             2, [sig_address_1['pubkey'], sig_address_2['pubkey'], sig_address_3['pubkey']])
-        self.generate(self.nodes[1], 100)
+        self.mine_for_ticks(self.nodes[1], COINBASE_MATURITY_TICKS)
         self.nodes[1].sendtoaddress(multi_sig_script['address'], 10.00)
         self.generate(self.nodes[1], 1)
         timestamp = self.nodes[1].getblock(
