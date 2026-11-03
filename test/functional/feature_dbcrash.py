@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2017-2019 The Bitcoin Core developers
+# Copyright (c) 2017-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test recovery from a crash during chainstate writing.
@@ -30,7 +31,7 @@ import http.client
 import random
 import time
 
-from test_framework.blocktools import create_confirmed_utxos
+from test_framework.blocktools import create_tick_confirmed_utxos
 from test_framework.cdefs import DEFAULT_CONSENSUS_BLOCK_SIZE
 from test_framework.messages import (
     COIN,
@@ -234,7 +235,7 @@ class ChainstateWriteCrashTest(BitcoinTestFramework):
 
         # Start by creating a lot of utxos on node3
         initial_height = self.nodes[3].getblockcount()
-        utxo_list = create_confirmed_utxos(self, self.nodes[3], 5000)
+        utxo_list = create_tick_confirmed_utxos(self, self.nodes[3], 5000)
         self.log.info("Prepped {} utxo entries".format(len(utxo_list)))
 
         # Sync these blocks with the other nodes
