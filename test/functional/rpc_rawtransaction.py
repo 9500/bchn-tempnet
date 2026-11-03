@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2019 The Bitcoin Core developers
-# Copyright (c) 2020-2026 The Bitcoin developers
+# Copyright (c) 2020-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the rawtransaction RPCs.
@@ -18,7 +18,13 @@ from decimal import Decimal
 
 from collections import OrderedDict
 from io import BytesIO
+from test_framework.blocktools import (
+    get_block_tick_depth,
+    get_coinbase_subsidy,
+)
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.messages import (
+    COIN,
     COutPoint,
     CTransaction,
     CTxIn,
@@ -79,8 +85,32 @@ class RawTransactionsTest(BitcoinTestFramework):
             'prepare some coins for multiple *rawtransaction commands')
         self.generate(self.nodes[2], 1)
         self.sync_all()
-        self.generate(self.nodes[0], 101)
+        pipeline_start_height = self.nodes[0].getblockcount() + 1
+        self.generate(self.nodes[0], 2) # need enough balance to fund below spends
+        self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS)
+        pipeline_end_height = self.nodes[0].getblockcount()
         self.sync_all()
+
+        pipeline_heights = list(range(pipeline_start_height, pipeline_end_height + 1))
+        matured_subsidies = []
+
+        def matured_total():
+            """Sum of node 0's pipeline coinbases that are mature at the tip.
+
+            A coinbase is counted in getbalance() once T(tip) - T(coin) reaches
+            COINBASE_MATURITY_TICKS, which is get_block_tick_depth(). One 1-min
+            block advances that frontier by less than one 10-min coinbase, so a
+            single block may mature no coinbase at all.
+            """
+            while (len(matured_subsidies) < len(pipeline_heights)
+                   and get_block_tick_depth(self.nodes[0],
+                                            pipeline_heights[len(matured_subsidies)])
+                       >= COINBASE_MATURITY_TICKS):
+                h = pipeline_heights[len(matured_subsidies)]
+                matured_subsidies.append(
+                    Decimal(get_coinbase_subsidy(self.nodes[0], blockhash_or_height=h)) / COIN)
+            return sum(matured_subsidies, Decimal(0))
+
         self.nodes[0].sendtoaddress(self.nodes[2].getnewaddress(), 1.5)
         self.nodes[0].sendtoaddress(self.nodes[2].getnewaddress(), 1.0)
         self.nodes[0].sendtoaddress(self.nodes[2].getnewaddress(), 5.0)
@@ -373,6 +403,7 @@ class RawTransactionsTest(BitcoinTestFramework):
                 break
 
         bal = self.nodes[0].getbalance()
+        matured_before = matured_total()
         inputs = [{
             "txid": txId,
             "vout": vout['n'],
@@ -395,8 +426,8 @@ class RawTransactionsTest(BitcoinTestFramework):
         self.generate(self.nodes[0], 1)
         self.sync_all(synced_nodes)
         firstSentTx = self.nodes[2].getrawtransaction(hash, True)
-        assert_equal(self.nodes[0].getbalance(), bal + Decimal(
-            '50.00000000') + Decimal('2.19000000'))  # block reward + tx
+        assert_equal(self.nodes[0].getbalance(),
+                     bal + (matured_total() - matured_before) + Decimal('2.19000000'))
 
         rawTxBlock = self.nodes[0].getblock(self.nodes[0].getbestblockhash())
 
@@ -433,6 +464,7 @@ class RawTransactionsTest(BitcoinTestFramework):
                 break
 
         bal = self.nodes[0].getbalance()
+        matured_before = matured_total()
         inputs = [{"txid": txId, "vout": vout['n'], "scriptPubKey": vout['scriptPubKey']
                    ['hex'], "redeemScript": mSigObjValid['hex'], "amount": vout['value']}]
         outputs = {self.nodes[0].getnewaddress(): 2.19}
@@ -459,8 +491,8 @@ class RawTransactionsTest(BitcoinTestFramework):
         self.generate(self.nodes[0], 1)
         self.sync_all(synced_nodes)
         lastSentTx = self.nodes[2].getrawtransaction(hash, True)
-        assert_equal(self.nodes[0].getbalance(
-        ), bal + Decimal('50.00000000') + Decimal('2.19000000'))  # block reward + tx
+        assert_equal(self.nodes[0].getbalance(),
+                     bal + (matured_total() - matured_before) + Decimal('2.19000000'))
 
         # getrawtransaction tests
         # 1. valid parameters - only supply txid
