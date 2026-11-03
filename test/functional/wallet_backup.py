@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2016 The Bitcoin Core developers
+# Copyright (c) 2017-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the wallet backup features.
@@ -8,8 +9,7 @@ Test case is:
 4 nodes. 1 2 and 3 send transactions between each other,
 fourth node is a miner.
 1 2 3 each mine a block to start, then
-Miner creates 100 blocks so 1 2 3 each have 50 mature
-coins to spend.
+Miner creates enough blocks to mature those coinbases.
 Then 5 iterations of 1/2/3 sending coins amongst
 themselves to get transactions in the wallets,
 and the miner mining one block.
@@ -17,11 +17,11 @@ and the miner mining one block.
 Wallets are backed up using dumpwallet/backupwallet.
 Then 5 more iterations of transactions and mining a block.
 
-Miner then generates 101 more blocks, so any
-transaction fees paid mature.
+Miner then mines until every transaction fee paid so far
+has matured.
 
 Sanity check:
-  Sum(1,2,3,4 balances) == 114*50
+  Sum(1,2,3,4 balances) == sum of the mature coinbase values
 
 1/2/3 are shutdown, and their wallets erased.
 Then restore using wallet.dat backup. And
@@ -35,6 +35,13 @@ import os
 from random import randint
 import shutil
 
+from test_framework.blocktools import (
+    get_block_ticks,
+    get_chaintip_ticks,
+    get_coinbase_subsidy,
+)
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
+from test_framework.messages import COIN
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -114,17 +121,20 @@ class WalletBackupTest(BitcoinTestFramework):
     def run_test(self):
         self.log.info("Generating initial blockchain")
         self.generate(self.nodes[0], 1)
+        coin0 = Decimal(get_coinbase_subsidy(self.nodes[0])) / COIN
         self.sync_blocks()
         self.generate(self.nodes[1], 1)
+        coin1 = Decimal(get_coinbase_subsidy(self.nodes[1])) / COIN
         self.sync_blocks()
         self.generate(self.nodes[2], 1)
+        coin2 = Decimal(get_coinbase_subsidy(self.nodes[2])) / COIN
         self.sync_blocks()
-        self.generate(self.nodes[3], 100)
+        self.mine_for_ticks(self.nodes[3], COINBASE_MATURITY_TICKS)
         self.sync_blocks()
 
-        assert_equal(self.nodes[0].getbalance(), 50)
-        assert_equal(self.nodes[1].getbalance(), 50)
-        assert_equal(self.nodes[2].getbalance(), 50)
+        assert_equal(self.nodes[0].getbalance(), coin0)
+        assert_equal(self.nodes[1].getbalance(), coin1)
+        assert_equal(self.nodes[2].getbalance(), coin2)
         assert_equal(self.nodes[3].getbalance(), 0)
 
         self.log.info("Creating transactions")
@@ -150,8 +160,9 @@ class WalletBackupTest(BitcoinTestFramework):
         for i in range(5):
             self.do_one_round()
 
-        # Generate 101 more blocks, so any fees paid mature
-        self.generate(self.nodes[3], 101)
+        self.generate(self.nodes[3], 1) # claim fees
+        youngest_mature_height = self.nodes[3].getblockcount() # capture for totals sum below
+        self.mine_for_ticks(self.nodes[3], COINBASE_MATURITY_TICKS) # mature fee payment
         self.sync_all()
 
         balance0 = self.nodes[0].getbalance()
@@ -160,9 +171,12 @@ class WalletBackupTest(BitcoinTestFramework):
         balance3 = self.nodes[3].getbalance()
         total = balance0 + balance1 + balance2 + balance3
 
-        # At this point, there are 214 blocks (103 for setup, then 10 rounds, then 101.)
-        # 114 are mature, so the sum of all wallets should be 114 * 50 = 5700.
-        assert_equal(total, 5700)
+        # Sanity check: verify mature coinbase rewards match total wallet balances
+        node = self.nodes[3]
+        expected_total = sum(
+            Decimal(get_coinbase_subsidy(node, blockhash_or_height=h)) / COIN
+            for h in range(1, youngest_mature_height + 1))
+        assert_equal(total, expected_total)
 
         ##
         # Test restoring spender wallets from backups
