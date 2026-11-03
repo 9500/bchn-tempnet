@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 # Copyright (c) 2021 The Bitcoin Core developers
-# Copyright (c) 2026 The Bitcoin developers
+# Copyright (c) 2026-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test simulaterawtransaction.
 """
 
 from decimal import Decimal
-from test_framework.cdefs import LEGACY_COINBASE_MATURITY_10_MIN_BLOCKS
+
+from test_framework.blocktools import get_coinbase_subsidy
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
+from test_framework.messages import COIN
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_approx,
@@ -38,8 +41,16 @@ class SimulateTxTest(BitcoinTestFramework):
         w1 = node.get_wallet_rpc('w1')
         w2 = node.get_wallet_rpc('w2')
 
-        self.generatetoaddress(node, LEGACY_COINBASE_MATURITY_10_MIN_BLOCKS + 1, w0.getnewaddress())
-        assert_equal(w0.getbalance(), 50.0)
+        # get enough balance no matter where the 10-min to 1-min blocks change happens
+        first_coin_height = node.getblockcount() + 1
+        self.generatetoaddress(node, 10, w0.getnewaddress())
+        coinbase_balance = sum(
+            Decimal(get_coinbase_subsidy(node, blockhash_or_height=h)) / COIN
+            for h in range(first_coin_height, node.getblockcount() + 1))
+        # mature the balance
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS, address=node.get_deterministic_priv_key().address)
+
+        assert_equal(w0.getbalance(), coinbase_balance)
         assert_equal(w1.getbalance(), 0.0)
 
         address1 = w1.getnewaddress()
