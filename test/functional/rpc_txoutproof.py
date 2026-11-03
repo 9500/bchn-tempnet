@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2016 The Bitcoin Core developers
+# Copyright (c) 2016-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test gettxoutproof and verifytxoutproof RPCs."""
 
+from decimal import Decimal
+
+from test_framework.blocktools import get_coinbase_subsidy
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
     connect_nodes,
 )
-from test_framework.messages import CMerkleBlock, FromHex, ToHex
+from test_framework.messages import COIN, CMerkleBlock, FromHex, ToHex
 
 
 class MerkleBlockTest(BitcoinTestFramework):
@@ -33,21 +38,27 @@ class MerkleBlockTest(BitcoinTestFramework):
 
     def run_test(self):
         self.log.info("Mining blocks...")
-        self.generate(self.nodes[0], 105)
+        # A handful of coinbases is all this test spends; the tip height carries no meaning here.
+        self.generate(self.nodes[0], 10)
+        coin = Decimal(get_coinbase_subsidy(self.nodes[0])) / COIN
+        self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS)
         self.sync_all()
 
         chain_height = self.nodes[1].getblockcount()
-        assert_equal(chain_height, 105)
+
         assert_equal(self.nodes[1].getbalance(), 0)
         assert_equal(self.nodes[2].getbalance(), 0)
 
+        amount1 = coin - Decimal('0.01')
+        amount2 = amount1 - Decimal('0.01')
+
         node0utxos = self.nodes[0].listunspent(1)
         tx1 = self.nodes[0].createrawtransaction(
-            [node0utxos.pop()], {self.nodes[1].getnewaddress(): 49.99})
+            [node0utxos.pop()], {self.nodes[1].getnewaddress(): amount1})
         txid1 = self.nodes[0].sendrawtransaction(
             self.nodes[0].signrawtransactionwithwallet(tx1)["hex"])
         tx2 = self.nodes[0].createrawtransaction(
-            [node0utxos.pop()], {self.nodes[1].getnewaddress(): 49.99})
+            [node0utxos.pop()], {self.nodes[1].getnewaddress(): amount1})
         txid2 = self.nodes[0].sendrawtransaction(
             self.nodes[0].signrawtransactionwithwallet(tx2)["hex"])
         # This will raise an exception because the transaction is not yet in a
@@ -73,7 +84,7 @@ class MerkleBlockTest(BitcoinTestFramework):
 
         txin_spent = self.nodes[1].listunspent(1).pop()
         tx3 = self.nodes[1].createrawtransaction(
-            [txin_spent], {self.nodes[0].getnewaddress(): 49.98})
+            [txin_spent], {self.nodes[0].getnewaddress(): amount2})
         txid3 = self.nodes[0].sendrawtransaction(
             self.nodes[1].signrawtransactionwithwallet(tx3)["hex"])
         self.generate(self.nodes[0], 1)
