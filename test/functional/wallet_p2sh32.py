@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022-2026 The Bitcoin developers
+# Copyright (c) 2022-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the wallet sending to p2sh32 addresses.  This should fail as non-standard pre-activation, and work ok
@@ -7,6 +7,7 @@ post-activation"""
 import time
 
 from test_framework import cashaddr
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.key import ECKey
 from test_framework.messages import FromHex, CTransaction
 from test_framework.script import (
@@ -45,10 +46,10 @@ class WalletP2SH32Test(BitcoinTestFramework):
         self.sync_all()
         self.nodes[1].generatetoaddress(10, addr1)
         self.sync_all()
-        # Mature the above 2 sets of coins
         self.nodes[0].generatetoaddress(51, addr0)
         self.sync_all()
-        self.nodes[1].generatetoaddress(50, addr1)
+        # Mature the above sets of coins
+        self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS, addr1)
         self.sync_all()
 
         priv_key = ECKey()
@@ -141,7 +142,7 @@ class WalletP2SH32Test(BitcoinTestFramework):
                 "rescan": True,
             }
         )
-        self.log.info("importmulti result: " + str(res))
+        self.log.info("importmulti result (expected success: False): " + str(res))
         assert_equal(res[0]["success"], False)
         assert_equal(res[0]["error"]["code"], -5)
         assert_equal(res[0]["error"]["message"], "Invalid P2SH address / script")
