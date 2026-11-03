@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # Copyright (c) 2017 The Bitcoin Core developers
-# Copyright (c) 2017-2026 The Bitcoin developers
+# Copyright (c) 2017-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the listsincelast RPC."""
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, assert_greater_than, assert_array_result, assert_raises_rpc_error
 
@@ -18,7 +19,8 @@ class ListSinceBlockTest (BitcoinTestFramework):
         self.skip_if_no_wallet()
 
     def run_test(self):
-        self.generate(self.nodes[2], 101)
+        self.generate(self.nodes[2], 1)
+        self.mine_for_ticks(self.nodes[2], COINBASE_MATURITY_TICKS)
         self.sync_all()
 
         self.test_no_blockhash()
