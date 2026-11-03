@@ -9,6 +9,7 @@ import time
 from typing import List, NamedTuple, Optional, Tuple
 
 from test_framework.address import scripthash_to_p2sh
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.mempool_util import ORPHAN_TX_EXPIRE_TIME, tx_in_orphanage
 from test_framework.messages import CBlock, COutPoint, CTransaction, CTxIn, CTxOut, FromHex
 from test_framework.p2p import P2PDataStore
@@ -68,7 +69,8 @@ class OrphanRPCsTest(BitcoinTestFramework):
     def run_test(self):
         node = self.nodes[0]
         # Setup 2 coinbase utxos for us to spend
-        blockhashes = node.generatetoaddress(102, self.p2sh_address)
+        blockhashes = node.generatetoaddress(2, self.p2sh_address)
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS)
         self.utxos = []
         # Grab coinbase UTXOs from first 2 blocks
         for block_hash in blockhashes[:2]:
