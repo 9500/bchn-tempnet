@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2016-2017 The Bitcoin Core developers
+# Copyright (c) 2017-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test label RPCs.
@@ -10,7 +11,11 @@ RPCs tested are:
     - setlabel
 """
 from collections import defaultdict
+from decimal import Decimal
 
+from test_framework.blocktools import get_coinbase_subsidy
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
+from test_framework.messages import COIN
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 
@@ -29,18 +34,21 @@ class WalletLabelsTest(BitcoinTestFramework):
         assert_equal(len(node.listunspent()), 0)
 
         # Note each time we call generate, all generated coins go into
-        # the same address, so we call twice to get two addresses w/50 each
-        self.generatetoaddress(node,
-                               nblocks=1, address=node.getnewaddress(
-                                   label='coinbase'))
-        self.generatetoaddress(node,
-                               nblocks=101,
-                               address=node.getnewaddress(
-                                   label='coinbase'))
-        assert_equal(node.getbalance(), 100)
+        # the same address, so we call twice to get two addresses with a coinbase in each
+        addr_a = node.getnewaddress(label='coinbase')
+        self.generatetoaddress(node, nblocks=1, address=addr_a)
+        coin_a = Decimal(get_coinbase_subsidy(node)) / COIN
+        addr_b = node.getnewaddress(label='coinbase')
+        self.generatetoaddress(node, nblocks=1, address=addr_b)
+        coin_b = Decimal(get_coinbase_subsidy(node)) / COIN
+
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS, address=node.get_deterministic_priv_key().address)
+
+        assert_equal(node.getbalance(), coin_a + coin_b)
 
         # there should be 2 address groups
-        # each with 1 address with a balance of 50 Bitcoins
+        # each with 1 address with a balance of one mature coinbase
+        expected_amounts = {addr_a: coin_a, addr_b: coin_b}
         address_groups = node.listaddressgroupings()
         assert_equal(len(address_groups), 2)
         # the addresses aren't linked now, but will be after we send to the
@@ -49,14 +57,14 @@ class WalletLabelsTest(BitcoinTestFramework):
         for address_group in address_groups:
             assert_equal(len(address_group), 1)
             assert_equal(len(address_group[0]), 3)
-            assert_equal(address_group[0][1], 50)
+            assert_equal(address_group[0][1], expected_amounts.pop(address_group[0][0]))
             assert_equal(address_group[0][2], 'coinbase')
             linked_addresses.add(address_group[0][0])
 
-        # send 50 from each address to a third address not in this wallet
+        # send everything from both addresses to a third address not in this wallet
         common_address = "msf4WtN1YQKXvNtvdFYt9JBnUD2FB41kjr"
         node.sendmany(
-            amounts={common_address: 100},
+            amounts={common_address: coin_a + coin_b},
             subtractfeefrom=[common_address],
             minconf=1,
         )
@@ -68,12 +76,13 @@ class WalletLabelsTest(BitcoinTestFramework):
         assert_equal(set([a[0] for a in address_groups[0]]), linked_addresses)
         assert_equal([a[1] for a in address_groups[0]], [0, 0])
 
-        self.generate(node, 1)
+        # Both grouped coins are spent, so mine a fresh coinbase and mature it.
+        self.generate(node, 1)[0]
+        coin = Decimal(get_coinbase_subsidy(node)) / COIN
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS, address=node.get_deterministic_priv_key().address)
 
-        # we want to reset so that the "" label has what's expected.
-        # otherwise we're off by exactly the fee amount as that's mined
-        # and matures in the next 100 blocks
-        amount_to_send = 1.0
+        # Ten sends below must fit inside that one coin
+        amount_to_send = coin / 50
 
         # Create labels and make sure subsequent label API calls
         # recognize the label/address associations.
@@ -108,9 +117,9 @@ class WalletLabelsTest(BitcoinTestFramework):
             address = node.getnewaddress(label.name)
             label.add_receive_address(address)
             label.verify(node)
-            assert_equal(node.getreceivedbylabel(label.name), 2)
+            assert_equal(node.getreceivedbylabel(label.name), 2 * amount_to_send)
             label.verify(node)
-        self.generate(node, 101)
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS, address=node.get_deterministic_priv_key().address)
 
         # Check that setlabel can assign a label to a new unused address.
         for label in labels:
@@ -133,7 +142,7 @@ class WalletLabelsTest(BitcoinTestFramework):
             label.add_address(multisig_address)
             label.purpose[multisig_address] = "send"
             label.verify(node)
-        self.generate(node, 101)
+        self.mine_for_ticks(node, COINBASE_MATURITY_TICKS, address=node.get_deterministic_priv_key().address)
 
         # Check that setlabel can change the label of an address from a
         # different label.
