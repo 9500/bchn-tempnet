@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2016 The Bitcoin Core developers
+# Copyright (c) 2016-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the importprunedfunds and removeprunedfunds RPCs."""
 
 from decimal import Decimal
 
+from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 
@@ -20,7 +22,8 @@ class ImportPrunedFundsTest(BitcoinTestFramework):
 
     def run_test(self):
         self.log.info("Mining blocks...")
-        self.generate(self.nodes[0], 101)
+        self.generate(self.nodes[0], 1)
+        self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS)
 
         self.sync_all()
 
@@ -40,7 +43,7 @@ class ImportPrunedFundsTest(BitcoinTestFramework):
         self.sync_all()
 
         # Node 1 sync test
-        assert_equal(self.nodes[1].getblockcount(), 101)
+        assert_equal(self.nodes[1].getblockcount(), self.nodes[0].getblockcount())
 
         # Address Test - before import
         address_info = self.nodes[1].getaddressinfo(address1)
