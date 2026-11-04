@@ -19,9 +19,11 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
     create_tx_with_script,
+    get_coinbase_subsidy,
+    get_next_block_tick_depth,
     make_conform_to_ctor,
 )
-from test_framework.cdefs import ONE_MEGABYTE
+from test_framework.cdefs import COINBASE_MATURITY_TICKS, ONE_MEGABYTE
 from test_framework.messages import (
     COutPoint,
     CTransaction,
@@ -93,13 +95,10 @@ class FullBlockTest(BitcoinTestFramework):
         self.block_heights = {}
         self.tip = None
         self.blocks = {}
-        self.force_block_size = 16 * ONE_MEGABYTE
-        self.extra_args = [['-whitelist=127.0.0.1',
-                            '-maxmempool=99999',
-                            f'-blockmaxsize={self.force_block_size}',
-                            # Note that -forceblocksize also disables ABLA
-                            f'-forceblocksize={self.force_block_size}',
-                            '-acceptnonstdtxn=1']]
+        self.base_extra_args = ['-whitelist=127.0.0.1',
+                                '-maxmempool=99999',
+                                '-acceptnonstdtxn=1']
+        self.extra_args = [self.base_extra_args]
         # UBSAN will cause this test to timeout without this.
         self.rpc_timeout = 180
 
@@ -118,7 +117,7 @@ class FullBlockTest(BitcoinTestFramework):
         return tx
 
     def next_block(self, number, spend=None, script=CScript(
-            [OP_TRUE]), block_size=0, extra_txns=0):
+            [OP_TRUE]), block_size=0, extra_txns=0, nValue=None):
         if self.tip is None:
             base_block_hash = self.genesis_hash
             block_time = int(time.time()) + 1
@@ -127,7 +126,12 @@ class FullBlockTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
         # First create the coinbase
         height = self.block_heights[base_block_hash] + 1
-        coinbase = create_coinbase(height)
+        # The default reads the subsidy of the block on the node's current tip,
+        # so it is only right for a block built directly on that tip. Callers
+        # building blocks ahead of the node pass nValue.
+        if nValue is None:
+            nValue = get_coinbase_subsidy(self.nodes[0], for_mining=True)
+        coinbase = create_coinbase(height, nValue=nValue, noAutoHalving=True)
         coinbase.rehash()
         if spend is None:
             # We need to have something to spend to fill the block.
@@ -231,7 +235,6 @@ class FullBlockTest(BitcoinTestFramework):
     def run_test(self):
         node = self.nodes[0]
         default_p2p = node.add_p2p_connection(P2PDataStore())
-        test_p2p = node.add_p2p_connection(TestP2PConn())
 
         self.genesis_hash = int(node.getbestblockhash(), 16)
         self.block_heights[self.genesis_hash] = 0
@@ -245,10 +248,6 @@ class FullBlockTest(BitcoinTestFramework):
         def get_spendable_output():
             return PreviousSpendableOutput(spendable_outputs.pop(0).vtx[0], 0)
 
-        # move the tip back to a previous block
-        def tip(number):
-            self.tip = self.blocks[number]
-
         # shorthand for functions
         block = self.next_block
 
@@ -257,20 +256,42 @@ class FullBlockTest(BitcoinTestFramework):
         save_spendable_output()
         default_p2p.send_blocks_and_test([self.tip], node)
 
+        # Block 1 is a 10-minute block under either schedule, since genesis MTP
+        # predates any upgrade2027 activation time. The node now reports the
+        # interval of block 2, and MTP advances about a second per block from
+        # here, so every block in the batch below shares that one interval and a
+        # single subsidy read is valid for all.
+        interval = self.block_interval
+        interval_ratio = self.interval_ratio
+        assert interval in (60, 600)
+        batch_value = get_coinbase_subsidy(node, for_mining=True)
+
+        # For 1-min blocks, force full 3.2 MB blocks. For 10-min blocks, force half-full 16MB blocks.
+        # Note that "-forceblocksize" as a node arg is always "scaled to 10-min blocks".
+        force_block_size = 16 * ONE_MEGABYTE if interval == 600 else 32 * ONE_MEGABYTE
+        self.restart_node(0, extra_args=self.base_extra_args + [f"-forceblocksize={force_block_size}",
+                                                                f"-blockmaxsize={force_block_size}",])
+        # Redo p2p after node restart
+        default_p2p = node.add_p2p_connection(P2PDataStore())
+        test_p2p = node.add_p2p_connection(TestP2PConn())
+
         # Now we need that block to mature so we can spend the coinbase.
+        # 99 blocks for 10-minute blocks, 999 for 1-minute blocks.
+        n_maturity = COINBASE_MATURITY_TICKS // interval - 1
         maturity_blocks = []
-        for i in range(99):
-            block(5000 + i)
+        for i in range(n_maturity):
+            block(10_000 + i, nValue=batch_value)
             maturity_blocks.append(self.tip)
             save_spendable_output()
 
         # Get to one block of the May 15, 2018 HF activation
         for i in range(6):
-            block(5100 + i)
+            block(5100 + i, nValue=batch_value)
             maturity_blocks.append(self.tip)
 
         # Send it all to the node at once.
         default_p2p.send_blocks_and_test(maturity_blocks, node)
+        assert get_next_block_tick_depth(node, 1) >= COINBASE_MATURITY_TICKS
 
         # collect spendable outputs now to avoid cluttering the code later on
         out = []
@@ -280,7 +301,7 @@ class FullBlockTest(BitcoinTestFramework):
         # Check that compact block also work for big blocks
         # Wait for SENDCMPCT
         def received_sendcmpct():
-            return (test_p2p.last_sendcmpct is not None)
+            return test_p2p.last_sendcmpct is not None
         wait_until(received_sendcmpct, timeout=30)
 
         sendcmpct = msg_sendcmpct()
@@ -290,7 +311,7 @@ class FullBlockTest(BitcoinTestFramework):
 
         # Exchange headers
         def received_getheaders():
-            return (test_p2p.last_getheaders is not None)
+            return test_p2p.last_getheaders is not None
         wait_until(received_getheaders, timeout=30)
 
         # Return the favor
@@ -298,7 +319,7 @@ class FullBlockTest(BitcoinTestFramework):
 
         # Wait for the header list
         def received_headers():
-            return (test_p2p.last_headers is not None)
+            return test_p2p.last_headers is not None
         wait_until(received_headers, timeout=30)
 
         # It's like we know about the same headers !
@@ -310,7 +331,7 @@ class FullBlockTest(BitcoinTestFramework):
 
         # Checks the node to forward it via compact block
         def received_block():
-            return (test_p2p.last_cmpctblock is not None)
+            return test_p2p.last_cmpctblock is not None
         wait_until(received_block, timeout=30)
 
         # Was it our block ?
@@ -318,10 +339,13 @@ class FullBlockTest(BitcoinTestFramework):
         cmpctblk_header.calc_sha256()
         assert cmpctblk_header.sha256 == b1.sha256
 
-        # Send a large block with numerous transactions.
+        # Send a large block with numerous transactions. Both the size and the
+        # transaction count follow the in-force limit, which is 1/10th of the
+        # configured size with 1-minute blocks.
         test_p2p.clear_block_data()
-        b2 = block(2, spend=out[1], extra_txns=70000,
-                   block_size=self.force_block_size - 1000)
+        in_force_block_size = force_block_size // interval_ratio
+        b2 = block(2, spend=out[1], extra_txns=70000 // interval_ratio,
+                   block_size=in_force_block_size - 1000)
         default_p2p.send_blocks_and_test([self.tip], node)
 
         # Checks the node forwards it via compact block
