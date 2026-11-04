@@ -38,11 +38,17 @@ class MerkleBlockTest(BitcoinTestFramework):
 
     def run_test(self):
         self.log.info("Mining blocks...")
-        # A handful of coinbases is all this test spends; the tip height carries no meaning here.
+        # Kick node out of IBD and/or activate any blocktime upgrades (if any). The first possibly-50 BCH coin should go
+        # to an unknown address to keep very large coins out of wallet if we are activating 1-min blocks here (the
+        # rest of the test basically assumes all the coins are the same size).
+        unknown_address = 'mpV7aGShMkJCZgbW7F6iZgrvuPHjZjH9qg'
+        self.nodes[0].generatetoaddress(1, unknown_address)
+        # Generate some coins we need
         self.generate(self.nodes[0], 10)
-        coin = get_coinbase_subsidy(self.nodes[0], as_decimal=True)
+        # Mature them
         self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS)
         self.sync_all()
+        coin = get_coinbase_subsidy(self.nodes[0], as_decimal=True)
 
         chain_height = self.nodes[1].getblockcount()
 
