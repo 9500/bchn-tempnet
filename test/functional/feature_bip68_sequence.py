@@ -337,7 +337,9 @@ class BIP68Test(BitcoinTestFramework):
 
     @property
     def cb_subsidy(self) -> int:
-        return get_coinbase_subsidy(self.nodes[0])
+        ret = get_coinbase_subsidy(self.nodes[0])
+        assert isinstance(ret, int)  # Make linter happy
+        return ret
 
     # Test that sequence locks on unconfirmed inputs must have nSequence
     # height or time of 0 to be accepted.

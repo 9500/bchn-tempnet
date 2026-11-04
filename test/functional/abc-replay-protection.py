@@ -15,7 +15,6 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
     create_tx_with_script,
-    get_block_confirmations_ticks,
     make_conform_to_ctor,
 )
 from test_framework.cdefs import COINBASE_MATURITY_TICKS

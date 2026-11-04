@@ -9,7 +9,7 @@ from test_framework.blocktools import (
     get_chaintip_ticks,
     get_next_block_interval,
 )
-from test_framework.test_framework import BitcoinTestFramework, TIMESTAMP_IN_THE_PAST
+from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     connect_nodes_bi
