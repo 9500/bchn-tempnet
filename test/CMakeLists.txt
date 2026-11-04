@@ -125,7 +125,7 @@ add_functional_test_check(check-functional-longeronly
 
 add_functional_test_check(check-functional-upgrade-activated-longeronly
   "Run the long-runtime functional tests only with the upgrade activated"
-  --with-upgrade12activation
+  --with-upgrade2027activation
     --startfrom=${DEFAULT_EXTENDED_CUTOFF}
 )
 
