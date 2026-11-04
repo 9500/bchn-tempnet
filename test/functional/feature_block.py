@@ -12,9 +12,10 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
     create_tx_with_script,
+    get_next_block_tick_depth,
     make_conform_to_ctor,
 )
-from test_framework.cdefs import LEGACY_MAX_BLOCK_SIZE
+from test_framework.cdefs import COINBASE_MATURITY_TICKS, LEGACY_MAX_BLOCK_SIZE
 from test_framework.key import ECKey
 from test_framework.messages import (
     CBlock,
@@ -95,11 +96,15 @@ class FullBlockTest(BitcoinTestFramework):
         self.send_blocks([b0])
 
         # Allow the block to mature
+        interval = self.block_interval
+        assert interval in (60, 600)
+        n_maturity = COINBASE_MATURITY_TICKS // interval - 1
         blocks = []
-        for i in range(99):
+        for i in range(n_maturity):
             blocks.append(self.next_block(5000 + i))
             self.save_spendable_output()
         self.send_blocks(blocks)
+        assert get_next_block_tick_depth(self.nodes[0], 1) >= COINBASE_MATURITY_TICKS
 
         # collect spendable outputs now to avoid cluttering the code later on
         out = []
@@ -393,8 +398,9 @@ class FullBlockTest(BitcoinTestFramework):
         # make sure this works.
         self.log.info("Build block 44 manually")
         height = self.block_heights[self.tip.sha256] + 1
-        coinbase = create_coinbase(height, self.coinbase_pubkey)
+        coinbase = self.create_coinbase(height, self.coinbase_pubkey)
         b44 = CBlock()
+        b44.nVersion = 4
         b44.nTime = self.tip.nTime + 1
         b44.hashPrevBlock = self.tip.sha256
         b44.nBits = 0x207fffff
@@ -473,7 +479,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Reject a block with two coinbase transactions")
         self.move_tip(44)
         b51 = self.next_block(51)
-        cb2 = create_coinbase(51, self.coinbase_pubkey)
+        cb2 = self.create_coinbase(51, self.coinbase_pubkey)
         b51 = self.update_block(51, [cb2])
         self.send_blocks([b51], success=False,
                          reject_reason='bad-tx-coinbase', reconnect=True)
@@ -878,18 +884,19 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Test transaction resurrection during a re-org")
         self.move_tip(76)
         b77 = self.next_block(77)
-        tx77 = self.create_and_sign_transaction(out[24], 10 * COIN)
+        unit = out[24].vout[0].nValue // 50
+        tx77 = self.create_and_sign_transaction(out[24], 10 * unit)
         b77 = self.update_block(77, [tx77])
         self.send_blocks([b77], True)
         self.save_spendable_output()
 
         b78 = self.next_block(78)
-        tx78 = self.create_tx(tx77, 0, 9 * COIN)
+        tx78 = self.create_tx(tx77, 0, 9 * unit)
         b78 = self.update_block(78, [tx78])
         self.send_blocks([b78], True)
 
         b79 = self.next_block(79)
-        tx79 = self.create_tx(tx78, 0, 8 * COIN)
+        tx79 = self.create_tx(tx78, 0, 8 * unit)
         b79 = self.update_block(79, [tx79])
         self.send_blocks([b79], True)
 
@@ -989,8 +996,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.send_blocks([b89a], success=False,
                          reject_reason='bad-txns-inputs-missingorspent', reconnect=True)
 
-        self.log.info(
-            "Test a re-org of one week's worth of blocks (1088 blocks)")
+        self.log.info("Test a re-org of 1088 blocks")
 
         self.move_tip(88)
         LARGE_REORG_SIZE = 1088
@@ -1062,6 +1068,24 @@ class FullBlockTest(BitcoinTestFramework):
         tx.rehash()
         return tx
 
+    LEGACY10MINBLOCKS_PER_ERA = 150 # regtest halving adapted to ticks
+
+    def _coinbase_value(self, height):
+        """Subsidy for the block at `height`, in satoshis.
+
+        Block 1 is mined at the 10-minute interval whatever the schedule,
+        because genesis MTP predates any activation. Every later block uses the
+        interval the node reports, so a block's tick count follows from its
+        height.
+        """
+        interval = 600 if height <= 1 else self.block_interval
+        ticks = 600 + (height - 1) * interval
+        halvings = (ticks + 599) // 600 // self.LEGACY10MINBLOCKS_PER_ERA
+        return (50 * COIN >> halvings) * interval // 600
+
+    def create_coinbase(self, height, coinbase_pubkey):
+        return create_coinbase(height, coinbase_pubkey, nValue=self._coinbase_value(height), noAutoHalving=True)
+
     def next_block(self, number, spend=None, additional_coinbase_value=0,
                    script=CScript([OP_TRUE]), solve=True):
         if self.tip is None:
@@ -1072,7 +1096,7 @@ class FullBlockTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
         # First create the coinbase
         height = self.block_heights[base_block_hash] + 1
-        coinbase = create_coinbase(height, self.coinbase_pubkey)
+        coinbase = self.create_coinbase(height, self.coinbase_pubkey)
         coinbase.vout[0].nValue += additional_coinbase_value
         coinbase.rehash()
         if spend is None:
@@ -1087,6 +1111,10 @@ class FullBlockTest(BitcoinTestFramework):
             self.sign_tx(tx, spend)
             self.add_transactions_to_block(block, [tx])
             block.hashMerkleRoot = block.calc_merkle_root()
+        # With 1-min blocks the chain gets ~10x taller, crossing the regtest
+        # BIP66 (1251) and BIP65 (1351) heights, so nVersion=1 blocks would be
+        # rejected with bad-version.
+        block.nVersion = 4
         if solve:
             block.solve()
         self.tip = block
