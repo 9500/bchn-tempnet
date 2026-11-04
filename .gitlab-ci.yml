@@ -57,6 +57,8 @@ static-run-linters:
     artifacts:
         paths:
             - build/test/lint
+    variables:
+        GIT_DEPTH: "0"
 
 # Common setup for jobs building binaries using cmake + ninja
 .build_common:
