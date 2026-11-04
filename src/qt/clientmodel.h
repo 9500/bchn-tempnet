@@ -6,12 +6,12 @@
 
 #pragma once
 
+#include <QDateTime>
+#include <QObject>
+
 #include <consensus/blockticks.h>
 #include <dsproof/dspid.h>
 #include <primitives/txid.h>
-
-#include <QDateTime>
-#include <QObject>
 
 #include <atomic>
 #include <memory>
