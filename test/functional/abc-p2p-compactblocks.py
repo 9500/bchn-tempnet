@@ -87,7 +87,7 @@ class TestP2PConn(P2PInterface):
             self.last_cmpctblock = None
 
 
-class FullBlockTest(BitcoinTestFramework):
+class AbcP2pCompactBlocksTest(BitcoinTestFramework):
 
     def set_test_params(self):
         self.num_nodes = 1
@@ -381,4 +381,4 @@ class FullBlockTest(BitcoinTestFramework):
 
 
 if __name__ == '__main__':
-    FullBlockTest().main()
+    AbcP2pCompactBlocksTest().main()

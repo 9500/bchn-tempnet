@@ -19,9 +19,12 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
     create_tx_with_script,
+    get_coinbase_subsidy,
+    get_next_block_tick_depth,
     make_conform_to_ctor,
 )
 from test_framework.cdefs import (
+    COINBASE_MATURITY_TICKS,
     ONE_MEGABYTE,
 )
 from test_framework.messages import (
@@ -58,6 +61,10 @@ class FullBlockTest(BitcoinTestFramework):
         self.block_heights = {}
         self.tip = None
         self.blocks = {}
+        # A 10-minute-unit value: the node scales -forceblocksize by the block
+        # interval, so at 1-minute blocks the in-force limit is 1/10th of this
+        # and bytes-per-minute is unchanged. run_test() derives the in-force
+        # value from the chain and sizes the blocks with it.
         self.force_block_size = 100 * ONE_MEGABYTE
         # Note that -forceblocksize also disables ABLA
         self.extra_args = [['-whitelist=127.0.0.1', f"-forceblocksize={self.force_block_size}"]]
@@ -77,7 +84,7 @@ class FullBlockTest(BitcoinTestFramework):
         return tx
 
     def next_block(self, number, spend=None,
-                   script=CScript([OP_TRUE]), block_size=0):
+                   script=CScript([OP_TRUE]), block_size=0, nValue=None):
         if self.tip is None:
             base_block_hash = self.genesis_hash
             block_time = int(time.time()) + 1
@@ -86,7 +93,12 @@ class FullBlockTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
         # First create the coinbase
         height = self.block_heights[base_block_hash] + 1
-        coinbase = create_coinbase(height)
+        # The default reads the subsidy of the block on the node's current tip,
+        # so it is only right for a block built directly on that tip. Callers
+        # building blocks ahead of the node pass nValue.
+        if nValue is None:
+            nValue = get_coinbase_subsidy(self.nodes[0], for_mining=True)
+        coinbase = create_coinbase(height, nValue=nValue, noAutoHalving=True)
         coinbase.rehash()
         if spend is None:
             # We need to have something to spend to fill the block.
@@ -227,31 +239,52 @@ class FullBlockTest(BitcoinTestFramework):
         save_spendable_output()
         node.p2p.send_blocks_and_test([self.tip], node)
 
+        # Block 1 is a 10-minute block under either schedule, since genesis MTP
+        # predates any upgrade2027 activation time. The node therefore reports
+        # the interval of block 2 here, and neither that interval nor the
+        # subsidy changes again within the batch below, so one read covers it.
+        interval = self.block_interval
+        interval_ratio = self.interval_ratio
+        assert interval in (60, 600)
+        batch_value = get_coinbase_subsidy(node, for_mining=True)
+
         # Now we need that block to mature so we can spend the coinbase.
+        # Maturity is a tick depth, so the count follows the interval: 99 more
+        # blocks for 10-minute blocks, 999 for 1-minute blocks. Either way the
+        # first spend below lands in the block that reaches 60,000 ticks.
+        n_maturity = COINBASE_MATURITY_TICKS // interval - 1
         maturity_blocks = []
-        for i in range(99):
-            block(5000 + i)
+        for i in range(n_maturity):
+            block(5000 + i, nValue=batch_value)
             maturity_blocks.append(self.tip)
             save_spendable_output()
         node.p2p.send_blocks_and_test(maturity_blocks, node)
+        assert get_next_block_tick_depth(node, 1) >= COINBASE_MATURITY_TICKS
 
         # collect spendable outputs now to avoid cluttering the code later on
         out = []
         for i in range(100):
             out.append(get_spendable_output())
 
+        # One "megabyte" in the units of the interval in force. The node scales
+        # -forceblocksize by the interval, so the in-force limit is 1/10th of it
+        # at 1-minute blocks; sizing the blocks by the same factor keeps
+        # bytes-per-minute constant and leaves the 10-minute run unchanged.
+        unit_size = ONE_MEGABYTE // interval_ratio
+        in_force_block_size = self.force_block_size // interval_ratio
+
         # Let's build some blocks and test them.
         for i in range(16):
             n = i + 1
-            block(n, spend=out[i], block_size=n * ONE_MEGABYTE)
+            block(n, spend=out[i], block_size=n * unit_size)
             node.p2p.send_blocks_and_test([self.tip], node)
 
         # block of maximal size
-        block(17, spend=out[16], block_size=self.force_block_size)
+        block(17, spend=out[16], block_size=in_force_block_size)
         node.p2p.send_blocks_and_test([self.tip], node)
 
         # Reject oversized blocks with bad-blk-length error
-        block(18, spend=out[17], block_size=self.force_block_size + 1)
+        block(18, spend=out[17], block_size=in_force_block_size + 1)
         node.p2p.send_blocks_and_test(
             [self.tip], node, success=False, reject_reason='bad-blk-length')
 
@@ -260,7 +293,7 @@ class FullBlockTest(BitcoinTestFramework):
 
         # Submit a very large block via RPC
         large_block = block(
-            33, spend=out[17], block_size=self.force_block_size)
+            33, spend=out[17], block_size=in_force_block_size)
         assert_equal(node.submitblock(ToHex(large_block)), None)
 
 
