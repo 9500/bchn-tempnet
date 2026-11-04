@@ -102,7 +102,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS)
         self.sync_all()
 
-        subsidy = Decimal(get_coinbase_subsidy(self.nodes[0])) / COIN
+        subsidy = get_coinbase_subsidy(self.nodes[0], as_decimal=True)
 
         # ensure that setting changePosition in fundraw with an exact match is
         # handled properly

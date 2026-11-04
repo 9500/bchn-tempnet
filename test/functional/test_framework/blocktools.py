@@ -4,6 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Utilities for manipulating blocks and transactions."""
 
+from decimal import Decimal
 from typing import Optional, Tuple, Union
 from .script import (
     CScript,
@@ -400,29 +401,35 @@ def get_block_confirmations_ticks(node, blockhash_or_height: Union[int, str]) ->
 
 
 def get_coinbase_subsidy(node, for_mining=False, include_fees=False,
-                         blockhash_or_height: Optional[Union[int, str]] = None) -> int:
+                         blockhash_or_height: Optional[Union[int, str]] = None,
+                         as_decimal=False) -> Union[int, Decimal]:
     """Returns the coinbase subsidy for the block at the tip (in satoshis), or the next block after the tip if
     for_mining==True. Pass include_fees=True to return the subsidy + fee (that is, the max coinbase value aka total
     coinbase reward). Pass for_blockhash_or_height to look at the subsidy of a specific block (in that case for_mining
-    must be False). """
-    if for_mining:
-        assert blockhash_or_height is None, "Cannot specify both for_mining=True and blockhash_or_height"
-        height = node.getblockcount()
-        if height > 0:
-            # getblocktemplate will only work if tip is past genesis
-            tmpl = node.getblocktemplate()
-            fees = 0
-            if not include_fees:
-                fees = sum(txn["fee"] for txn in tmpl["transactions"])
-            return tmpl["coinbasevalue"] - fees
-    # for_mining=False (or tip is genesis)
-    if blockhash_or_height is not None:
-        blockhash = _resolve_blockhash_or_height(node, blockhash_or_height)
-    else:
-        # just look at what the block tip says
-        blockhash = node.getbestblockhash()
-    stats = node.getblockstats(blockhash)
-    fees = 0
-    if include_fees:
-        fees = int(COIN * stats["totalfee"])
-    return int(COIN * stats["subsidy"]) + fees
+    must be False). Pass as_decimal=True if you wish the returned value to be in a Decimal BCH value. """
+    def inner():
+        if for_mining:
+            assert blockhash_or_height is None, "Cannot specify both for_mining=True and blockhash_or_height"
+            height = node.getblockcount()
+            if height > 0:
+                # getblocktemplate will only work if tip is past genesis
+                tmpl = node.getblocktemplate()
+                fees = 0
+                if not include_fees:
+                    fees = sum(txn["fee"] for txn in tmpl["transactions"])
+                return tmpl["coinbasevalue"] - fees
+        # for_mining=False (or tip is genesis)
+        if blockhash_or_height is not None:
+            blockhash = _resolve_blockhash_or_height(node, blockhash_or_height)
+        else:
+            # just look at what the block tip says
+            blockhash = node.getbestblockhash()
+        stats = node.getblockstats(blockhash)
+        fees = 0
+        if include_fees:
+            fees = int(COIN * stats["totalfee"])
+        return int(COIN * stats["subsidy"]) + fees
+    res = inner()
+    if as_decimal:
+        res = Decimal(res) / COIN
+    return res

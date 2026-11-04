@@ -107,8 +107,7 @@ class RawTransactionsTest(BitcoinTestFramework):
                                             pipeline_heights[len(matured_subsidies)])
                        >= COINBASE_MATURITY_TICKS):
                 h = pipeline_heights[len(matured_subsidies)]
-                matured_subsidies.append(
-                    Decimal(get_coinbase_subsidy(self.nodes[0], blockhash_or_height=h)) / COIN)
+                matured_subsidies.append(get_coinbase_subsidy(self.nodes[0], blockhash_or_height=h, as_decimal=True))
             return sum(matured_subsidies, Decimal(0))
 
         self.nodes[0].sendtoaddress(self.nodes[2].getnewaddress(), 1.5)

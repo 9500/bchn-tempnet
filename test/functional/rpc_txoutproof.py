@@ -40,7 +40,7 @@ class MerkleBlockTest(BitcoinTestFramework):
         self.log.info("Mining blocks...")
         # A handful of coinbases is all this test spends; the tip height carries no meaning here.
         self.generate(self.nodes[0], 10)
-        coin = Decimal(get_coinbase_subsidy(self.nodes[0])) / COIN
+        coin = get_coinbase_subsidy(self.nodes[0], as_decimal=True)
         self.mine_for_ticks(self.nodes[0], COINBASE_MATURITY_TICKS)
         self.sync_all()
 

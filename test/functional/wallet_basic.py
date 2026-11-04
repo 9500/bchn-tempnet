@@ -53,7 +53,7 @@ class WalletTest(BitcoinTestFramework):
     @staticmethod
     def subsidy(node, height) -> Decimal:
         """Subsidy of the block at `height`, as a Decimal."""
-        return Decimal(get_coinbase_subsidy(node, blockhash_or_height=height)) / COIN
+        return get_coinbase_subsidy(node, blockhash_or_height=height, as_decimal=True)
 
     def run_test(self):
         # Check that there's no UTXO on none of the nodes

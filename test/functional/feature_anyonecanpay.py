@@ -62,7 +62,7 @@ class AnyoneCanPayTest(BitcoinTestFramework):
         tx1_id = node0.sendrawtransaction(signed1['hex'])
         self.generate(node0, 1)
         self.sync_all()
-        subsidy = Decimal(get_coinbase_subsidy(node0)) / COIN
+        subsidy = get_coinbase_subsidy(node0, as_decimal=True)
         assert_equal(subsidy, node0.getbalance())
         assert_equal(amount1, node1.getbalance())
 

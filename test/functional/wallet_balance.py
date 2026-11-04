@@ -69,10 +69,10 @@ class WalletTest(BitcoinTestFramework):
 
         self.generate(self.nodes[0], 1)
         self.sync_all()
-        coin0 = Decimal(get_coinbase_subsidy(self.nodes[0])) / COIN
+        coin0 = get_coinbase_subsidy(self.nodes[0], as_decimal=True)
         self.generate(self.nodes[1], 1)
         self.sync_all()
-        coin1 = Decimal(get_coinbase_subsidy(self.nodes[1])) / COIN
+        coin1 = get_coinbase_subsidy(self.nodes[1], as_decimal=True)
 
         # Verify listunspent returns immature coinbase if 'include_immature_coinbase' is set
         assert_equal(len(self.nodes[0].listunspent(query_options={'include_immature_coinbase': True})), 1)

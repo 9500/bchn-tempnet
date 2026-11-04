@@ -191,7 +191,7 @@ class MultiWalletTest(BitcoinTestFramework):
         assert_equal(set(node.listwallets()), {"w4", "w5"})
         w5 = wallet("w5")
         w5_info = w5.getwalletinfo()
-        assert_equal(w5_info['immature_balance'], Decimal(get_coinbase_subsidy(node)) / COIN)
+        assert_equal(w5_info['immature_balance'], get_coinbase_subsidy(node, as_decimal=True))
 
         competing_wallet_dir = os.path.join(
             self.options.tmpdir, 'competing_walletdir')
@@ -211,7 +211,7 @@ class MultiWalletTest(BitcoinTestFramework):
 
         # check wallet names and balances
         self.generatetoaddress(node, nblocks=1, address=wallets[0].getnewaddress())
-        coinbase_value = Decimal(get_coinbase_subsidy(node)) / COIN
+        coinbase_value = get_coinbase_subsidy(node, as_decimal=True)
         for wallet_name, wallet in zip(wallet_names, wallets):
             info = wallet.getwalletinfo()
             assert_equal(info['immature_balance'],
@@ -228,7 +228,7 @@ class MultiWalletTest(BitcoinTestFramework):
 
         w1, w2, w3, w4, *_ = wallets
         self.generatetoaddress(node, nblocks=1, address=w1.getnewaddress())
-        coinbase_value += Decimal(get_coinbase_subsidy(node)) / COIN
+        coinbase_value += get_coinbase_subsidy(node, as_decimal=True)
         self.mine_for_ticks(node, COINBASE_MATURITY_TICKS)
         assert_equal(w1.getbalance(), coinbase_value)
         assert_equal(w2.getbalance(), 0)

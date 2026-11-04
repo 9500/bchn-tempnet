@@ -121,13 +121,13 @@ class WalletBackupTest(BitcoinTestFramework):
     def run_test(self):
         self.log.info("Generating initial blockchain")
         self.generate(self.nodes[0], 1)
-        coin0 = Decimal(get_coinbase_subsidy(self.nodes[0])) / COIN
+        coin0 = get_coinbase_subsidy(self.nodes[0], as_decimal=True)
         self.sync_blocks()
         self.generate(self.nodes[1], 1)
-        coin1 = Decimal(get_coinbase_subsidy(self.nodes[1])) / COIN
+        coin1 = get_coinbase_subsidy(self.nodes[1], as_decimal=True)
         self.sync_blocks()
         self.generate(self.nodes[2], 1)
-        coin2 = Decimal(get_coinbase_subsidy(self.nodes[2])) / COIN
+        coin2 = get_coinbase_subsidy(self.nodes[2], as_decimal=True)
         self.sync_blocks()
         self.mine_for_ticks(self.nodes[3], COINBASE_MATURITY_TICKS)
         self.sync_blocks()
@@ -173,9 +173,8 @@ class WalletBackupTest(BitcoinTestFramework):
 
         # Sanity check: verify mature coinbase rewards match total wallet balances
         node = self.nodes[3]
-        expected_total = sum(
-            Decimal(get_coinbase_subsidy(node, blockhash_or_height=h)) / COIN
-            for h in range(1, youngest_mature_height + 1))
+        expected_total = sum(get_coinbase_subsidy(node, blockhash_or_height=h, as_decimal=True)
+                             for h in range(1, youngest_mature_height + 1))
         assert_equal(total, expected_total)
 
         ##

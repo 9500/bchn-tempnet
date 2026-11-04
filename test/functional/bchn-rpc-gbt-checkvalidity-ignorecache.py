@@ -74,7 +74,7 @@ class GBTCheckValidityAndIgnoreCacheTest(BitcoinTestFramework):
         n_txs = 32
         self.log.info("Filling mempool with {} txns ...".format(n_txs))
         fee = Decimal('0.00001000')
-        amt = Decimal(get_coinbase_subsidy(node)) / COIN
+        amt = get_coinbase_subsidy(node, as_decimal=True)
         amts = [None] * self.num_nodes
         for i in range(self.num_nodes):
             addr = addrs[i]

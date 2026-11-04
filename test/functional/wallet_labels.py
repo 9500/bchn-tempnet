@@ -37,10 +37,10 @@ class WalletLabelsTest(BitcoinTestFramework):
         # the same address, so we call twice to get two addresses with a coinbase in each
         addr_a = node.getnewaddress(label='coinbase')
         self.generatetoaddress(node, nblocks=1, address=addr_a)
-        coin_a = Decimal(get_coinbase_subsidy(node)) / COIN
+        coin_a = get_coinbase_subsidy(node, as_decimal=True)
         addr_b = node.getnewaddress(label='coinbase')
         self.generatetoaddress(node, nblocks=1, address=addr_b)
-        coin_b = Decimal(get_coinbase_subsidy(node)) / COIN
+        coin_b = get_coinbase_subsidy(node, as_decimal=True)
 
         self.mine_for_ticks(node, COINBASE_MATURITY_TICKS, address=node.get_deterministic_priv_key().address)
 
@@ -78,7 +78,7 @@ class WalletLabelsTest(BitcoinTestFramework):
 
         # Both grouped coins are spent, so mine a fresh coinbase and mature it.
         self.generate(node, 1)[0]
-        coin = Decimal(get_coinbase_subsidy(node)) / COIN
+        coin = get_coinbase_subsidy(node, as_decimal=True)
         self.mine_for_ticks(node, COINBASE_MATURITY_TICKS, address=node.get_deterministic_priv_key().address)
 
         # Ten sends below must fit inside that one coin

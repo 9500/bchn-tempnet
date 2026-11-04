@@ -79,9 +79,8 @@ class RpcCreateMultiSigTest(BitcoinTestFramework):
         mature = tip
         while mature > 0 and get_block_tick_depth(node0, mature) < COINBASE_MATURITY_TICKS:
             mature -= 1
-        total = sum(get_coinbase_subsidy(node0, blockhash_or_height=h)
+        total = sum(get_coinbase_subsidy(node0, blockhash_or_height=h, as_decimal=True)
                     for h in range(1, mature + 1))
-        total = decimal.Decimal(total) / COIN  # transform satoshis -> BCH
         assert bal1 == 0
         assert bal2 == self.moved
         assert bal0 + bal1 + bal2 == total

@@ -44,9 +44,8 @@ class SimulateTxTest(BitcoinTestFramework):
         # get enough balance no matter where the 10-min to 1-min blocks change happens
         first_coin_height = node.getblockcount() + 1
         self.generatetoaddress(node, 10, w0.getnewaddress())
-        coinbase_balance = sum(
-            Decimal(get_coinbase_subsidy(node, blockhash_or_height=h)) / COIN
-            for h in range(first_coin_height, node.getblockcount() + 1))
+        coinbase_balance = sum(get_coinbase_subsidy(node, blockhash_or_height=h, as_decimal=True)
+                               for h in range(first_coin_height, node.getblockcount() + 1))
         # mature the balance
         self.mine_for_ticks(node, COINBASE_MATURITY_TICKS, address=node.get_deterministic_priv_key().address)
 
