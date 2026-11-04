@@ -60,7 +60,7 @@ int64_t UpdateTime(CBlockHeader *pblock, const Consensus::Params &params,
 
     // Updating time can change work required on testnet:
     if (params.fPowAllowMinDifficultyBlocks) {
-        pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, params);
+        pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, params).value();
     }
 
     return nNewTime - nOldTime;
@@ -239,7 +239,7 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn, double timeLimitSe
     // Fill in header.
     pblock->hashPrevBlock = pindexPrev->GetBlockHash();
     UpdateTime(pblock, consensusParams, pindexPrev);
-    pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, consensusParams);
+    pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, consensusParams).value();
     pblock->nNonce = 0;
     pblocktemplate->entries[0].sigChecks = 0;
 

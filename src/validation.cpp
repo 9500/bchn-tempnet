@@ -3743,11 +3743,14 @@ static bool ContextualCheckBlockHeader(const CChainParams &params,
 
     // Check proof of work
     const Consensus::Params &consensusParams = params.GetConsensus();
-    if (block.nBits !=
-        GetNextWorkRequired(pindexPrev, &block, consensusParams)) {
+    if (const auto optBits = GetNextWorkRequired(pindexPrev, &block, consensusParams); !optBits) {
+        // This is unlikely but can happen if someone forged a low-work chain that activated 1-min blocks before
+        // reaching the hard-coded ASERT anchor block height.
+        LogPrintf("ASERT was unable to determine bits for block after height: %d. Forged chain?\n", pindexPrev->nHeight);
+        return state.DoS(100, false, REJECT_INVALID, "bad-diffbits", false, "incorrect proof of work");
+    } else if (block.nBits != *optBits) {
         LogPrintf("bad bits after height: %d\n", pindexPrev->nHeight);
-        return state.DoS(100, false, REJECT_INVALID, "bad-diffbits", false,
-                         "incorrect proof of work");
+        return state.DoS(100, false, REJECT_INVALID, "bad-diffbits", false, "incorrect proof of work");
     }
 
     // finalizeheaders: Check against last finalized block height

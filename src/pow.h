@@ -9,6 +9,7 @@
 #include <arith_uint256.h>
 
 #include <cstdint>
+#include <optional>
 
 struct BlockHash;
 class BlockTicks;
@@ -20,9 +21,12 @@ namespace Consensus {
 struct Params;
 }
 
-uint32_t GetNextWorkRequired(const CBlockIndex *pindexPrev,
-                             const CBlockHeader *pblock,
-                             const Consensus::Params &params);
+// Returns the next `nBits` work required given pindexPrev, pblock, and chain. May return std::nullopt if
+// there is an internal inconsistency and no valid nBits could be calculated (can happen if pblock has tick count less
+// than the ASERT anchor block, for instance, on a forged chain).
+std::optional<uint32_t> GetNextWorkRequired(const CBlockIndex *pindexPrev,
+                                            const CBlockHeader *pblock,
+                                            const Consensus::Params &params);
 namespace legacy {
 // Legacy work required calc, used by legacy Bitcoin chain and EDA DAA, but not new DAAs such as CW144 or ASERT.
 uint32_t CalculateNextWorkRequired(const CBlockIndex *pindexPrev, int64_t nFirstBlockTime,
@@ -60,10 +64,10 @@ arith_uint256 CalculateASERT_TickBased(const arith_uint256 &refTarget,
                                        const arith_uint256 &powLimit,
                                        const int64_t nHalfLife) noexcept;
 
-uint32_t GetNextASERTWorkRequired(const CBlockIndex *pindexPrev,
-                                  const CBlockHeader *pblock,
-                                  const Consensus::Params &params,
-                                  const CBlockIndex *pindexAnchorBlock) noexcept;
+std::optional<uint32_t> GetNextASERTWorkRequired(const CBlockIndex *pindexPrev,
+                                                 const CBlockHeader *pblock,
+                                                 const Consensus::Params &params,
+                                                 const CBlockIndex *pindexAnchorBlock) noexcept;
 
 /**
  * ASERT caches a special block index for efficiency. If block indices are

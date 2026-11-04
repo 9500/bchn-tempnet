@@ -101,15 +101,20 @@ static const CBlockIndex *GetASERTAnchorBlock(const CBlockIndex *const pindex,
  * We set our targets (difficulty) exponentially. For every [nHalfLife] seconds ahead of or behind schedule we get, we
  * double or halve the difficulty.
  */
-static uint32_t GetNextASERTWorkRequired(const CBlockIndex *pindexPrev,
-                                         const CBlockHeader *pblock,
-                                         const Consensus::Params &params,
-                                         const Consensus::Params::ASERTAnchor &anchorParams) noexcept {
+static std::optional<uint32_t> GetNextASERTWorkRequired(const CBlockIndex *pindexPrev,
+                                                        const CBlockHeader *pblock,
+                                                        const Consensus::Params &params,
+                                                        const Consensus::Params::ASERTAnchor &anchorParams) noexcept {
     // This cannot handle the genesis block and early blocks in general.
     assert(pindexPrev != nullptr);
 
     // We make no further assumptions other than the the tick count of the current block must be >= that of the anchor.
-    assert(pindexPrev->GetBlockTicks() >= anchorParams.blockTicks);
+    if (pindexPrev->GetBlockTicks() < anchorParams.blockTicks) {
+        // This branch can be reached in production on a "forged" chain that attempts to activate the 1-min blocktime
+        // upgrade before ASERT (such that the anchorParam's tick count is no longer accurate). Calling code treat this
+        // situation as validation failure, which is correct.
+        return std::nullopt;
+    }
 
     // Special difficulty rule for testnet
     // If the new block's timestamp is more than 2 * 10 minutes (upgrade2027 -> 2 * 1 minutes) then allow
@@ -148,10 +153,10 @@ static uint32_t GetNextASERTWorkRequired(const CBlockIndex *pindexPrev,
     return nextTarget.GetCompact();
 }
 
-uint32_t GetNextASERTWorkRequired(const CBlockIndex *pindexPrev,
-                                  const CBlockHeader *pblock,
-                                  const Consensus::Params &params,
-                                  const CBlockIndex *pindexAnchorBlock) noexcept {
+std::optional<uint32_t> GetNextASERTWorkRequired(const CBlockIndex *pindexPrev,
+                                                 const CBlockHeader *pblock,
+                                                 const Consensus::Params &params,
+                                                 const CBlockIndex *pindexAnchorBlock) noexcept {
 
     // If hard-coded params exist for this chain, we use those
     if (params.asertAnchorParams) {
@@ -485,9 +490,9 @@ static uint32_t GetNextEDAWorkRequired(const CBlockIndex *pindexPrev,
     return nPow.GetCompact();
 }
 
-uint32_t GetNextWorkRequired(const CBlockIndex *pindexPrev,
-                             const CBlockHeader *pblock,
-                             const Consensus::Params &params) {
+std::optional<uint32_t> GetNextWorkRequired(const CBlockIndex *pindexPrev,
+                                            const CBlockHeader *pblock,
+                                            const Consensus::Params &params) {
     // GetNextWorkRequired should never be called on the genesis block
     assert(pindexPrev != nullptr);
 
