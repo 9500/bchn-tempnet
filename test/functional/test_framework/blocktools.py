@@ -406,7 +406,8 @@ def get_coinbase_subsidy(node, for_mining=False, include_fees=False,
     """Returns the coinbase subsidy for the block at the tip (in satoshis), or the next block after the tip if
     for_mining==True. Pass include_fees=True to return the subsidy + fee (that is, the max coinbase value aka total
     coinbase reward). Pass for_blockhash_or_height to look at the subsidy of a specific block (in that case for_mining
-    must be False). Pass as_decimal=True if you wish the returned value to be in a Decimal BCH value. """
+    must be False). Pass as_decimal=True if you wish the returned value to be a Decimal BCH value (rather than the
+    default satoshis int). """
     def inner():
         if for_mining:
             assert blockhash_or_height is None, "Cannot specify both for_mining=True and blockhash_or_height"
