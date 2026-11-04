@@ -85,6 +85,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.coinbase_key.generate()
         self.coinbase_pubkey = self.coinbase_key.get_pubkey().get_bytes()
         self.tip = None
+        self.cached_block_interval = None
         self.blocks = {}
         self.genesis_hash = int(self.nodes[0].getbestblockhash(), 16)
         self.block_heights[self.genesis_hash] = 0
@@ -96,7 +97,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.send_blocks([b0])
 
         # Allow the block to mature
-        interval = self.block_interval
+        interval = self.cached_block_interval = self.block_interval  # Cache the block interval to make the below faster
         assert interval in (60, 600)
         n_maturity = COINBASE_MATURITY_TICKS // interval - 1
         blocks = []
@@ -999,6 +1000,10 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Test a re-org of 1088 blocks")
 
         self.move_tip(88)
+        # Note: In 1-min block mode, we would ideally scale this to 10880 blocks (2 weeks) but what ends up happening
+        # if we do that is that the block timestamp advances too far into the future. And making everything work
+        # by faking the time at this point is not worth it, so we leave this unscaled and a flat 1088 blocks in both
+        # the 10-min and 1-min block regimes.
         LARGE_REORG_SIZE = 1088
         blocks = []
         spend = out[32]
@@ -1078,7 +1083,12 @@ class FullBlockTest(BitcoinTestFramework):
         interval the node reports, so a block's tick count follows from its
         height.
         """
-        interval = 600 if height <= 1 else self.block_interval
+        if height <= 1:
+            interval = 600
+        elif self.cached_block_interval is not None:
+            interval = self.cached_block_interval
+        else:
+            interval = self.block_interval  # This is a @property and does an RPC-round-trip
         ticks = 600 + (height - 1) * interval
         halvings = (ticks + 599) // 600 // self.LEGACY10MINBLOCKS_PER_ERA
         return (50 * COIN >> halvings) * interval // 600
