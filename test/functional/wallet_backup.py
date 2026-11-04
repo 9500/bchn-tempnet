@@ -35,13 +35,8 @@ import os
 from random import randint
 import shutil
 
-from test_framework.blocktools import (
-    get_block_ticks,
-    get_chaintip_ticks,
-    get_coinbase_subsidy,
-)
+from test_framework.blocktools import get_coinbase_subsidy
 from test_framework.cdefs import COINBASE_MATURITY_TICKS
-from test_framework.messages import COIN
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,

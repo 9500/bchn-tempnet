@@ -31,7 +31,6 @@ from test_framework.blocktools import (
 from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.key import ECKey
 from test_framework.messages import (
-    COIN,
     COutPoint,
     CTransaction,
     CTxIn,

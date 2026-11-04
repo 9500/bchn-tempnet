@@ -20,7 +20,6 @@ from test_framework.blocktools import (
 )
 from test_framework.cdefs import COINBASE_MATURITY_TICKS
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.messages import COIN
 from decimal import Decimal
 
 

@@ -8,13 +8,11 @@ from decimal import Decimal
 
 from test_framework.blocktools import get_coinbase_subsidy
 from test_framework.cdefs import COINBASE_MATURITY_TICKS
-from test_framework.messages import COIN
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_not_equal,
     assert_raises_rpc_error,
-    wait_until,
 )
 
 RANDOM_COINBASE_ADDRESS = 'mneYUmWYsuk7kySiURxCi3AGxrAqZxLgPZ'

@@ -11,11 +11,8 @@ import os
 import shutil
 import time
 
-from decimal import Decimal
-
 from test_framework.blocktools import get_coinbase_subsidy
 from test_framework.cdefs import COINBASE_MATURITY_TICKS
-from test_framework.messages import COIN
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.test_node import ErrorMatch
 from test_framework.util import (

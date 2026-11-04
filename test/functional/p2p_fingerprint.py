@@ -15,7 +15,6 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
     get_coinbase_subsidy,
-    get_next_block_interval,
 )
 from test_framework.messages import (
     CInv,
