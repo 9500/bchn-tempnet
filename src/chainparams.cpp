@@ -1108,6 +1108,9 @@ public:
         strNetworkID = CBaseChainParams::TEMPNET;
         // Tempnets activate the next consensus changes ahead of chipnet.
         consensus.upgrade2027ActivationTime = 1792065600; // Oct 15 2026 12:00:00 UTC
+        // Tempnets expire when the real chipnet activates the upgrade (Nov 15 2026 12:00:00 UTC): the
+        // software-outdated warning and the RPC shutdown key off this, not the (past) activation time.
+        nSoftwareExpiryTime = 1794744000;
         // First block mined under the new rules (from tempnet.chaingraph.cash); 327988 is the last common block.
         checkpointData.mapCheckpoints[327989] =
             BlockHash::fromHex("00000000e18af2c66d44a1bbfe165acc4b87a625d211a09e33d5ee61d35dcb66");
