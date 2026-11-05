@@ -1098,6 +1098,27 @@ public:
 };
 
 /**
+ * Tempnet (bitjson's temporary chipnet fork, 2026-10-15 .. 2026-11-15): chipnet with the
+ * May 2027 rules (CHIP-2025-03 Faster Blocks) activated at MTP 1792065600 (2026-10-15 12:00 UTC).
+ * Same network magic and P2P port as chipnet; the chains diverge at height 327989.
+ */
+class CTempNetParams : public CChipNetParams {
+public:
+    CTempNetParams() {
+        strNetworkID = CBaseChainParams::TEMPNET;
+        // Tempnets activate the next consensus changes ahead of chipnet.
+        consensus.upgrade2027ActivationTime = 1792065600; // Oct 15 2026 12:00:00 UTC
+        // First block mined under the new rules (from tempnet.chaingraph.cash); 327988 is the last common block.
+        checkpointData.mapCheckpoints[327989] =
+            BlockHash::fromHex("00000000e18af2c66d44a1bbfe165acc4b87a625d211a09e33d5ee61d35dcb66");
+        vSeeds.clear();
+        vFixedSeeds.clear();
+        vSeeds.emplace_back("tempnet.bitjson.com");
+        vSeeds.emplace_back("chipnet.bitjson.com");
+    }
+};
+
+/**
  * Regression test
  */
 class CRegTestParams : public CChainParams {
@@ -1263,6 +1284,10 @@ std::unique_ptr<CChainParams> CreateChainParams(const std::string &chain) {
 
     if (chain == CBaseChainParams::CHIPNET) {
         return std::make_unique<CChipNetParams>();
+    }
+
+    if (chain == CBaseChainParams::TEMPNET) {
+        return std::make_unique<CTempNetParams>();
     }
 
     throw std::runtime_error(
