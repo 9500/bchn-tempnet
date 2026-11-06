@@ -19,7 +19,8 @@
 #include <util/moneystr.h> // For FormatMoney
 #include <version.h>       // For PROTOCOL_VERSION
 
-static bool IsFinalTx(const CTransaction &tx, const BlockTicks &blockTicks, const int64_t nBlockTime) {
+static bool IsFinalTx(const Consensus::Params &params, const CTransaction &tx, const BlockTicks &blockTicks,
+                      const int64_t nBlockTime, const int64_t nMedianTimePastPrev) {
     if (tx.nLockTime == 0) {
         return true;
     }
@@ -36,6 +37,11 @@ static bool IsFinalTx(const CTransaction &tx, const BlockTicks &blockTicks, cons
         if (static_cast<int64_t>(tx.nLockTime) < nBlockTime) {
             return true;
         }
+    }
+
+    if (IsUpgrade2027EnabledForMTPPrev(params, nMedianTimePastPrev) && tx.IsCoinBase()) {
+        // After Upgrade2027, we allow any nLockTime and nSequence in a coinbase txn.
+        return true;
     }
 
     for (const auto &txin : tx.vin) {
@@ -64,9 +70,9 @@ uint64_t GetMinimumTxSize(const Consensus::Params &params, const CBlockIndex *pi
 bool ContextualCheckTransaction(const Consensus::Params &params,
                                 const CTransaction &tx, CValidationState &state,
                                 const int nHeight, const int64_t nLockTimeCutoff,
-                                const int64_t nMedianTimePastPrev [[maybe_unused]],
+                                const int64_t nMedianTimePastPrev,
                                 const BlockTicks &blockTicks) {
-    if (!IsFinalTx(tx, blockTicks, nLockTimeCutoff)) {
+    if (!IsFinalTx(params, tx, blockTicks, nLockTimeCutoff, nMedianTimePastPrev)) {
         // While this is only one transaction, we use txns in the error to
         // ensure continuity with other clients.
         return state.DoS(10, false, REJECT_INVALID, "bad-txns-nonfinal", false,

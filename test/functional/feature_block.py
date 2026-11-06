@@ -75,6 +75,9 @@ class FullBlockTest(BitcoinTestFramework):
         self.extra_args = [['-noparkdeepreorg',
                             '-maxreorgticks=-1', '-acceptnonstdtxn=1']]
 
+    def is_upgarede2027_active(self):
+        return self.interval_ratio != 1
+
     def run_test(self):
         node = self.nodes[0]  # convenience reference to the node
 
@@ -675,16 +678,18 @@ class FullBlockTest(BitcoinTestFramework):
         #   -> b39 (11) -> b42 (12) -> b43 (13) -> b53 (14) -> b55 (15) -> b57 (16) -> b60 (17)
         #                                                                                     \-> b63 (-)
         #
-        self.log.info(
-            "Reject a block with a coinbase transaction with a nonfinal locktime")
-        self.move_tip(60)
-        b63 = self.next_block(63)
-        b63.vtx[0].nLockTime = 0xffffffff
-        b63.vtx[0].vin[0].nSequence = 0xDEADBEEF
-        b63.vtx[0].rehash()
-        b63 = self.update_block(63, [])
-        self.send_blocks([b63], success=False,
-                         reject_reason='bad-txns-nonfinal')
+        if not self.is_upgarede2027_active():
+            self.log.info("Reject a block with a coinbase transaction with a nonfinal locktime")
+            self.move_tip(60)
+            b63 = self.next_block(63)
+            b63.vtx[0].nLockTime = 0xffffffff
+            b63.vtx[0].vin[0].nSequence = 0xDEADBEEF
+            b63.vtx[0].rehash()
+            b63 = self.update_block(63, [])
+            self.send_blocks([b63], success=False, reject_reason='bad-txns-nonfinal')
+        else:
+            self.log.info("Skipping test: \"Reject a block with a coinbase transaction with a nonfinal locktime\""
+                          " because upgrade2027 is active and all coinbases are final now.")
 
         #  This checks that a block with a bloated VARINT between the block_header and the array of tx such that
         #  the block is > LEGACY_MAX_BLOCK_SIZE with the bloated varint, but <= LEGACY_MAX_BLOCK_SIZE without the bloated varint,

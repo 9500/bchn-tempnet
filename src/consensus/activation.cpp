@@ -174,7 +174,7 @@ int64_t GetUpgrade2027ActivationTime(const Consensus::Params &params) {
     return g_Upgrade2027TimeOverride.value_or(params.upgrade2027ActivationTime);
 }
 
-static bool IsUpgrade2027EnabledForMTPPrev(const Consensus::Params &params, const int64_t nMedianTimePastPrev) {
+bool IsUpgrade2027EnabledForMTPPrev(const Consensus::Params &params, const int64_t nMedianTimePastPrev) {
     return nMedianTimePastPrev >= GetUpgrade2027ActivationTime(params);
 }
 

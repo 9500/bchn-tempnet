@@ -564,7 +564,8 @@ void UpdateCoins(CCoinsViewCache &view, const CTransaction &tx, CTxUndo &txundo,
 
 /**
  * Check if a mempool transaction will be BIP 68 final in the next block to be created. Simulates calling
- * SequenceLocks() with data from the tip of the current active chain.
+ * SequenceLocks() with data from the tip of the current active chain. Note: `tx` must not be a coinbase
+ * txn (this precondition is not checked, but is true in the current codebase at all callsites).
  */
 bool CheckSequenceLocks(const CTxMemPool &pool, const CTransaction &tx, const BlockHeightToTickMapper &mapper)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);
