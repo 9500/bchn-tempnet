@@ -151,6 +151,9 @@ public:
         // May 15, 2027 12:00:00 UTC tentative protocol upgrade
         consensus.upgrade2027ActivationTime = 1810382400;
 
+        // Set this to true for mainnet only: defer the "coinbase shape" rule until a much later height.
+        consensus.hasMainNetTemporaryExemptionFromUpgrade2027CoinBaseShapeRule = true;
+
         // Default limit for block size (in bytes)
         consensus.nDefaultConsensusBlockSize10Mins = DEFAULT_CONSENSUS_BLOCK_SIZE;
 

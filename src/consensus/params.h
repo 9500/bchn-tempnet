@@ -62,6 +62,11 @@ struct Params {
     /** (Tentative) Unix time used for MTP activation of 15 May 2027 12:00:00 UTC upgrade */
     int64_t upgrade2027ActivationTime;
 
+    /** This is true for mainnet, false for other chains. On mainnet the "forbidden coinbase shape" rule as specified
+        by "CHIP-2025-03 Faster Blocks for Bitcoin Cash" is deferred until block-height == 1,983,702 or block-height
+        >= 3,708,179. See the CHIP itself or see validation.cpp function ContextualCheckBlock(). */
+    bool hasMainNetTemporaryExemptionFromUpgrade2027CoinBaseShapeRule = false;
+
     /**
      *  Default blocksize limit for this chain. After activation of upgrade 10, this is the max block size floor, since
      *  the ABLA algorithm allows for growing the limit based on demand. Note that this size is in terms of 10-min

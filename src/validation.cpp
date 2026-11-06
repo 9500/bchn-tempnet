@@ -3873,6 +3873,30 @@ bool ContextualCheckTransactionForCurrentBlock(const Consensus::Params &params,
 }
 
 /**
+ * Mainnet only: Allow for miners to not get disrupted by our BIP34-collision-avoidance coinbase shape rule which
+ * activates with upgrade2027. For mainnet, we defer this rule until the latest possible block heights (block 1983702
+ * and/or blocks >= 3708179). See: "CHIP-2025-03 Faster Blocks for Bitcoin Cash", https://gitlab.com/0353F40E/fablous.
+ */
+static bool IsCoinBaseTxTemporarilyExemptFromShapeRule(const Consensus::Params &params, const CTransaction &cbTx,
+                                                       const int32_t nHeight) {
+    if (params.hasMainNetTemporaryExemptionFromUpgrade2027CoinBaseShapeRule) {
+        if (nHeight < 3'708'179) {
+            if (nHeight == 1'983'702) {
+                // Anything matching this height is exempt unless it matches the forbidden coinbase txid (coinbase for
+                // block 164384), in which case it is not exempt.
+                static const TxId forbidden{uint256S("3aa03753fc238b38f4db9e5889362f3a6f0900d602baa8c9a7e789cb13ca1462")};
+                return cbTx.GetId() != forbidden;
+            }
+            // Otherwise anything below height 3,708,179 is exempt from the shape rule on mainnet (unless it matches the
+            // above txid + height combo, of course).
+            return true;
+        }
+    }
+    // All other chains, or mainnet height >= 3,708,179
+    return false;
+}
+
+/**
  * NOTE: This function is not currently invoked by ConnectBlock(), so we
  * should consider upgrade issues if we change which consensus rules are
  * enforced in this function (eg by adding a new consensus rule). See comment
@@ -3942,17 +3966,17 @@ static bool ContextualCheckBlock(const CBlock &block, CValidationState &state,
 
     // CHIP-2025-03 Faster Blocks for Bitcoin Cash:
     // To prevent collision with pre-BIP34 coinbase txns, the following rule was added after the upgrade:
-    // "A coinbase transaction is invalid if its version is 1 AND its locktime is 0 AND the sum of its outputs is
-    //  at least 25 BCH."
-    if (const auto &tx = block.vtx[0]; tx->nVersion == 1 && tx->nLockTime == 0 /* do the cheap integer checks first */
-            && IsUpgrade2027Enabled(params, pindexPrev)) {
-        if (tx->GetValueOut() >= 25 * COIN) {
-            return state.DoS(100, false, REJECT_INVALID, "bad-cb-shape", false,
-                             "A coinbase transaction may not have the following combination:"
-                             " nVersion==1 && nLockTime==0 && nValueOut >= 25 " + CURRENCY_UNIT);
-        }
+    //   "A coinbase is invalid if its version is 1 AND its locktime is 0 AND its outputs sum to at least 25 BCH AND its
+    //    input sequence is 0xffffffff."
+    if (const auto &tx = *block.vtx[0]; tx.nVersion == 1 && tx.nLockTime == 0 /* do the cheaper integer checks first */
+                                        && tx.vin[0].nSequence == CTxIn::SEQUENCE_FINAL
+                                        && IsUpgrade2027Enabled(params, pindexPrev)
+                                        && tx.GetValueOut() >= 25 * COIN
+                                        && !IsCoinBaseTxTemporarilyExemptFromShapeRule(params, tx, nHeight)) {
+        return state.DoS(100, false, REJECT_INVALID, "bad-cb-shape", false,
+                         "A coinbase transaction may not have the following combination:"
+                         " nVersion==1 && nLockTime==0 && nSequence=0xffffffff && nValueOut >= 25 " + CURRENCY_UNIT);
     }
-
 
     return true;
 }
