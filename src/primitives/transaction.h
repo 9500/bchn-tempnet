@@ -235,7 +235,7 @@ public:
     // MAX_CONSENSUS_VERSION] are rejected by consensus.
     static constexpr int32_t MIN_CONSENSUS_VERSION = 1, MAX_CONSENSUS_VERSION = 2;
 
-    // The local variables are made const to prevent unintended modification
+    // The member variables are made const to prevent unintended modification
     // without updating the cached hash value. However, CTransaction is not
     // actually immutable; deserialization and assignment are implemented,
     // and bypass the constness. This is safe, as they update the entire

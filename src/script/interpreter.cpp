@@ -2602,7 +2602,7 @@ bool TransactionSignatureChecker::CheckSig(const ByteView &vchSigIn, const std::
 bool TransactionSignatureChecker::CheckLockTime(const CScriptNum &nLockTime) const {
     const CTransactionView &txTo = context.tx();
     const unsigned nIn = context.inputIndex();
-    // There are two kinds of nLockTime: lock-by-blockheight and
+    // There are two kinds of nLockTime: lock-by-emulated-height and
     // lock-by-blocktime, distinguished by whether nLockTime <
     // LOCKTIME_THRESHOLD.
     //
@@ -2670,7 +2670,7 @@ bool TransactionSignatureChecker::CheckSequence(const CScriptNum &nSequence) con
     }
     auto const nSequenceMasked = *res;
 
-    // There are two kinds of nSequence: lock-by-blockheight and
+    // There are two kinds of nSequence: lock-by-emulated-height and
     // lock-by-blocktime, distinguished by whether nSequenceMasked <
     // CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG.
     //
