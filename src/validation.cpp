@@ -762,8 +762,30 @@ AcceptToMemoryPoolWorker(const Config &config, CTxMemPool &pool,
 
     // Handle double spend proof orphans (if any)
     if (!rescuedDSPOrphans.empty()) {
+        const double txRateTps = config.GetInvBroadcastRate() * GetNextBlockSizeLimit(config, ::ChainActive().Tip())
+                                 / double(ONE_MEGABYTE);
+        const int64_t maxMicrosToSpendRescuingOrphans = std::max<int64_t>(1, 1'000'000 / std::max(1.0, txRateTps));
+        LogPrint(BCLog::DSPROOF, "Found %d potential orphans, will process them for at most ~%1.f msec\n",
+                 rescuedDSPOrphans.size(), maxMicrosToSpendRescuingOrphans / 1e3);
+        Tic timer;
         std::vector<NodeId> badProofNodeIds;
-        for (auto it = rescuedDSPOrphans.begin(); it != rescuedDSPOrphans.end(); ++it) {
+        auto RemoveRemainingOrphans = [&pool, &rescuedDSPOrphans](auto & it, const char *phrasing) {
+            for (; it != rescuedDSPOrphans.end(); ++it) {
+                LogPrint(BCLog::DSPROOF, "%s orphan: %s\n", phrasing, it->first.ToString());
+                pool.doubleSpendProofStorage()->remove(it->first);
+            }
+        };
+        size_t ctr = 0;
+        for (auto it = rescuedDSPOrphans.begin(); it != rescuedDSPOrphans.end(); ++it, ++ctr) {
+            if (ctr && timer.usec() >= maxMicrosToSpendRescuingOrphans) [[unlikely]] {
+                // We have spent too much time rescuing orphans: warn then bail out and do cleanup.
+                LogPrintf("DSP orphan rescue for newly-accepted mempool tx %s exceeded the maximum time allotment of"
+                          " %1.3f msec (elapsed: %s msec). Discarding %d remaining orphans associated with this tx.\n",
+                          tx.GetId().ToString(), maxMicrosToSpendRescuingOrphans / 1e3, timer.msecStr(3),
+                          rescuedDSPOrphans.size() - ctr);
+                RemoveRemainingOrphans(it, "Discarding");
+                break;
+            }
             const auto dsp = pool.doubleSpendProofStorage()->lookup(it->first);
             LogPrint(BCLog::DSPROOF, "Rescued a DSP orphan %s\n", dsp.GetId().ToString());
             const auto rc = dsp.validate(pool);
@@ -781,10 +803,7 @@ AcceptToMemoryPoolWorker(const Config &config, CTxMemPool &pool,
                     continue;
                 }
 
-                while (++it != rescuedDSPOrphans.end()) {
-                    LogPrint(BCLog::DSPROOF, "Killing unneeded orphan: %s\n", it->first.ToString());
-                    pool.doubleSpendProofStorage()->remove(it->first);
-                }
+                RemoveRemainingOrphans(++it, "Killing unneeded");
 
                 // tell other subsystems about the claimed orphan
                 GetMainSignals().TransactionDoubleSpent(resTx, dsp.GetId());
