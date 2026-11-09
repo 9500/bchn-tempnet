@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2023-2024 The Bitcoin developers
+# Copyright (c) 2023-present The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test support for ABLA-related p2p 'block' message size limits."""
@@ -94,10 +94,13 @@ class P2PAblaMessageSizeLimitTest(BitcoinTestFramework):
         return 0
 
     @staticmethod
-    def get_lookahead_limit(abla_state=None):
+    def get_lookahead_limit(abla_state=None, old=False):
         if abla_state is None:
             abla_state = AblaState()
-        return abla_state.CalcLookaheadBlockSizeLimit(ABLA_LOOKAHEAD_BLOCKS)
+        if old:
+            return abla_state.CalcLookaheadBlockSizeLimit_old_iterative(ABLA_LOOKAHEAD_BLOCKS)
+        else:
+            return abla_state.CalcLookaheadBlockSizeLimit(ABLA_LOOKAHEAD_BLOCKS)
 
     def bootstrap_p2p(self):
         """Add a P2P connection to the node.
@@ -166,10 +169,13 @@ class P2PAblaMessageSizeLimitTest(BitcoinTestFramework):
         self.bootstrap_p2p()
 
         # Node default state, ABLA not activated, it should have a modest lookahead limit a little bit larger
-        # than 32 MB, but smaller than 36MB
+        # than 32 MB, but smaller than 37MB
         default_lookahead = self.get_lookahead_limit()
+        default_lookahead_iterative = self.get_lookahead_limit(old=True)
         assert_greater_than(default_lookahead, DEFAULT_CONSENSUS_BLOCK_SIZE)
-        assert_greater_than(4 * ONE_MEGABYTE + DEFAULT_CONSENSUS_BLOCK_SIZE, default_lookahead)
+        assert_greater_than(default_lookahead, default_lookahead_iterative)
+        assert_greater_than(5 * ONE_MEGABYTE + DEFAULT_CONSENSUS_BLOCK_SIZE, default_lookahead)
+        assert_greater_than(4 * ONE_MEGABYTE + DEFAULT_CONSENSUS_BLOCK_SIZE, default_lookahead_iterative)
 
         # Kick node out of IBD, and check log that the "lookahead" limit is what we expect for a non-ABLA-activated node
         with node.assert_debug_log(expected_msgs=[f'lookahead-blocksize-guess for tip height 1 to {default_lookahead}'],

@@ -105,6 +105,11 @@ public:
     /// Calculate algorithm's look-ahead block size limit, for a block N blocks ahead of current one. This is a
     /// "worst-case" calculation for the block size limit N blocks ahead. In other words, this function
     /// returns the limit for block with current+N height, assuming all blocks 100% full.
+    ///
+    /// This is computed in O(1) with a closed-form bound (CHIP-2025-03, "Block download"), not by iterating the
+    /// algorithm `count` times. The result is therefore an UPPER BOUND on the exact iterated value: equal to it for
+    /// `count <= 1`, and never below it. Since the result is only used to size buffers / as a "guess" of a future
+    /// limit, a slightly loose upper bound is safe; callers must not rely on exact equality with the iterated value.
     uint64_t CalcLookaheadBlockSizeLimit(const Config &config, size_t count, bool disable2GBCap = false) const;
 
     /// Query this block's size
