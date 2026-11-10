@@ -82,6 +82,12 @@ public:
     };
 
     const Consensus::Params &GetConsensus() const { return consensus; }
+    /** Time after which this software considers itself outdated/expired (see software_outdated).
+     *  Defaults to the next tentative upgrade's activation time; a chain that ends earlier (tempnet)
+     *  sets its own. */
+    int64_t SoftwareExpiryTime() const {
+        return nSoftwareExpiryTime > 0 ? nSoftwareExpiryTime : consensus.upgrade2028ActivationTime;
+    }
     const CMessageHeader::MessageMagic &DiskMagic() const { return diskMagic; }
     const CMessageHeader::MessageMagic &NetMagic() const { return netMagic; }
     int GetDefaultPort() const { return nDefaultPort; }
@@ -121,6 +127,7 @@ protected:
     CChainParams() {}
 
     Consensus::Params consensus;
+    int64_t nSoftwareExpiryTime = 0;
     CMessageHeader::MessageMagic diskMagic;
     CMessageHeader::MessageMagic netMagic;
     int nDefaultPort;

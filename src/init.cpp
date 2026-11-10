@@ -2269,9 +2269,10 @@ bool AppInitMain(Config &config, RPCServer &rpcServer,
      */
     if (gArgs.GetBoolArg("-expire", software_outdated::DEFAULT_EXPIRE)) {
         // The software outdated warning will start to happen 30 days before May 15th, 2028;
-        // on -chipnet this date is 30 days before Nov. 15th, 2027.
+        // on -chipnet this date is 30 days before Nov. 15th, 2027, and -tempnet has its own
+        // expiry (chainparams, Nov. 15th, 2026), since tempnet ends then.
         software_outdated::nTime = gArgs.GetArg("-upgrade2028activationtime",
-                                                chainparams.GetConsensus().upgrade2028ActivationTime);
+                                                chainparams.SoftwareExpiryTime());
         if (software_outdated::nTime > 0) {
             software_outdated::fDisableRPCOnExpiry =
                     gArgs.GetBoolArg("-expirerpc", software_outdated::DEFAULT_EXPIRE_RPC);
