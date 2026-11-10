@@ -273,6 +273,14 @@ uint64_t State::CalcLookaheadBlockSizeLimitWorstCase(const Config &config, size_
 
     assert(tau >= MIN_BLOCK_INTERVAL && tau <= MAX_BLOCK_INTERVAL);
 
+    // Fixed-size configs: epsilon and beta are pinned at epsilon0 / beta0, so every future block's limit is just
+    // this state's (epsilon + beta).
+    // (The general path below also returns exactly this; this is only a shortcut.)
+    if (config.IsFixedSize()) {
+        const uint64_t limit = muldiv(controlBlockSize + elasticBufferSize, tau.value(), BASE_BLOCK_INTERVAL.value());
+        return disable2GBCap ? limit : std::min<uint64_t>(limit, MAX_CONSENSUS_BLOCK_SIZE);
+    }
+
     // The first transition is done exactly: it responds to this state's own stored block size and interval, and its
     // result (a full block with interval `tau`) is the state the remaining `count - 1` blocks start from.
     const State s = NextBlockState(config, tau, GetNextBlockSizeLimit(config, tau, disable2GBCap));
