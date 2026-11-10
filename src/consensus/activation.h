@@ -103,3 +103,6 @@ bool IsUpgrade2027Enabled(const Consensus::Params &params, const CBlockIndex *pi
 bool IsUpgrade2027EnabledForMTPPrev(const Consensus::Params &params, int64_t nMedianTimePastPrev);
 /** Returns the activation MTP for the 2027 upgrade */
 int64_t GetUpgrade2027ActivationTime(const Consensus::Params &params);
+
+/** Check if May 15th, 2028 protocol upgrade has activated. */
+bool IsUpgrade2028Enabled(const Consensus::Params &params, const CBlockIndex *pindexPrev);

@@ -59,8 +59,10 @@ struct Params {
     int upgrade11Height;
     /** Block height at which the May 15, 2026 rules became active (this is one less than the upgrade block itself) */
     int upgrade12Height;
-    /** (Tentative) Unix time used for MTP activation of 15 May 2027 12:00:00 UTC upgrade */
+    /** Unix time used for MTP activation of 15 May 2027 12:00:00 UTC upgrade */
     int64_t upgrade2027ActivationTime;
+    /** (Tentative) Unix time used for MTP activation of 15 May 2028 12:00:00 UTC upgrade */
+    int64_t upgrade2028ActivationTime;
 
     /** This is true for mainnet, false for other chains. On mainnet the "forbidden coinbase shape" rule as specified
         by "CHIP-2025-03 Faster Blocks for Bitcoin Cash" is deferred until block-height == 1,983,702 or block-height
