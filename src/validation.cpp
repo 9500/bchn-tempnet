@@ -490,13 +490,18 @@ AcceptToMemoryPoolWorker(const Config &config, CTxMemPool &pool,
     }
 
     std::list<std::pair<DspId, NodeId>> rescuedDSPOrphans; //! always empty in test_accept mode
+    FastRandomContext rng; //! used by rescuedDSPOrphans below (is lazy-initted on first use so is cheap to construct)
 
     // Check for conflicts with in-memory transactions
     for (const CTxIn &txin : tx.vin) {
         if (!test_accept && DoubleSpendProof::IsEnabled()) {
-            // add existing DSProof orphans (if any) to the rescued set
-            rescuedDSPOrphans.splice(rescuedDSPOrphans.end(),
-                                     pool.doubleSpendProofStorage()->findOrphans(txin.prevout));
+            // add existing DSProof orphans (if any) to the rescued set; randomize where we insert (begin vs. end)
+            auto orphans = pool.doubleSpendProofStorage()->findOrphans(txin.prevout);
+            if (!orphans.empty()) {
+                const bool insertAtEnd = rescuedDSPOrphans.empty() || rng.randbool();
+                rescuedDSPOrphans.splice(insertAtEnd ? rescuedDSPOrphans.end() : rescuedDSPOrphans.begin(),
+                                         std::move(orphans));
+            }
         }
         auto itConflicting = pool.mapNextTx.find(txin.prevout);
         if (itConflicting != pool.mapNextTx.end()) {
@@ -765,7 +770,7 @@ AcceptToMemoryPoolWorker(const Config &config, CTxMemPool &pool,
         const double txRateTps = config.GetInvBroadcastRate() * GetNextBlockSizeLimit(config, ::ChainActive().Tip())
                                  / double(ONE_MEGABYTE);
         const int64_t maxMicrosToSpendRescuingOrphans = std::max<int64_t>(1, 1'000'000 / std::max(1.0, txRateTps));
-        LogPrint(BCLog::DSPROOF, "Found %d potential orphans, will process them for at most ~%1.f msec\n",
+        LogPrint(BCLog::DSPROOF, "Found %d potential orphans, will process them for at most ~%1.3f msec\n",
                  rescuedDSPOrphans.size(), maxMicrosToSpendRescuingOrphans / 1e3);
         Tic timer;
         std::vector<NodeId> badProofNodeIds;
