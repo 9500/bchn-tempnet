@@ -38,11 +38,11 @@ packages:
 - "zlib1g-dev"
 repositories:
 - "distribution": "jammy"
-  "source": "deb http://ppa.launchpadcontent.net/cyclop-os/cyclop-os-wine-testing/ubuntu jammy main"
+  "source": "deb http://ppa.launchpadcontent.net/cculianu/gcc-mingw-64/ubuntu jammy main"
   keys:
   - server: "keyserver.ubuntu.com"
     recv:
-    - "e835a804984d87619ce7682035464dc5d547dc0c"
+    - "7B9C42B98FD9E8DD858243AA6AE71742852D733D"
   packages:
   - "g++-mingw-w64"
 remotes:
