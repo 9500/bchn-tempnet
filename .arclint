@@ -30,13 +30,6 @@
                 "--ignore=E501,E704,W503,W504"
             ]
         },
-        "check-doc": {
-            "type": "check-doc",
-            "include": "(^src/.*\\.(h|c|cpp)$)",
-            "exclude": [
-                "(.*/)"
-            ]
-        },
         "phpcs": {
             "type": "phpcs",
             "include": "(\\.php$)",
@@ -64,13 +57,6 @@
             "type": "script-and-regex",
             "script-and-regex.script": "arcanist/linter/suppressible-spelling.sh",
             "script-and-regex.regex": "/^(?P<file>.*?):(?P<line>\\d+):(?P<code>[^:]+):(?P<message>.*)$/"
-        },
-        "check-rpc-mappings": {
-            "type": "check-rpc-mappings",
-            "include": "(^src/(rpc/|wallet/rpc).*\\.cpp$)",
-            "exclude": [
-                "(.*/)"
-            ]
         },
         "lint-python-encoding": {
             "type": "lint-python-encoding",

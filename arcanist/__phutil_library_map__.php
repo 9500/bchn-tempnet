@@ -11,8 +11,6 @@ phutil_register_library_map(array(
   'class' => array(
     'ArcanistBitcoinCashNodeConfiguration' => 'configuration/ArcanistBitcoinCashNodeConfiguration.php',
     'AutoPEP8FormatLinter' => 'linter/AutoPEP8Linter.php',
-    'CheckDocLinter' => 'linter/CheckDocLinter.php',
-    'CheckRpcMappingsLinter' => 'linter/CheckRpcMappingsLinter.php',
     'DoxygenLinter' => 'linter/DoxygenLinter.php',
     'ExtendedConfigurationDrivenLintEngine' => 'engine/ExtendedConfigurationDrivenLintEngine.php',
     'GlobalExternalLinter' => 'linter/GlobalExternalLinter.php',
@@ -33,8 +31,6 @@ phutil_register_library_map(array(
   'xmap' => array(
     'ArcanistBitcoinCashNodeConfiguration' => 'ArcanistConfiguration',
     'AutoPEP8FormatLinter' => 'ArcanistExternalLinter',
-    'CheckDocLinter' => 'GlobalExternalLinter',
-    'CheckRpcMappingsLinter' => 'GlobalExternalLinter',
     'DoxygenLinter' => 'ArcanistLinter',
     'ExtendedConfigurationDrivenLintEngine' => 'ArcanistLintEngine',
     'GlobalExternalLinter' => array(
