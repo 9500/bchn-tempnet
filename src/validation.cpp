@@ -788,7 +788,7 @@ AcceptToMemoryPoolWorker(const Config &config, CTxMemPool &pool,
                                  * GetNextBlockSizeLimit(config, ::ChainActive().Tip())
                                  / double(ONE_MEGABYTE);
         const int64_t maxMicrosToSpendRescuingOrphans = std::max<int64_t>(1, 1'000'000 / std::max(1.0, txRateTps));
-        LogPrint(BCLog::DSPROOF, "Found %d potential orphans, will process them for at most ~%1.f msec\n",
+        LogPrint(BCLog::DSPROOF, "Found %d potential orphans, will process them for at most ~%1.3f msec\n",
                  rescuedDSPOrphans.size(), maxMicrosToSpendRescuingOrphans / 1e3);
         Tic timer;
         std::vector<NodeId> badProofNodeIds;
