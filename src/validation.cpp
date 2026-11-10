@@ -510,13 +510,18 @@ AcceptToMemoryPoolWorker(const Config &config, CTxMemPool &pool,
     }
 
     std::list<std::pair<DspId, NodeId>> rescuedDSPOrphans; //! always empty in test_accept mode
+    FastRandomContext rng; //! used by rescuedDSPOrphans below (is lazy-initted on first use so is cheap to construct)
 
     // Check for conflicts with in-memory transactions
     for (const CTxIn &txin : tx.vin) {
         if (!test_accept && DoubleSpendProof::IsEnabled()) {
-            // add existing DSProof orphans (if any) to the rescued set
-            rescuedDSPOrphans.splice(rescuedDSPOrphans.end(),
-                                     pool.doubleSpendProofStorage()->findOrphans(txin.prevout));
+            // add existing DSProof orphans (if any) to the rescued set; randomize where we insert (begin vs. end)
+            auto orphans = pool.doubleSpendProofStorage()->findOrphans(txin.prevout);
+            if (!orphans.empty()) {
+                const bool insertAtEnd = rescuedDSPOrphans.empty() || rng.randbool();
+                rescuedDSPOrphans.splice(insertAtEnd ? rescuedDSPOrphans.end() : rescuedDSPOrphans.begin(),
+                                         std::move(orphans));
+            }
         }
         auto itConflicting = pool.mapNextTx.find(txin.prevout);
         if (itConflicting != pool.mapNextTx.end()) {
