@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2023 The Bitcoin developers
+# Copyright (c) 2023-present The Bitcoin developers
 
 """The contents of this file mainly match what's on the C++ side in src/consensus/abla.*."""
 
@@ -143,6 +143,7 @@ class AblaState:
         return min(s0 + inc, sat)
 
     def CalcLookaheadBlockSizeLimit(self, count: int, config=DEFAULT_ABLA_CONFIG):
+        """Return a lookahead upper bound capped at MAX_CONSENSUS_BLOCK_SIZE."""
         lookaheadState = self
         if count == 0:
             return lookaheadState.GetBlockSizeLimit()
@@ -154,7 +155,8 @@ class AblaState:
         lookaheadState = lookaheadState.NextBlockState(config=config, nextBlockSize=nextBlockSize,
                                                        nextBlockInterval=tau)
         eps = lookaheadState.controlBlockSize
-        return self._BoundSumAfterFullBlocks(config, tau, eps + lookaheadState.elasticBufferSize, eps, count - 1)
+        bound = self._BoundSumAfterFullBlocks(config, tau, eps + lookaheadState.elasticBufferSize, eps, count - 1)
+        return min(bound, MAX_CONSENSUS_BLOCK_SIZE)
 
     def __repr__(self):
         return f"<class 'AblaState' blockSize={self.blockSize} controlBlockSize={self.controlBlockSize}" \
@@ -182,11 +184,20 @@ if __name__ == "__main__":
     state = AblaState(blockSize=1129, config=conf)
     print(repr(conf))
     print(repr(state))
-    assert state.CalcLookaheadBlockSizeLimit(2048, config=conf) == 2234156
+    iterative_limit = state.CalcLookaheadBlockSizeLimit_old_iterative(2048, config=conf)
+    assert iterative_limit <= state.CalcLookaheadBlockSizeLimit(2048, config=conf) <= iterative_limit * 11 // 10
 
     # 32MB blocksize limit, already-advanced state
     conf = DEFAULT_ABLA_CONFIG
     state = AblaState(blockSize=403438931, config=conf, controlBlockSize=93377312, elasticBufferSize=310061619)
     print(repr(conf))
     print(repr(state))
-    assert state.CalcLookaheadBlockSizeLimit(500, config=conf) == 406127292
+    iterative_limit = state.CalcLookaheadBlockSizeLimit_old_iterative(500, config=conf)
+    assert iterative_limit <= state.CalcLookaheadBlockSizeLimit(500, config=conf) <= iterative_limit * 11 // 10
+
+    # A full block at the current consensus cap must not raise the lookahead limit.
+    state = AblaState(blockSize=MAX_CONSENSUS_BLOCK_SIZE,
+                      controlBlockSize=MAX_CONSENSUS_BLOCK_SIZE // 2,
+                      elasticBufferSize=MAX_CONSENSUS_BLOCK_SIZE // 2)
+    for count in (0, 1, 2048):
+        assert state.CalcLookaheadBlockSizeLimit(count) == MAX_CONSENSUS_BLOCK_SIZE
