@@ -93,3 +93,6 @@ int32_t GetUpgrade12ActivationHeight(const Consensus::Params &params);
 
 /** Check if May 15th, 2027 protocol upgrade has activated. */
 bool IsUpgrade2027Enabled(const Consensus::Params &params, const CBlockIndex *pindexPrev);
+
+/** Check if May 15th, 2028 protocol upgrade has activated. */
+bool IsUpgrade2028Enabled(const Consensus::Params &params, const CBlockIndex *pindexPrev);

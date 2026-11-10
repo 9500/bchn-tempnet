@@ -179,3 +179,16 @@ bool IsUpgrade2027Enabled(const Consensus::Params &params, const CBlockIndex *pi
 
     return IsUpgrade2027Enabled(params, pindexPrev->GetMedianTimePast());
 }
+
+// Upgrade 2028
+static bool IsUpgrade2028Enabled(const Consensus::Params &params, const int64_t nMedianTimePast) {
+    return nMedianTimePast >= gArgs.GetArg("-upgrade2028activationtime", params.upgrade2028ActivationTime);
+}
+
+bool IsUpgrade2028Enabled(const Consensus::Params &params, const CBlockIndex *pindexPrev) {
+    if (pindexPrev == nullptr) {
+        return false;
+    }
+
+    return IsUpgrade2028Enabled(params, pindexPrev->GetMedianTimePast());
+}

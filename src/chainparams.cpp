@@ -151,8 +151,11 @@ public:
         // May 15, 2026 12:00:00 UTC protocol upgrade (this is one less than the first block mined under new rules)
         consensus.upgrade12Height = 951144; /* first block with pindex->GetMedianTimePast() >= 1778846400 */
 
-        // May 15, 2027 12:00:00 UTC tentative protocol upgrade
+        // May 15, 2027 12:00:00 UTC protocol upgrade
         consensus.upgrade2027ActivationTime = 1810382400;
+
+        // May 15, 2028 12:00:00 UTC tentative protocol upgrade
+        consensus.upgrade2028ActivationTime = 1842004800;
 
         // Default limit for block size (in bytes)
         consensus.nDefaultConsensusBlockSize = DEFAULT_CONSENSUS_BLOCK_SIZE;
@@ -410,8 +413,11 @@ public:
         // May 15, 2026 12:00:00 UTC protocol upgrade (this is one less than the first block mined under new rules)
         consensus.upgrade12Height = 1710482; /* first block with pindex->GetMedianTimePast() >= 1778846400 */
 
-        // May 15, 2027 12:00:00 UTC tentative protocol upgrade
+        // May 15, 2027 12:00:00 UTC protocol upgrade
         consensus.upgrade2027ActivationTime = 1810382400;
+
+        // May 15, 2028 12:00:00 UTC tentative protocol upgrade
+        consensus.upgrade2028ActivationTime = 1842004800;
 
         // Default limit for block size (in bytes)
         consensus.nDefaultConsensusBlockSize = DEFAULT_CONSENSUS_BLOCK_SIZE;
@@ -635,8 +641,11 @@ public:
         // May 15, 2026 12:00:00 UTC protocol upgrade (this is one less than the first block mined under new rules)
         consensus.upgrade12Height = 305847; /* first block with pindex->GetMedianTimePast() >= 1778846400 */
 
-        // May 15, 2027 12:00:00 UTC tentative protocol upgrade
+        // May 15, 2027 12:00:00 UTC protocol upgrade
         consensus.upgrade2027ActivationTime = 1810382400;
+
+        // May 15, 2028 12:00:00 UTC tentative protocol upgrade
+        consensus.upgrade2028ActivationTime = 1842004800;
 
         // Default limit for block size (in bytes) (testnet4 is smaller at 2MB)
         consensus.nDefaultConsensusBlockSize = 2 * ONE_MEGABYTE;
@@ -830,8 +839,11 @@ public:
         // May 15, 2026 12:00:00 UTC protocol upgrade
         consensus.upgrade12Height = 10'006;
 
-        // May 15, 2027 12:00:00 UTC tentative protocol upgrade
+        // May 15, 2027 12:00:00 UTC protocol upgrade
         consensus.upgrade2027ActivationTime = 1810382400;
+
+        // May 15, 2028 12:00:00 UTC tentative protocol upgrade
+        consensus.upgrade2028ActivationTime = 1842004800;
 
         // Default limit for block size (in bytes)
         consensus.nDefaultConsensusBlockSize = 256 * ONE_MEGABYTE;
@@ -993,8 +1005,11 @@ public:
         // This is the first block with pindex->GetMedianTimePast() >= 1763208000, which is one less than upgrade block.
         consensus.upgrade12Height = 279791;
 
-        // November 15, 2026 12:00:00 UTC; tentative protocol upgrade activates 6 months early
+        // November 15, 2026 12:00:00 UTC; protocol upgrade activates 6 months early
         consensus.upgrade2027ActivationTime = 1794744000;
+
+        // November 15, 2027 12:00:00 UTC; tentative protocol upgrade activates 6 months early
+        consensus.upgrade2028ActivationTime = 1826280000;
 
         // Default limit for block size (in bytes) (chipnet is like testnet4 in that it is smaller at 2MB)
         consensus.nDefaultConsensusBlockSize = 2 * ONE_MEGABYTE;
@@ -1174,8 +1189,11 @@ public:
         // May 15, 2026 12:00:00 UTC protocol upgrade
         consensus.upgrade12Height = 0;
 
-        // May 15, 2027 12:00:00 UTC tentative protocol upgrade
+        // May 15, 2027 12:00:00 UTC protocol upgrade
         consensus.upgrade2027ActivationTime = 1810382400;
+
+        // May 15, 2028 12:00:00 UTC tentative protocol upgrade
+        consensus.upgrade2028ActivationTime = 1842004800;
 
         // Default limit for block size (in bytes)
         consensus.nDefaultConsensusBlockSize = DEFAULT_CONSENSUS_BLOCK_SIZE;

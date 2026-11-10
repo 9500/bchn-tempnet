@@ -36,12 +36,12 @@ class WarnOnOutdatedTest(BitcoinTestFramework):
         afterUpgradeTime = DUMMY_ACTIVATION_TIME + 3600 * 24 * 2
 
         common = [
-            "-upgrade2027activationtime={}".format(DUMMY_ACTIVATION_TIME),
+            "-upgrade2028activationtime={}".format(DUMMY_ACTIVATION_TIME),
             "-noexpirerpc"
         ]
 
         self.extra_args = [
-            ["-upgrade2027activationtime={}".format(time.time() + OUTDATED_WARN_START + FUZZ_TIME), "-noexpirerpc"],
+            ["-upgrade2028activationtime={}".format(time.time() + OUTDATED_WARN_START + FUZZ_TIME), "-noexpirerpc"],
             common + ["-mocktime={}".format(warningTime), ],
             common + ["-mocktime={}".format(warningTime), "-noexpire"],
             common + ["-mocktime={}".format(afterUpgradeTime), ],
@@ -49,7 +49,7 @@ class WarnOnOutdatedTest(BitcoinTestFramework):
         self.num_nodes = 4
 
     def run_test(self):
-        if self.options.upgrade2027activation:
+        if self.options.upgrade2028activation:
             # Running this test from ninja check-upgrade-activated will fail, so skip.
             raise SkipTest("This test cannot be run with the next upgrade unconditionally enabled")
 

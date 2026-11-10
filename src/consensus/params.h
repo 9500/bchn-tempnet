@@ -57,8 +57,10 @@ struct Params {
     int upgrade11Height;
     /** Block height at which the May 15, 2026 rules became active (this is one less than the upgrade block itself) */
     int upgrade12Height;
-    /** (Tentative) Unix time used for MTP activation of 15 May 2027 12:00:00 UTC upgrade */
+    /** Unix time used for MTP activation of 15 May 2027 12:00:00 UTC upgrade */
     int64_t upgrade2027ActivationTime;
+    /** (Tentative) Unix time used for MTP activation of 15 May 2028 12:00:00 UTC upgrade */
+    int64_t upgrade2028ActivationTime;
 
     /** Default blocksize limit for this chain. After activation of upgrade 10, this is the max block size floor, since
      *  the ABLA algorithm allows for growing the limit based on demand. */
